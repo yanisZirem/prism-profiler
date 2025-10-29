@@ -23,7 +23,7 @@ You can either **clone** or **download** the Profiler Desktop folder.
 
 #### Option A – Clone via Git
 ```bash
-git clone https://github.com/yanisZirem/prism-profiler/prism-profiler-desktop-v1.0.git
+git clone https://github.com/yanisZirem/prism-profiler
 cd prism-profiler-desktop-v1.0
 ```
 
@@ -53,7 +53,7 @@ This script will handle everything for you (environment setup, dependency instal
 ####  Quick Start (Automatic Installation)
 1. Clone or download the Profiler Desktop repository:
    ```bash
-   git clone https://github.com/yanisZirem/prism-profiler/prism-profiler-desktop-v1.0.git
+   git clone https://github.com/yanisZirem/prism-profiler
    cd prism-profiler-desktop-v1.0
    ```
 2. Open **PowerShell as Administrator**.
