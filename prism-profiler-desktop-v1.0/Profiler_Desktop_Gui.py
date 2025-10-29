@@ -457,6 +457,7 @@ def main():
                         st.error("The uploaded file must contain the columns: 'Overall survival' and 'State'")
             del df
             del uploaded_file
+            import gc
             gc.collect()
         st.markdown("### 📄 Expected Format Example")
         st.info(
@@ -4366,3 +4367,4 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
