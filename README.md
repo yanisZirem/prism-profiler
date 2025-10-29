@@ -49,7 +49,6 @@ This script will handle everything for you (environment setup, dependency instal
 
 #### 🖥️ Supported System
 ✅ Windows 10 or 11
-❌ macOS and Linux are not supported for this automated installation (manual setup required).
 
 ####  Quick Start (Automatic Installation)
 1. Clone or download the Profiler Desktop repository:
