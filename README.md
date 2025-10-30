@@ -208,3 +208,9 @@ To simplify the launch process, you can create a script to activate the environm
    ```bash
    ./run_profiler.sh
    ```
+## Additional Tool: MSI2Profiler
+
+Profiler Desktop includes an additional utility, **MSI2Profiler**, located in the `MSI2Profiler/` folder.  
+This standalone desktop app allows you to extract and preprocess MSI (Mass Spectrometry Imaging) data from `.imzML` files for use in Profiler.
+
+➡️ For detailed instructions, see the [MSI2Profiler README](./MSI2Profiler/README.md).
