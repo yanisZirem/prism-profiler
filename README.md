@@ -11,6 +11,15 @@ Built by **Yanis Zirem (Third year PhD Candidate, 2025)** under the supervision 
 **Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive application for **multi-omics data analysis**.
 Designed for users who prefer **local execution**, Profiler Desktop delivers the same analytical power as the web version, directly on your computer.
 
+### Citation
+Until the peer-reviewed publication is available, please cite the following reference when using Profiler or Profiler Desktop in publications or presentations:
+
+> **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**  
+> *Profiler: an open web platform for multi-omics analysis.*  
+> Université de Lille, 2025.  
+> DOI: [10.21203/rs.3.rs-7058776/v1](https://doi.org/10.21203/rs.3.rs-7058776/v1)
+
+---
 ---
 
 ## 🖥️ Installation Guide
