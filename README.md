@@ -1,9 +1,4 @@
 # Profiler Desktop
-**Where Omics Meet Clarity — Now Offline**
-
-Developed by **PRISM U1192 Laboratory, Université de Lille**
-Protected by **INSERM Transfert**
-Built by **Yanis Zirem (Third year PhD Candidate, 2025)** under the supervision of **Prof. Michel Salzet** and **Prof. Isabelle Fournier**
 
 ---
 
@@ -223,3 +218,9 @@ Profiler Desktop includes an additional utility, **MSI2Profiler**, located in th
 This standalone desktop app allows you to extract and preprocess MSI (Mass Spectrometry Imaging) data from `.imzML` files for use in Profiler.
 
 ➡️ **For detailed instructions**, see the **[MSI2Profiler README](https://github.com/yanisZirem/prism-profiler/blob/main/Additional_tools/MSI2Profiler/MSI2Profiler%20README.md)**.
+---
+
+Developed by **PRISM U1192 Laboratory, Université de Lille**
+Protected by **INSERM Transfert**
+Built by **Yanis Zirem (Third year PhD Candidate, 2025)** under the supervision of **Prof. Michel Salzet** and **Prof. Isabelle Fournier**
+
