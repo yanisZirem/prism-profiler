@@ -788,7 +788,7 @@ def main():
                     index=0,
                     key="overview_source_select"
                 )
-                load_btn = st.form_submit_button("📥 Load Features")
+                load_btn = st.form_submit_button("📥 Load dataset features")
             if load_btn:
                 # Map "Raw" to final_data (renamed classes) instead of data (raw data)
                 ds_map = {
@@ -828,219 +828,230 @@ def main():
             st.info("No dataset loaded. Choose a source above and click ▶️ Load Features to start analysing.")
             # on n'affiche pas la suite si rien n'est chargé
         else:
-            # ---------------- Dataset Info (toggle) ----------------
-            with st.form("dataset_info_form"):
-                show_dataset_info = st.form_submit_button("ℹ️ Dataset Info")
-            if show_dataset_info:
-                st.session_state.show_info["dataset_info"] = not st.session_state.show_info.get("dataset_info", False)
 
-            if st.session_state.show_info.get("dataset_info", False):
-                st.markdown(f"""
-                    <div style='background-color: #f0f8ff; padding: 10px; border-radius: 10px; font-size: 15px;'>
-                        <strong>Dataset source:</strong> {st.session_state.get('overview_source')}
-                        <br><strong>Dataset dimensions:</strong> {df.shape[0]:,} samples × {df.shape[1]:,} features
-                        <br><strong>Classes:</strong> {df['Class'].nunique() if 'Class' in df.columns else 'N/A'}
-                    </div>
-                """, unsafe_allow_html=True)
-                st.markdown("---")
+            with st.expander("**ℹ️ Dataset Info and suggestions**", expanded=st.session_state.show_info["dataset_info"]):
 
-                # appelle ta fonction existante (elle doit utiliser st.session_state['class_colors'])
-                display_class_info(df)
-                st.info("Summary: balanced classes → unbiased models.")
-                st.markdown("---")
+                with st.form("dataset_info_form"):
+                    toggle = st.form_submit_button("Show Info")
+
+                if toggle:
+                    st.session_state.show_info["dataset_info"] = not st.session_state.show_info["dataset_info"]
+
+                if st.session_state.show_info["dataset_info"]:
+                    st.markdown(f"""
+                        <div style='background-color: #f0f8ff; padding: 10px; border-radius: 10px; font-size: 15px;'>
+                            <strong>Dataset source:</strong> {st.session_state.get('overview_source')}
+                            <br><strong>Dataset dimensions:</strong> {df.shape[0]:,} samples × {df.shape[1]:,} features
+                            <br><strong>Classes:</strong> {df['Class'].nunique() if 'Class' in df.columns else 'N/A'}
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    display_class_info(df)
+                    st.info("Summary: balanced classes → unbiased models.")
 
             # ---------------- Missing Values ----------------
-            with st.form("missing_values_form"):
-                show_missing_values = st.form_submit_button("❓ Missing Values")
-            if show_missing_values:
-                st.session_state.show_info["missing_values"] = not st.session_state.show_info.get("missing_values", False)
 
-            if df is not None and not df.empty and st.session_state.show_info.get("missing_values", False):
-                relevant_cols, missing_df = calculate_missing_values(df)
+            with st.expander("**❓ Missing Values and suggestions**", expanded=st.session_state.show_info["missing_values"]):
 
-                if missing_df.empty:
-                    st.success("✅ No missing values detected.")
-                else:
-                    # Global % missingness (sur tout le dataset)
-                    total_missing_pct = df.isnull().sum().sum() / (df.shape[0] * df.shape[1]) * 100
-                    st.success(f"Overall missingness: **{total_missing_pct:.2f}%** of all values.")
-                    st.markdown("**Per-feature summary:**")
-                    st.dataframe(missing_df, use_container_width=True)
+                with st.form("missing_values_form"):
+                    toggle = st.form_submit_button("Show Missing Values Info")
 
-                    # Normality check via skewness
-                    skewness = df[relevant_cols].skew().dropna()
-                    skew_mean = skewness.abs().mean()
-                    is_normal = skew_mean < 0.5
+                if toggle:
+                    st.session_state.show_info["missing_values"] = not st.session_state.show_info["missing_values"]
 
-                    # 💡 Global omics-aware recommendation
-                    st.markdown("**💡 Global Imputation Strategy Suggestion:**")
-                    if total_missing_pct < 5:
-                        st.info("🔹 Low missingness (<5%) → Delete missing value or fill missing value with 0 if considered as exclusive features, or use simple Mean/Median/Modal imputation.")
-                    elif total_missing_pct < 20:
-                        if is_normal:
-                            st.info("🔹 Moderate missingness (5–20%) & data ≈ normal → Mean or Regression-based imputation.")
+                if st.session_state.show_info["missing_values"]:
+
+                    relevant_cols, missing_df = calculate_missing_values(df)
+
+                    if missing_df.empty:
+                        st.success("No missing values detected.")
+                    else:            
+                        # Global % missingness (sur tout le dataset)
+                        total_missing_pct = df.isnull().sum().sum() / (df.shape[0] * df.shape[1]) * 100
+                        st.success(f"Overall missingness: **{total_missing_pct:.2f}%** of all values.")
+                        st.markdown("**Per-feature summary:**")
+                        st.dataframe(missing_df, use_container_width=True)
+
+                        # Normality check via skewness
+                        skewness = df[relevant_cols].skew().dropna()
+                        skew_mean = skewness.abs().mean()
+                        is_normal = skew_mean < 0.5
+
+                        # 💡 Global omics-aware recommendation
+                        st.markdown("**💡 Global Imputation Strategy Suggestion:**")
+                        if total_missing_pct < 5:
+                            st.info("🔹 Low missingness (<5%) → Delete missing value or fill missing value with 0 if considered as exclusive features, or use simple Mean/Median/Modal imputation.")
+                        elif total_missing_pct < 20:
+                            if is_normal:
+                                st.info("🔹 Moderate missingness (5–20%) & data ≈ normal → Mean or Regression-based imputation.")
+                            else:
+                                st.info("🔹 Moderate missingness (5–20%) & non-normal (skewed) → Median, Shifted Gaussian, or KNN imputation.")
                         else:
-                            st.info("🔹 Moderate missingness (5–20%) & non-normal (skewed) → Median, Shifted Gaussian, or KNN imputation.")
-                    else:
-                        st.info("🔹 High missingness (>20%) → KNN or Regression-based imputation. "
-                                "Consider removing features with excessive missing values using Minimum features detection rate per class (%) in preprocessing expander.")
+                            st.info("🔹 High missingness (>20%) → KNN or Regression-based imputation. "
+                                    "Consider removing features with excessive missing values using Minimum features detection rate per class (%) in preprocessing expander.")
 
-                    # Summary skewness
-                    if is_normal:
-                        st.success(f"Features are mostly normal (mean |skew| = {skew_mean:.2f}). Mean/Regression imputation valid.")
-                    else:
-                        st.warning(f"Features are skewed (mean |skew| = {skew_mean:.2f}). Prefer Median/Shifted Gaussian/KNN imputation.")
+                        # Summary skewness
+                        if is_normal:
+                            st.success(f"Features are mostly normal (mean |skew| = {skew_mean:.2f}). Mean imputation valid.")
+                        else:
+                            st.warning(f"Features are skewed (mean |skew| = {skew_mean:.2f}). Prefer Median/Shifted Gaussian/KNN imputation.")
 
 
-                    if 'Class' in df.columns:
-                        missing_by_class = df.groupby('Class')[relevant_cols].apply(lambda x: x.isnull().sum().sum())
-                        total_missing = missing_by_class.sum()
-                        
-                        if total_missing > 0:
-                            missing_pct_class = (missing_by_class / total_missing) * 100
-                            import plotly.express as px
-                            
-                            st.markdown("**Class-specific missingness:**")
-                            
+                        if 'Class' in df.columns:
 
-                            if 'class_colors' not in st.session_state:
-                                st.session_state['class_colors'] = {}
+                            # Count missing values per class (robust method)
+                            missing_by_class = df.groupby('Class').apply(lambda g: g.isnull().sum().sum()).astype(float)
+                            total_missing = missing_by_class.sum()
 
-                            # Assigner une couleur par défaut si elle n'existe pas
-                            for cls in missing_pct_class.index:
-                                if cls not in st.session_state['class_colors']:
-                                    st.session_state['class_colors'][cls] = px.colors.qualitative.Plotly[list(missing_pct_class.index).index(cls) % len(px.colors.qualitative.Plotly)]
+                            if total_missing > 0:
 
-                            # Récupérer les couleurs pour chaque classe
-                            colors = [st.session_state['class_colors'].get(cls, '#CCCCCC') for cls in missing_pct_class.index]
-                            color_map = {cls: st.session_state['class_colors'].get(cls, '#CCCCCC') for cls in missing_pct_class.index}
+                                missing_pct_class = (missing_by_class / total_missing) * 100
+                                import plotly.express as px
 
-                            # Créer le graphique avec les couleurs personnalisées
-                            fig = px.pie(
-                                names=missing_pct_class.index,
-                                values=missing_pct_class.values,
-                                color=missing_pct_class.index,
-                                color_discrete_map=color_map,
-                                title="Missing Data by Class"
-                            )
+                                # st.markdown("**Class-specific missingness:**")
 
-                            fig.update_traces(
-                                textposition='inside',
-                                textinfo='percent+label',
-                                textfont_size=18,
-                                marker=dict(colors=colors)  # Forcer les couleurs ici aussi
-                            )
-                            fig.update_layout(
-                                legend_title_text='Class',
-                                legend=dict(font=dict(size=16)),
-                                title=dict(font=dict(size=18))
-                            )
+                                # Ensure class_colors exists
+                                if 'class_colors' not in st.session_state:
+                                    st.session_state['class_colors'] = {}
 
-                            st.plotly_chart(fig, use_container_width=True)
+                                # Assign default colors if missing
+                                palette = px.colors.qualitative.Plotly
+                                for i, cls in enumerate(missing_pct_class.index):
+                                    if cls not in st.session_state['class_colors']:
+                                        st.session_state['class_colors'][cls] = palette[i % len(palette)]
 
-                    st.markdown("---")
+                                # Build map
+                                color_map = {cls: st.session_state['class_colors'][cls] for cls in missing_pct_class.index}
+
+                                # Pie chart
+                                fig = px.pie(
+                                    names=missing_pct_class.index,
+                                    values=missing_pct_class.values,
+                                    color=missing_pct_class.index,
+                                    color_discrete_map=color_map,
+                                    title="Missing Data by Class"
+                                )
+
+                                fig.update_traces(
+                                    textposition='inside',
+                                    textinfo='percent+label',
+                                    textfont_size=18
+                                )
+
+                                fig.update_layout(
+                                    legend_title_text='Class',
+                                    legend=dict(font=dict(size=16)),
+                                    title=dict(font=dict(size=18))
+                                )
+
+                                st.plotly_chart(fig, use_container_width=True)
+
 
 
 
             # ---------------- Normality & Statistical Overview ----------------
-            with st.form("normality_form"):
-                show_normality_btn = st.form_submit_button("📊 Normality & Statistical Overview")
-            if show_normality_btn:
-                st.session_state.show_info["shapiro_wilk_test"] = not st.session_state.show_info.get("shapiro_wilk_test", False)
 
-            if st.session_state.show_info.get("shapiro_wilk_test", False):
-                relevant_cols, _ = calculate_missing_values(df)
+            with st.expander("**📊 Normality/Statistical Overview and suggestions**", 
+                            expanded=st.session_state.show_info["shapiro_wilk_test"]):
 
-                # Shapiro-Wilk / normality
-                p_val, norm_ratio = perform_shapiro_wilk_test(df, relevant_cols)
-                normal_count = int(norm_ratio * len(relevant_cols))
-                non_normal_count = len(relevant_cols) - normal_count
+                with st.form("normality_form"):
+                    toggle = st.form_submit_button("Show normality info")
 
-                import plotly.express as px
-                fig = px.pie(
-                    names=['Normal', 'Non-Normal'],
-                    values=[normal_count, non_normal_count],
-                    title="Normal vs Non-Normal Features",
-                    color_discrete_sequence=['#4CAF50', '#F44336']
-                )
-                fig.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Skewness plot
-                skewness = df[relevant_cols].skew().dropna()
-                skew_mean = skewness.abs().mean()
-                fig_density = px.histogram(
-                    skewness,
-                    nbins=30,
-                    marginal="violin",
-                    title="Density of Feature Skewness",
-                    labels={'value': 'Skewness', 'count': 'Count'},
-                    color_discrete_sequence=['#FF9800']
-                )
-                st.plotly_chart(fig_density, use_container_width=True)
-
-                # recommendations...
-                st.markdown("**⚖️ Normalization Recommendation:**")
-                if skew_mean < 0.5:
-                    st.info("✅ Low skewness → TIC/RMS/BasePeak normalization suitable (common in omics).")
-                elif skew_mean > 1:
-                    st.info("❗ High skewness → Log/Log10/Log2 normalization recommended for omics.")
-                else:
-                    st.info("⚠️ Moderate skewness (0.5–1) →\n"
-                            "- Proteomics/Metabolomics: prefer RMS normalization.\n"
-                            "- Transcriptomics: Quantile normalization is often more appropriate.")
-
-                # statistical test suggestions (identique à ton code)
-                n_classes = df['Class'].nunique() if 'Class' in df.columns else 0
-                if skew_mean < 0.5:
-                    normality_status = "mostly normal"
-                    prefer_parametric = True
-                elif skew_mean > 1:
-                    normality_status = "highly skewed"
-                    prefer_parametric = False
-                else:
-                    normality_status = "moderately skewed"
-                    prefer_parametric = False
-
-                if n_classes == 2:
-                    test_suggestion = "t-test (parametric)" if prefer_parametric else "Mann-Whitney U (non-parametric)"
-                elif n_classes > 2:
-                    test_suggestion = "ANOVA (parametric)" if prefer_parametric else "Kruskal-Wallis (non-parametric)"
-                else:
-                    test_suggestion = "N/A (no classes detected)"
-
-                st.markdown("**📊 Recommended Statistical Test:**")
-                st.info(
-                    f"💡 Data appear **{normality_status}** (mean |skew| = {skew_mean:.2f}).\n\n"
-                    f"Suggested test: **{test_suggestion}**"
-                )
-
-                st.info(
-                    "⚠️ Note: Central Limit Theorem: For n ≥ 30, sampling distribution of the mean approximates normality."
-                )
+                if toggle:
+                    st.session_state.show_info["shapiro_wilk_test"] = (
+                        not st.session_state.show_info["shapiro_wilk_test"]
+                    )
 
 
 
-                # del relevant_cols
-                # gc.collect()
+                if st.session_state.show_info.get("shapiro_wilk_test", False):
+                    relevant_cols, _ = calculate_missing_values(df)
 
-                # -------------------- Survival Data --------------------
-                if 'Overall survival' in df.columns and 'State' in df.columns:
-                    st.subheader("Survival Data Preview")
-                    st.dataframe(df[['Overall survival', 'State']])
-                    gc.collect()
+                    # Shapiro-Wilk / normality
+                    p_val, norm_ratio = perform_shapiro_wilk_test(df, relevant_cols)
+                    normal_count = int(norm_ratio * len(relevant_cols))
+                    non_normal_count = len(relevant_cols) - normal_count
 
-            elif st.session_state.get('survival_data') is not None:
-                surv_df = st.session_state['survival_data']
-                if 'Overall survival' in surv_df.columns and 'State' in surv_df.columns:
-                    st.markdown("*Survival Data*")
-                    st.dataframe(surv_df)
-                    del surv_df
-                    gc.collect()
-            # else:
-            #     st.warning("No data available for preview.")
+                    import plotly.express as px
+                    fig = px.pie(
+                        names=['Normal', 'Non-Normal'],
+                        values=[normal_count, non_normal_count],
+                        title="Normal vs Non-Normal Features",
+                        color_discrete_sequence=['#4CAF50', '#F44336']
+                    )
+                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig, use_container_width=True)
 
-        with st.expander("📝 **Class Renaming Options**", expanded=False):
+                    # Skewness plot
+                    skewness = df[relevant_cols].skew().dropna()
+                    skew_mean = skewness.abs().mean()
+                    fig_density = px.histogram(
+                        skewness,
+                        nbins=30,
+                        marginal="violin",
+                        title="Density of Feature Skewness",
+                        labels={'value': 'Skewness', 'count': 'Count'},
+                        color_discrete_sequence=['#FF9800']
+                    )
+                    st.plotly_chart(fig_density, use_container_width=True)
+
+                    # recommendations...
+                    st.markdown("**⚖️ Normalization Recommendation:**")
+                    if skew_mean < 0.5:
+                        st.info("✅ Low skewness → TIC/RMS/BasePeak normalization suitable (common in omics).")
+                    elif skew_mean > 1:
+                        st.info("❗ High skewness → Log/Log10/Log2 normalization recommended for omics.")
+                    else:
+                        st.info("⚠️ Moderate skewness (0.5–1) →\n"
+                                "- Proteomics/Metabolomics: prefer RMS normalization.\n"
+                                "- Transcriptomics: Quantile normalization is often more appropriate.")
+
+                    # statistical test suggestions (identique à ton code)
+                    n_classes = df['Class'].nunique() if 'Class' in df.columns else 0
+                    if skew_mean < 0.5:
+                        normality_status = "mostly normal"
+                        prefer_parametric = True
+                    elif skew_mean > 1:
+                        normality_status = "highly skewed"
+                        prefer_parametric = False
+                    else:
+                        normality_status = "moderately skewed"
+                        prefer_parametric = False
+
+                    if n_classes == 2:
+                        test_suggestion = "t-test (parametric)" if prefer_parametric else "Mann-Whitney U (non-parametric)"
+                    elif n_classes > 2:
+                        test_suggestion = "ANOVA (parametric)" if prefer_parametric else "Kruskal-Wallis (non-parametric)"
+                    else:
+                        test_suggestion = "N/A (no classes detected)"
+
+                    st.markdown("**📊 Recommended Statistical Test:**")
+                    st.info(
+                        f"💡 Data appear **{normality_status}** (mean |skew| = {skew_mean:.2f}).\n\n"
+                        f"Suggested test: **{test_suggestion}**"
+                    )
+
+                    st.info(
+                        "⚠️ Note: Central Limit Theorem: For n ≥ 30, sampling distribution of the mean approximates normality."
+                    )
+
+
+                    # -------------------- Survival Data --------------------
+                    if 'Overall survival' in df.columns and 'State' in df.columns:
+                        st.subheader("Survival Data Preview")
+                        st.dataframe(df[['Overall survival', 'State']])
+                        gc.collect()
+
+                elif st.session_state.get('survival_data') is not None:
+                    surv_df = st.session_state['survival_data']
+                    if 'Overall survival' in surv_df.columns and 'State' in surv_df.columns:
+                        st.markdown("*Survival Data*")
+                        st.dataframe(surv_df)
+                        del surv_df
+                        gc.collect()
+
+
+        with st.expander("**📝 Class Renaming Options**", expanded=False):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Standardize class labels: unify replicates, merge groups, or relabel unknowns.</p>',
                 unsafe_allow_html=True
@@ -1115,337 +1126,551 @@ def main():
                     gc.collect()
 
 
-        with st.expander("🧹 **Edit Dataset Options**", expanded=False):
+        with st.expander("**🧹 Edit Dataset Options**", expanded=False):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
                 unsafe_allow_html=True
             )
             if "final_data" in st.session_state:
+
                 df = st.session_state["final_data"].reset_index()
                 label_df = df[["index", "Class"]]
+
                 row_options = list(label_df.apply(lambda row: f"Index {row['index']} → {row['Class']}", axis=1))
+
                 with st.form(key="edit_dataset_form"):
+
+                    # ---------------------- ROWS TO REMOVE ----------------------
                     selected_rows = st.multiselect("Rows to remove:", row_options, key="selected_rows_to_remove")
                     selected_indexes = [int(row.split()[1]) for row in selected_rows] if selected_rows else []
-                    columns_available_to_remove = [col for col in df.columns if col != "Class"]
+
+                    # ---------------------- COLUMNS TO REMOVE (EXCLUDE CLASS) ----------------------
+                    columns_available_to_remove = [col for col in df.columns if col not in ["Class", "index"]]
+
                     selected_columns = st.multiselect(
-                        "Columns to remove:", columns_available_to_remove, key="selected_columns_to_remove"
+                        "Columns to remove:",
+                        columns_available_to_remove,
+                        key="selected_columns_to_remove"
                     )
+
+                    # ---------------------- REMOVE CLASS VALUES ----------------------
                     unique_classes = sorted(df["Class"].dropna().unique().tolist())
                     selected_classes_to_remove = st.multiselect(
-                        "Remove all samples belonging to the following Class(es):", unique_classes, key="classes_to_remove"
+                        "Remove all samples belonging to the following Class(es):",
+                        unique_classes,
+                        key="classes_to_remove"
                     )
+
+                    # ---------------------- ROWS TO KEEP ----------------------
                     rows_to_keep = st.multiselect("Rows to keep:", row_options, key="rows_to_keep")
                     rows_keep_indexes = [int(row.split()[1]) for row in rows_to_keep] if rows_to_keep else []
+
+                    # ---------------------- COLUMNS TO KEEP (CLASS ALWAYS KEPT) ----------------------
+                    all_columns = [c for c in df.columns if c != "index"]
+                    default_keep = all_columns  # Class always included
+
+                    # UI: disable Class checkbox
                     columns_to_keep = st.multiselect(
-                        "Columns to keep:", list(df.columns), key="columns_to_keep"
+                        "Columns to keep:",
+                        all_columns,
+                        default=default_keep,
+                        key="columns_to_keep"
                     )
+
+                    # Force Class retention (protection)
+                    if "Class" not in columns_to_keep:
+                        columns_to_keep.append("Class")
+
                     col1, col2 = st.columns(2)
                     with col1:
                         apply_changes = st.form_submit_button("Apply Changes")
                     with col2:
                         reset_changes = st.form_submit_button("🔄 Reset All Changes")
+
+                # ------------------------- APPLY CHANGES -------------------------
                 if apply_changes:
                     with st.spinner("Applying modifications..."):
+
+                        # KEEP ROWS first (if selected)
                         if rows_keep_indexes:
                             st.session_state["final_data"] = st.session_state["final_data"].loc[rows_keep_indexes]
+
+                        # KEEP COLUMNS (Class always kept)
                         if columns_to_keep:
+                            if "Class" not in columns_to_keep:
+                                columns_to_keep.append("Class")
                             st.session_state["final_data"] = st.session_state["final_data"][columns_to_keep]
+
+                        # REMOVE ROWS
                         if selected_indexes:
                             st.session_state["final_data"].drop(index=selected_indexes, inplace=True)
+
+                        # REMOVE COLUMNS (Class excluded automatically)
                         if selected_columns:
                             st.session_state["final_data"].drop(columns=selected_columns, inplace=True)
+
+                        # REMOVE CLASS SAMPLES
                         if selected_classes_to_remove:
                             st.session_state["final_data"] = st.session_state["final_data"][
                                 ~st.session_state["final_data"]["Class"].isin(selected_classes_to_remove)
                             ]
+
                         st.session_state["final_data"].reset_index(drop=True, inplace=True)
                         st.session_state["data"] = st.session_state["final_data"]
                         st.success("✅ Modifications applied successfully.")
+
+                # ------------------------- RESET -------------------------
                 if reset_changes:
                     st.session_state["final_data"] = st.session_state["data"].copy()
                     st.success("🔁 Dataset has been restored to its original state.")
+
+                # ------------------------- PREVIEW -------------------------
                 st.markdown("**Preview Updated Dataset**")
                 preview_df = st.session_state["final_data"]
+
                 if preview_df.shape[1] > 100:
                     st.dataframe(pd.concat([preview_df.iloc[:, :50], preview_df.iloc[:, -50:]], axis=1))
                 else:
                     st.dataframe(preview_df)
+
+                # Ask user for filename
+                custom_filename = st.text_input(
+                    "📄 Filename for the cleaned dataset:",
+                    value="Cleaned_Data.csv",
+                    help="Enter a filename (must end with .csv)."
+                )
+
+                # Safety: enforce .csv extension
+                if not custom_filename.lower().endswith(".csv"):
+                    custom_filename = custom_filename + ".csv"
+
                 csv = preview_df.to_csv(index=False).encode('utf-8')
+
                 st.download_button(
                     label="📥 Download Cleaned Dataset (CSV)",
                     data=csv,
-                    file_name='Cleaned_Data.csv',
+                    file_name=custom_filename,
                     mime='text/csv'
                 )
 
 
+
+        st.markdown(
+            """
+            <h3 style="
+                font-size: 1.2rem;
+                border-bottom: 2px solid #318CE7;
+                text-align: center;
+                background-color: #f0f8ff;
+                padding: 10px;
+                border-radius: 5px;">
+                Data Wrangling
+            </h3>
+            """,
+            unsafe_allow_html=True
+        )
+
         with st.expander("**⚙️ Preprocessing**", expanded=False):
             st.markdown(
-                '<p style="color: gray; font-size: 14px">Filtering, Imputation, Binning, Normalization, and Batch Effect Correction</p>',
+                '<p style="color: gray; font-size: 14px">Filtering, Imputation, Binning, Normalization, Batch Effect Correction and sparse matrix handling</p>',
                 unsafe_allow_html=True
             )
 
+            df_overview = st.session_state.get('overview_df')
+            submitted = False
+            if df_overview is None or df_overview.empty:
+                st.warning("⚠️ You must load a dataset in **Data Overview** before running preprocessing steps.")
+            else:
+                # base copy
+                data_to_preprocess = df_overview.copy()
 
-            data_to_preprocess = None
-            if "final_data" in st.session_state and st.session_state["final_data"] is not None and not st.session_state["final_data"].empty:
-                data_to_preprocess = st.session_state["final_data"]
-            elif "data" in st.session_state and st.session_state["data"] is not None and not st.session_state["data"].empty:
-                data_to_preprocess = st.session_state["data"]
-
-            if data_to_preprocess is None:
-                st.warning("No data available for preprocessing.")
-                # st.stop()
-
-            apply_binning_option = st.checkbox(
-                "Shrink mass range or apply Binning?",
-                key="apply_binning_option",
-                help="Only relevant for ion spectra (m/z features)."
-            )
-
-            with st.form("preprocessing_form"):
-                # ------------------ Filters ------------------
-                min_detection_threshold = st.slider(
-                    "Minimum features detection rate per class (%)",
-                    0, 100, 0, 5,
-                    help="Keep features detected in at least X% of samples per class."
+                apply_binning_option = st.checkbox(
+                    "Shrink mass range or apply Binning?",
+                    key="apply_binning_option",
+                    help="Only relevant for ion spectra (MS1 data)."
                 )
-                # ------------------ Imputation ------------------
-                imputation_method = st.selectbox(
-                    "Select Missing Value Imputation Method",
-                    [
-                        'None', 'Mean Imputation', 'Median Imputation', 'Mode Imputation',
-                        'Delete Missing Values', 'KNN Imputation', 'Fillna with 0', 'Shifted Gaussian'
-                    ],
-                    key="imputation_method"
-                )
-                impute_by_class = st.checkbox("🔹 Impute missing values per class?", value=False)
 
-                # ------------------ Remove entirely missing columns after class-wise imputation ------------------
-                remove_exclusive_missing = False
-                if impute_by_class:
+                # helper utilities local to this block
+                cols_exclude = ['Class', 'File', 'RT', 'Sum']
+
+                def get_numeric_features(df):
+                    return [c for c in df.columns if c not in cols_exclude and pd.api.types.is_numeric_dtype(df[c])]
+
+                def shifted_gaussian_fill(series, shift=1.8, width=0.3, rng=None):
+                    vals = series.dropna()
+                    if vals.empty:
+                        return series
+                    mu, sigma = vals.mean(), vals.std(ddof=0)
+                    n_missing = series.isna().sum()
+                    if n_missing == 0:
+                        return series
+                    if rng is None:
+                        rng = np.random.default_rng()
+                    filled = rng.normal(loc=mu - shift * sigma, scale=width * sigma, size=n_missing)
+                    out = series.copy()
+                    out.loc[out.isna()] = filled
+                    return out
+
+                with st.form("preprocessing_form"):
+
+                    # ------------------ Filters ------------------
+                    min_detection_threshold = st.number_input(
+                        "Minimum features detection rate per class (%)",
+                        min_value=0,
+                        max_value=100,
+                        value=0,
+                        step=1,
+                        help="Keep features detected in at least X% of samples per class. "
+                            "If zero-inflated filter is applied, zeros are considered as missing values."
+                    )
+
+                    apply_zero_inflated_filter = st.checkbox(
+                        "Apply zero-inflated feature filter (sparse matrix)?",
+                        value=False,
+                        help="Treat zeros as missing values for filtering features that are mostly zeros and choose Detele Missing Values method"
+                            "(useful for RNA-seq / transcriptomics and MS1 data)."
+                    )
+
+                    # ------------------ Imputation ------------------
+                    imputation_method = st.selectbox(
+                        "Select Missing Value Imputation Method",
+                        [
+                            'None', 'Mean Imputation', 'Median Imputation', 'Mode Imputation',
+                            'Delete Missing Values', 'KNN Imputation', 'Fillna with 0', 'Shifted Gaussian'
+                        ],
+                        key="imputation_method"
+                    )
+
+                    impute_by_class = st.checkbox(
+                        "🔹 Impute missing values per class?",
+                        value=False,
+                        help="Perform imputation separately within each Class."
+                    )
+
                     remove_exclusive_missing = st.checkbox(
                         "🔹Remove features that remain entirely missing in any class after class-wise imputation?",
                         value=False,
                         help="Removes features that are still all NaN in at least one class after imputation per Class."
                     )
 
-                # ------------------ Binning ------------------
-                bin_width = mass_range_min = mass_range_max = None
-                if apply_binning_option:
-                    mz_cols = [col for col in data_to_preprocess.columns if col not in ['Class', 'File', 'RT', 'Sum']]
-                    mz_values = []
-                    for col in mz_cols:
-                        try:
-                            mz_values.append(float(str(col).replace("mz_", "").strip()))
-                        except:
-                            continue
-                    if mz_values:
-                        min_detected, max_detected = min(mz_values), max(mz_values)
-                        st.info(f"Detected m/z range: {min_detected:.4f} - {max_detected:.4f} Da")
-                        bin_width = st.number_input("Bin Width (Da)", 0.0001, 100.0, 0.1, 0.1)
-                        mass_range_min = st.number_input("Min Mass Range", value=min_detected, format="%.4f")
-                        mass_range_max = st.number_input("Max Mass Range", value=max_detected, format="%.4f")
-                    else:
-                        st.warning("No valid m/z columns found for binning.")
-                        bin_width, mass_range_min, mass_range_max = 0.1, 0.0, 0.0
-
-                # ------------------ Normalization ------------------
-                normalization_type = st.selectbox(
-                    "Normalization Type",
-                    ['None', 'TIC', 'RMS', 'BasePeak', 'QNorm', 'Log Normalization', 'Log10', 'Log2'],
-                    key="normalization_type"
-                )
-
-                apply_combat = st.checkbox("Apply batch effect correction (Combat)?")
-
-                submitted = st.form_submit_button("Preprocess Data")
-
-            if submitted:
-                try:
-                    data = data_to_preprocess.copy()
-                    progress = st.progress(0)
-
-                    # Stats for summary
-                    removed_by_detection = 0
-                    removed_by_exclusive_missing = 0
-
-                    # ------------------ Detection Filter ------------------
-                    try:
-                        cols_exclude = ['Class', 'File', 'RT', 'Sum']
-                        numeric_cols = [c for c in data.columns if c not in cols_exclude and pd.api.types.is_numeric_dtype(data[c])]
-                        if min_detection_threshold > 0 and 'Class' in data.columns:
-                            keep_features = [
-                                col for col in numeric_cols
-                                if all((group[col].notna().sum() / len(group)) >= min_detection_threshold / 100
-                                    for _, group in data.groupby('Class'))
-                            ]
-                            removed_by_detection = len(numeric_cols) - len(keep_features)
-                            if removed_by_detection > 0:
-                                st.warning(f"{removed_by_detection} features removed due to <{min_detection_threshold}% detection in at least one class.")
-                            data = data[cols_exclude + keep_features]
-                        numeric_cols = [c for c in data.columns if c not in cols_exclude and pd.api.types.is_numeric_dtype(data[c])]
-                    except Exception as e:
-                        st.error(f"Error in detection filter: {e}")
-                    else:
-                        progress.progress(20)
-
-                    # ------------------ Imputation ------------------
-                    try:
-                        if imputation_method != 'None':
-                            st.info(f"Applying {imputation_method}...")
-                            if imputation_method in ['Mean Imputation', 'Median Imputation']:
-                                func = np.mean if imputation_method == 'Mean Imputation' else np.median
-                                if impute_by_class:
-                                    data[numeric_cols] = data.groupby('Class')[numeric_cols].transform(lambda x: x.fillna(func(x)))
-                                else:
-                                    data[numeric_cols] = data[numeric_cols].fillna(func(data[numeric_cols]))
-                            elif imputation_method == 'Mode Imputation':
-                                for col in numeric_cols:
-                                    if impute_by_class:
-                                        data[col] = data.groupby('Class')[col].transform(lambda x: x.fillna(x.mode().iloc[0] if not x.mode().empty else x))
-                                    else:
-                                        mode = data[col].mode()
-                                        if not mode.empty: data[col] = data[col].fillna(mode.iloc[0])
-                            elif imputation_method == 'Delete Missing Values':
-                                data.dropna(axis=1, inplace=True)
-                            elif imputation_method == 'KNN Imputation':
-                                from sklearn.impute import KNNImputer
-                                if impute_by_class:
-                                    df_list = []
-                                    for cls, subset in data.groupby('Class'):
-                                        if len(subset) < 5:
-                                            st.error(f"Class '{cls}' has less than 5 samples for KNN. Aborting.")
-                                            st.stop()
-                                        subset_numeric = subset[numeric_cols].copy()
-                                        valid_cols = subset_numeric.columns[subset_numeric.notna().any()]
-                                        subset_numeric = subset_numeric[valid_cols]
-                                        knn = KNNImputer(n_neighbors=5)
-                                        subset[valid_cols] = pd.DataFrame(knn.fit_transform(subset_numeric), columns=valid_cols, index=subset.index)
-                                        df_list.append(subset)
-                                    data = pd.concat(df_list)
-                                else:
-                                    if len(data) < 5:
-                                        st.error("Dataset has fewer than 5 samples for KNN. Aborting.")
-                                        st.stop()
-                                    subset_numeric = data[numeric_cols].copy()
-                                    valid_cols = subset_numeric.columns[subset_numeric.notna().any()]
-                                    subset_numeric = subset_numeric[valid_cols]
-                                    knn = KNNImputer(n_neighbors=5)
-                                    data[valid_cols] = pd.DataFrame(knn.fit_transform(subset_numeric), columns=valid_cols, index=data.index)
-                            elif imputation_method == 'Fillna with 0':
-                                data[numeric_cols] = data[numeric_cols].fillna(0)
-                            elif imputation_method == 'Shifted Gaussian':
-                                def shifted_gaussian(df, cols, shift=1.8, width=0.3):
-                                    df_copy = df.copy()
-                                    for c in cols:
-                                        vals = df_copy[c].dropna()
-                                        if vals.empty: continue
-                                        mean, std = vals.mean(), vals.std()
-                                        n_missing = df_copy[c].isna().sum()
-                                        df_copy.loc[df_copy[c].isna(), c] = np.random.normal(loc=mean-shift*std, scale=width*std, size=n_missing)
-                                    return df_copy
-                                if impute_by_class:
-                                    df_list = [shifted_gaussian(subset, numeric_cols) for _, subset in data.groupby('Class')]
-                                    data = pd.concat(df_list)
-                                else:
-                                    data = shifted_gaussian(data, numeric_cols)
-
-                            # --- Remove features still entirely missing in some class ---
-                            if impute_by_class:
-                                if remove_exclusive_missing:
-                                    for col in numeric_cols:
-                                        if any(data.groupby('Class')[col].apply(lambda x: x.isna().all())):
-                                            data.drop(columns=[col], inplace=True)
-                                            removed_by_exclusive_missing += 1
-
-                    except Exception as e:
-                        st.error(f"Error during imputation: {e}")
-                    else:
-                        progress.progress(40)
-                        st.success("✅ Imputation completed")
-
                     # ------------------ Binning ------------------
-                    try:
-                        if apply_binning_option:
-                            data = apply_binning_to_mass_range(data, bin_width, (mass_range_min, mass_range_max))
-                    except Exception as e:
-                        st.error(f"Binning error: {e}")
-                    else:
-                        progress.progress(60)
-                        if apply_binning_option:
-                            st.success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
+                    bin_width = mass_range_min = mass_range_max = None
+                    if apply_binning_option:
+                        mz_cols = [col for col in data_to_preprocess.columns if col not in cols_exclude]
+                        mz_values = []
+                        for col in mz_cols:
+                            try:
+                                mz_values.append(float(str(col).replace("mz_", "").strip()))
+                            except:
+                                continue
+                        if mz_values:
+                            min_detected, max_detected = min(mz_values), max(mz_values)
+                            st.info(f"Detected m/z range: {min_detected:.4f} - {max_detected:.4f} Da")
+                            bin_width = st.number_input("Bin Width (Da)", 0.0001, 100.0, 0.1, 0.1)
+                            mass_range_min = st.number_input("Min Mass Range", value=min_detected, format="%.4f")
+                            mass_range_max = st.number_input("Max Mass Range", value=max_detected, format="%.4f")
+                        else:
+                            st.warning("No valid m/z columns found for binning.")
+                            bin_width, mass_range_min, mass_range_max = 0.1, 0.0, 0.0
 
                     # ------------------ Normalization ------------------
-                    try:
-                        if normalization_type != 'None':
-                            data = preprocess_data(data, normalization_type, progress)
-                    except Exception as e:
-                        st.error(f"Normalization error: {e}")
-                    else:
-                        progress.progress(80)
-                        if normalization_type != 'None':
-                            st.success(f"{normalization_type} normalization applied")
-                        else:
-                            st.info("No normalization applied")
-
-                    # ------------------ Combat Batch Correction ------------------
-                    try:
-                        if apply_combat:
-                            if 'Class' not in data.columns or len(data['Class'].unique()) < 2:
-                                st.warning("Combat skipped: need at least 2 classes with 'Class' column.")
-                            else:
-                                from neurocombat_sklearn import CombatModel
-                                from sklearn.preprocessing import LabelEncoder
-                                le = LabelEncoder()
-                                batch_labels = le.fit_transform(data['Class']).reshape(-1,1)
-                                feat_cols = [c for c in data.columns if c not in cols_exclude]
-                                features = data[feat_cols].dropna(axis=1)
-                                combat = CombatModel()
-                                corrected = combat.fit_transform(features, batch_labels)
-                                meta = data[cols_exclude].copy() if any(c in data.columns for c in cols_exclude) else pd.DataFrame()
-                                data = pd.concat([meta.reset_index(drop=True), pd.DataFrame(corrected, columns=features.columns)], axis=1)
-                                st.success("✅ Combat correction applied")
-
-
-                    except Exception as e:
-                        st.error(f"❌ Combat correction failed: {e}")
-
-                    except Exception as e:
-                        st.error(f"Combat correction error: {e}")
-                    else:
-                        progress.progress(100)
-
-                    # ------------------ Save & Summary ------------------
-                    st.session_state['preprocessed_data'] = data
-
-                    st.markdown("**Preprocessing Summary**")
-                    st.write(f"- Detection filter: {min_detection_threshold}% per class → {removed_by_detection} features removed")
-                    st.write(f"- Imputation: {imputation_method} {'(per class)' if impute_by_class else ''} → {removed_by_exclusive_missing} exclusive missing features removed")
-                    st.write(f"- Binning: {'Yes' if apply_binning_option else 'No'}")
-                    st.write(f"- Normalization: {normalization_type}")
-                    st.write(f"- Batch correction: {'Yes' if apply_combat else 'No'}")
-                    st.write(f"- Total features after preprocessing: {data.shape[1] - len(cols_exclude)}")
-
-                    # ------------------ Preview & Download ------------------
-                    df_preview = st.session_state['preprocessed_data']
-                    st.markdown("**Preprocessed Data Preview**")
-                    total_cols = df_preview.shape[1]
-                    if total_cols > 1000:
-                        st.info(f"Too many features ({total_cols}). Showing first 400 & last 400 columns. You can download the full preprocced dataset below.")
-                        preview_df = pd.concat([df_preview.iloc[:, :400], df_preview.iloc[:, -400:]], axis=1)
-                        st.dataframe(preview_df, hide_index=True)
-                    else:
-                        st.dataframe(df_preview, hide_index=True)
-
-                    st.download_button(
-                        "📥 Download full preprocessed data (CSV)",
-                        data=df_preview.to_csv(index=False).encode('utf-8'),
-                        file_name='preprocessed_data.csv', mime='text/csv'
+                    normalization_type = st.selectbox(
+                        "Normalization Type",
+                        ['None', 'TIC', 'RMS', 'BasePeak', 'QNorm', 'Log Normalization', 'Log10', 'Log2'],
+                        key="normalization_type"
                     )
 
-                except Exception as e:
-                    st.error(f"Preprocessing failed: {e}")
+                    apply_combat = st.checkbox(
+                        "Apply batch effect correction (Combat)?",
+                        help=(
+                            "Apply Combat batch effect correction using the column 'Class' as batch labels.\n"
+                            "⚠️ If you want to correct for other factors (e.g., time points, tissue type, biological conditions), "
+                            "rename the relevant column to 'Class' before running this step.\n"
+                            "After correction, download the dataset and optionally rename columns according to your experimental design."
+                        )
+                    )
+
+                    # debug / performance options
+                    # debug_mode = st.checkbox("Show debug logs?", value=False)
+                    knn_k = st.number_input("K for KNN (if selected)", min_value=1, max_value=50, value=5, step=1,help="K defines how many nearest neighbours are used to generate each new imputed value. By default, K=5 means the missing value is estimated from the 5 closest samples. Because this method relies on neighbour structure, results may slightly vary and will never be strictly identical. Increase K for a more smoother imputation, or decrease it for more local sensitivity.")
+
+                    submitted = st.form_submit_button("Preprocess Data")
+
+                if submitted:
+                    try:
+                        data = data_to_preprocess.copy()
+                        progress = st.progress(0)
+
+                        # Stats for summary
+                        removed_by_detection = 0
+                        removed_by_exclusive_missing = 0
+
+                        # ------------------ Detection Filter ------------------
+                        try:
+                            numeric_cols = get_numeric_features(data)
+                            if min_detection_threshold > 0 and 'Class' in data.columns and numeric_cols:
+                                keep_features = []
+                                for col in numeric_cols:
+                                    keep_col = True
+                                    for _, group in data.groupby('Class'):
+                                        values = group[col]
+                                        # If zero-inflated => zero counts as missing
+                                        if apply_zero_inflated_filter:
+                                            present = ((values.notna()) & (values != 0)).sum()
+                                        else:
+                                            present = values.notna().sum()
+                                        present_pct = present / len(values) * 100
+                                        if present_pct < min_detection_threshold:
+                                            keep_col = False
+                                            # if debug_mode:
+                                            #     st.write(f"Drop {col}: {present_pct:.1f}% < {min_detection_threshold}% in a class")
+                                            # break
+                                    if keep_col:
+                                        keep_features.append(col)
+
+                                removed_by_detection = len(numeric_cols) - len(keep_features)
+                                if removed_by_detection > 0:
+                                    st.warning(f"{removed_by_detection} features removed due to threshold per class.")
+                                # keep at least cols_exclude; if no feature remains, keep only metadata
+                                kept_cols = cols_exclude + keep_features
+                                kept_cols = [c for c in kept_cols if c in data.columns]
+                                if keep_features:
+                                    data = data[kept_cols].copy()
+                                else:
+                                    # keep only metadata to avoid empty dataframes
+                                    data = data[[c for c in cols_exclude if c in data.columns]].copy()
+                        except Exception as e:
+                            st.error(f"Error in detection filter: {e}")
+                            st.stop()
+                        else:
+                            progress.progress(20)
+
+                        # ------------------ Imputation ------------------
+                        try:
+                            numeric_cols = get_numeric_features(data)  # recalc after filtering
+                            if imputation_method != 'None' and numeric_cols:
+                                st.info(f"Applying {imputation_method}...")
+                                rng = np.random.default_rng()
+
+                                if imputation_method in ['Mean Imputation', 'Median Imputation']:
+                                    func = np.mean if imputation_method == 'Mean Imputation' else np.median
+                                    if impute_by_class and 'Class' in data.columns:
+                                        # fill per class using group agg
+                                        for cls, grp in data.groupby('Class'):
+                                            idx = grp.index
+                                            fill_vals = grp[numeric_cols].aggregate(func)
+                                            data.loc[idx, numeric_cols] = grp[numeric_cols].fillna(fill_vals).values
+                                    else:
+                                        fill_vals = data[numeric_cols].aggregate(func)
+                                        data[numeric_cols] = data[numeric_cols].fillna(fill_vals)
+
+                                elif imputation_method == 'Mode Imputation':
+                                    for col in numeric_cols:
+                                        if impute_by_class and 'Class' in data.columns:
+                                            for cls, grp in data.groupby('Class'):
+                                                mode = grp[col].mode()
+                                                if not mode.empty:
+                                                    data.loc[grp.index, col] = grp[col].fillna(mode.iloc[0])
+                                        else:
+                                            mode = data[col].mode()
+                                            if not mode.empty:
+                                                data[col] = data[col].fillna(mode.iloc[0])
+
+                                elif imputation_method == 'Delete Missing Values':
+                                    # delete columns that contain ANY NaN
+                                    data = data.dropna(axis=1)
+                                elif imputation_method == 'KNN Imputation':
+                                    from sklearn.impute import KNNImputer
+                                    numeric_cols = get_numeric_features(data)
+                                    if not numeric_cols:
+                                        # nothing to impute
+                                        pass
+                                    else:
+                                        if impute_by_class and 'Class' in data.columns:
+                                            frames = []
+                                            for cls, grp in data.groupby('Class'):
+                                                grp_numeric = grp[numeric_cols].copy()
+                                                if len(grp_numeric) < max(1, int(knn_k)):
+                                                    st.error(f"Class '{cls}' has fewer than {knn_k} samples for KNN. Aborting.")
+                                                    st.stop()
+                                                # keep columns that have at least one non-NaN otherwise KNNImputer can't work on a constant-empty column
+                                                valid_cols = grp_numeric.columns[grp_numeric.notna().any()]
+                                                if len(valid_cols) == 0:
+                                                    # nothing to impute in this class, keep as-is
+                                                    frames.append(grp)
+                                                    continue
+                                                imputer = KNNImputer(n_neighbors=min(int(knn_k), len(grp_numeric) - 1))
+                                                transformed = imputer.fit_transform(grp_numeric[valid_cols])
+                                                grp.loc[:, valid_cols] = pd.DataFrame(transformed, columns=valid_cols, index=grp.index)
+                                                frames.append(grp)
+                                            data = pd.concat(frames)
+                                        else:
+                                            if len(data) < max(1, int(knn_k)):
+                                                st.error(f"Dataset has fewer than {knn_k} samples for KNN. Aborting.")
+                                                st.stop()
+                                            grp_numeric = data[numeric_cols].copy()
+                                            valid_cols = grp_numeric.columns[grp_numeric.notna().any()]
+                                            if len(valid_cols) > 0:
+                                                imputer = KNNImputer(n_neighbors=min(int(knn_k), len(data) - 1))
+                                                data.loc[:, valid_cols] = pd.DataFrame(imputer.fit_transform(grp_numeric[valid_cols]), columns=valid_cols, index=data.index)
+
+                                elif imputation_method == 'Fillna with 0':
+                                    data[numeric_cols] = data[numeric_cols].fillna(0)
+
+                                elif imputation_method == 'Shifted Gaussian':
+                                    numeric_cols = get_numeric_features(data)
+                                    if impute_by_class and 'Class' in data.columns:
+                                        parts = []
+                                        for _, grp in data.groupby('Class'):
+                                            grp2 = grp.copy()
+                                            for c in numeric_cols:
+                                                grp2[c] = shifted_gaussian_fill(grp2[c], rng=rng)
+                                            parts.append(grp2)
+                                        data = pd.concat(parts)
+                                    else:
+                                        for c in numeric_cols:
+                                            data[c] = shifted_gaussian_fill(data[c], rng=rng)
+
+                                else:
+                                    st.error(f"Unknown imputation method: {imputation_method}")
+                            # if imputation method is None or no numeric cols, nothing to do
+                        except Exception as e:
+                            st.error(f"Error during imputation: {e}")
+                            st.stop()
+                        else:
+                            progress.progress(40)
+                            st.success("✅ Imputation completed")
+
+                        # ------------------ Remove features still entirely missing in some class ------------------
+                        try:
+                            # recalc numeric columns after imputation / drops
+                            numeric_cols = get_numeric_features(data)
+                            if remove_exclusive_missing and numeric_cols:
+                                to_drop = []
+                                if impute_by_class and 'Class' in data.columns:
+                                    for col in numeric_cols:
+                                        # if any class has all NaN for this column -> drop it
+                                        if any(group[col].isna().all() for _, group in data.groupby('Class')):
+                                            to_drop.append(col)
+                                else:
+                                    to_drop = [col for col in numeric_cols if data[col].isna().all()]
+
+                                if to_drop:
+                                    data.drop(columns=to_drop, inplace=True)
+                                    removed_by_exclusive_missing = len(to_drop)
+                                    if debug_mode:
+                                        st.write(f"Removed exclusive-missing features: {to_drop}")
+                        except Exception as e:
+                            st.error(f"Error removing exclusive missing features: {e}")
+                            st.stop()
+                        else:
+                            progress.progress(60)
+
+                        # Final strict validation: no NaN allowed in numeric features
+                        try:
+                            numeric_cols_final = get_numeric_features(data)
+                            total_remaining_nans = int(data[numeric_cols_final].isna().sum().sum()) if numeric_cols_final else 0
+                            if total_remaining_nans > 0:
+                                st.error(f"❌ {total_remaining_nans} missing values remain after preprocessing. Please adjust imputation settings or enable removal of exclusive missing features.")
+                                st.stop()
+                        except Exception as e:
+                            st.error(f"Validation error after imputation: {e}")
+                            st.stop()
+
+                        # ------------------ Binning ------------------
+                        try:
+                            if apply_binning_option and bin_width is not None and mass_range_min is not None and mass_range_max is not None:
+                                # call domain-specific binning function (must exist in your codebase)
+                                data = apply_binning_to_mass_range(data, bin_width, (mass_range_min, mass_range_max))
+                        except Exception as e:
+                            st.error(f"Binning error: {e}")
+                        else:
+                            progress.progress(70)
+                            if apply_binning_option:
+                                st.success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
+
+                        # ------------------ Normalization ------------------
+                        try:
+                            if normalization_type != 'None':
+                                data = preprocess_data(data, normalization_type, progress)
+                        except Exception as e:
+                            st.error(f"Normalization error: {e}")
+                        else:
+                            progress.progress(85)
+                            if normalization_type != 'None':
+                                st.success(f"{normalization_type} normalization applied")
+                            else:
+                                st.info("No normalization applied")
+
+                        # ------------------ Combat Batch Correction ------------------
+                        try:
+                            if apply_combat:
+                                if 'Class' not in data.columns or len(data['Class'].unique()) < 2:
+                                    st.warning("Combat skipped: need at least 2 classes with 'Class' column.")
+                                else:
+                                    from neurocombat_sklearn import CombatModel
+                                    from sklearn.preprocessing import LabelEncoder
+                                    le = LabelEncoder()
+                                    batch_labels = le.fit_transform(data['Class']).reshape(-1, 1)
+                                    feat_cols = [c for c in data.columns if c not in cols_exclude]
+                                    # ensure numeric and drop any col that still contains NaN (shouldn't happen)
+                                    features = data[feat_cols].select_dtypes(include=[np.number]).copy()
+                                    features = features.dropna(axis=1)
+                                    if features.shape[1] == 0:
+                                        st.warning("No numeric features available for Combat after dropping NaNs.")
+                                    else:
+                                        combat = CombatModel()
+                                        corrected = combat.fit_transform(features, batch_labels)
+                                        meta = data[[c for c in cols_exclude if c in data.columns]].reset_index(drop=True)
+                                        data = pd.concat([meta, pd.DataFrame(corrected, columns=features.columns)], axis=1)
+                                        st.success("✅ Combat correction applied")
+                        except Exception as e:
+                            st.error(f"❌ Combat correction failed: {e}")
+
+                        progress.progress(100)
+
+                        # ------------------ Save & Summary ------------------
+                        st.session_state['preprocessed_data'] = data
+
+                        st.markdown("**Preprocessing Summary**")
+                        st.write(f"- Detection filter: {min_detection_threshold}% per class → {removed_by_detection} features removed")
+                        st.write(f"- Imputation: {imputation_method} {'(per class)' if impute_by_class else ''} → {removed_by_exclusive_missing} exclusive missing features removed")
+                        st.write(f"- Binning: {'Yes' if apply_binning_option else 'No'}")
+                        st.write(f"- Normalization: {normalization_type}")
+                        st.write(f"- Batch correction: {'Yes' if apply_combat else 'No'}")
+                        # count features excluding metadata
+                        feature_count = len([c for c in data.columns if c not in cols_exclude])
+                        st.write(f"- Total features after preprocessing: {feature_count}")
+
+                        # ------------------ Preview & Download ------------------
+                        df_preview = st.session_state['preprocessed_data']
+                        st.markdown("**Preprocessed Data Preview**")
+                        total_cols = df_preview.shape[1]
+
+                        if total_cols > 100:
+                            st.info(f"Too many features ({total_cols}). Showing first 50 & last 50 columns. You can download the full preprocessed dataset below.")
+                            preview_df = pd.concat([df_preview.iloc[:, :50], df_preview.iloc[:, -50:]], axis=1)
+                            st.dataframe(preview_df, hide_index=True)
+                        else:
+                            st.dataframe(df_preview, hide_index=True)
+
+                        # Text input pour nom du fichier
+                        file_name_input = st.text_input(
+                            "Enter a name for your CSV file:",
+                            value="preprocessed_data",
+                            help="Provide a custom name for the preprocessed dataset CSV file (without extension)."
+                        )
+
+                        # Bouton de téléchargement
+                        st.download_button(
+                            label="📥 Download full preprocessed data (CSV)",
+                            data=df_preview.to_csv(index=False).encode('utf-8'),
+                            file_name=f"{file_name_input}.csv",
+                            mime='text/csv'
+                        )
+                    except Exception as e:
+                        st.error(f"Preprocessing failed: {e}")
+
 
         # ------------------ Oversampling ------------------
         with st.expander("**🔼 Oversampling**", expanded=False):
@@ -3031,11 +3256,18 @@ def main():
                 # Highlight feature names
                 highlight_features = st.checkbox(
                     "Highlight Feature Names",
-                    value=True,
+                    value=False,
                     key="highlight_features",
                     help="Check this box to highlight feature names in the Volcano Plot."
                 )
-
+                # custom_highlight_input = st.text_area(
+                #     "Features to highlight (optional)",
+                #     placeholder="mz_123.456, ProtX, Feature_X...",
+                #     help=(
+                #         "Enter specific feature names (comma-separated) that you want to highlight on the Volcano plot. "
+                #         "Only their names will be displayed, regardless of statistical significance."
+                #     )
+                # )
                 # Submit button
                 submitted = st.form_submit_button("Display Volcano Plot")
 
@@ -3101,6 +3333,7 @@ def main():
                                     p_value_threshold,
                                     fold_change_threshold
                                 )
+
                                 st.plotly_chart(volcano_plot)
 
                                 # Store results
@@ -3113,55 +3346,55 @@ def main():
                             del data_vol
                             gc.collect()
 
-        # ---------------- RESULTS ----------------
-        if "volcano_data" in st.session_state:
-            try:
-                volcano_data = st.session_state["volcano_data"]
-                data_vol = st.session_state.get("volcano_data_source_df")  
-                comparisons = volcano_data["Comparison"].unique()
-                significant_features = set()
+            # ---------------- RESULTS ----------------
+            if "volcano_data" in st.session_state:
+                try:
+                    volcano_data = st.session_state["volcano_data"]
+                    data_vol = st.session_state.get("volcano_data_source_df")  
+                    comparisons = volcano_data["Comparison"].unique()
+                    significant_features = set()
 
-                for comparison in comparisons:
-                    comparison_data = volcano_data[volcano_data["Comparison"] == comparison]
-                    upregulated = comparison_data[comparison_data["Regulation Type"] == "Upregulated"]["Feature"].tolist()
-                    downregulated = comparison_data[comparison_data["Regulation Type"] == "Downregulated"]["Feature"].tolist()
+                    for comparison in comparisons:
+                        comparison_data = volcano_data[volcano_data["Comparison"] == comparison]
+                        upregulated = comparison_data[comparison_data["Regulation Type"] == "Upregulated"]["Feature"].tolist()
+                        downregulated = comparison_data[comparison_data["Regulation Type"] == "Downregulated"]["Feature"].tolist()
 
-                    st.write(f"**Comparison: {comparison}**")
+                        st.write(f"**Comparison: {comparison}**")
 
-                    if upregulated:
-                        st.info("**Upregulated Features:**")
-                        st.success(", ".join(upregulated))
-                        significant_features.update(upregulated)
-                    else:
-                        st.warning("No specifically upregulated features found.")
+                        if upregulated:
+                            st.info("**Upregulated Features:**")
+                            st.success(", ".join(upregulated))
+                            significant_features.update(upregulated)
+                        else:
+                            st.warning("No specifically upregulated features found.")
 
-                    if downregulated:
-                        st.info("**Downregulated Features:**")
-                        st.success(", ".join(downregulated))
-                        significant_features.update(downregulated)
-                    else:
-                        st.warning("No specifically downregulated features found.")
+                        if downregulated:
+                            st.info("**Downregulated Features:**")
+                            st.success(", ".join(downregulated))
+                            significant_features.update(downregulated)
+                        else:
+                            st.warning("No specifically downregulated features found.")
 
-                # Display dataframe of significant features from the selected data source
-                if significant_features and data_vol is not None:
-                    significant_features = list(significant_features)
-                    class_column = st.session_state.get("class_column", "Class")
+                    # Display dataframe of significant features from the selected data source
+                    if significant_features and data_vol is not None:
+                        significant_features = list(significant_features)
+                        class_column = st.session_state.get("class_column", "Class")
 
-                    missing_cols = [f for f in significant_features if f not in data_vol.columns]
-                    if missing_cols:
-                        st.warning(f"Missing columns in selected data source: {', '.join(missing_cols)}")
-                        significant_features = [f for f in significant_features if f not in missing_cols]
+                        missing_cols = [f for f in significant_features if f not in data_vol.columns]
+                        if missing_cols:
+                            st.warning(f"Missing columns in selected data source: {', '.join(missing_cols)}")
+                            significant_features = [f for f in significant_features if f not in missing_cols]
 
-                    if class_column in data_vol.columns:
-                        significant_data = data_vol[[class_column] + significant_features]
-                        st.write("**DataFrame with Significant Features from Selected Source:**")
-                        st.dataframe(significant_data, hide_index=True)
-                    else:
-                        st.error("Class column missing from the selected data source.")
-                elif not significant_features:
-                    st.warning("No significant features found.")
-            except Exception as e:
-                st.error(f"Unexpected error: {e}")
+                        if class_column in data_vol.columns:
+                            significant_data = data_vol[[class_column] + significant_features]
+                            st.write("**DataFrame with Significant Features from Selected Source:**")
+                            st.dataframe(significant_data, hide_index=True)
+                        else:
+                            st.error("Class column missing from the selected data source.")
+                    elif not significant_features:
+                        st.warning("No significant features found.")
+                except Exception as e:
+                    st.error(f"Unexpected error: {e}")
 
 
 

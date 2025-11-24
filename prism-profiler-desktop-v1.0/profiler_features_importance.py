@@ -273,7 +273,7 @@ def boxplot_significant_features(data, mz_values, class_colors=None, test='Krusk
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig)
+    st.pyplot(fig,dpi=300)
 
 
 
@@ -330,7 +330,7 @@ def violinplot_significant_features(data, mz_values, class_colors=None, test='Kr
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig)
+    st.pyplot(fig,dpi=300)
 
 def barplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
     data.columns = data.columns.astype(str)
@@ -385,7 +385,7 @@ def barplot_significant_features(data, mz_values, class_colors=None, test='Krusk
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig)
+    st.pyplot(fig,dpi=300)
 
 
 
@@ -573,16 +573,26 @@ def plot_volcano(volcano_data, highlight_features=True, p_value_threshold=0.05, 
         fig.update_traces(textposition='top center', textfont=dict(color='black', size=12))
 
     # Global layout: fonts and sizes
+    # fig.update_layout(
+    #     title=dict(font=dict(size=22, color="black")),
+    #     font=dict(size=18, color="black"),  
+    #     legend=dict(font=dict(size=16, color="black")),
+    #     xaxis=dict(title_font=dict(size=20, color="black"), tickfont=dict(size=16, color="black")),
+    #     yaxis=dict(title_font=dict(size=20, color="black"), tickfont=dict(size=16, color="black")),
+    #     plot_bgcolor="white"
+    # )
     fig.update_layout(
-        title=dict(font=dict(size=22, color="black")),
-        font=dict(size=18, color="black"),  
-        legend=dict(font=dict(size=16, color="black")),
-        xaxis=dict(title_font=dict(size=20, color="black"), tickfont=dict(size=16, color="black")),
-        yaxis=dict(title_font=dict(size=20, color="black"), tickfont=dict(size=16, color="black")),
-        plot_bgcolor="white"
+        title=dict(font=dict(size=24, color="black")),
+        font=dict(size=20, color="black"),
+        legend=dict(font=dict(size=18, color="black")),
+        xaxis=dict(title_font=dict(size=22, color="black"), tickfont=dict(size=18, color="black")),
+        yaxis=dict(title_font=dict(size=22, color="black"), tickfont=dict(size=18, color="black")),
+        plot_bgcolor="white",
+        width=1200,  # Taille en pixels pour un rendu plus net
+        height=800,
     )
-
     return fig
+
 
 
 
@@ -699,72 +709,7 @@ def plot_heatmap_samples(data, class_colors, selected_features, custom_colors, s
     st.download_button("📥 Download Heatmap as PNG", buf.getvalue(), "heatmap.png")
 
 
-# def plot_significant_features(
-#     data, mz_values, class_colors=None, test='Kruskal', loc='inside',
-#     show_scatter=False, use_log2=False, plot_type='box', pval_correction=None
-# ):
 
-
-#     data = data.copy()
-
-#     data.columns = data.columns.astype(str)
-#     label = 'Class'
-#     order = sorted(data[label].unique())
-#     box_pairs = list(combinations(order, 2))
-
-#     palette = {cls: class_colors.get(cls, 'blue') for cls in order} if class_colors else None
-
-#     num_mz = len(mz_values)
-#     num_cols = int(np.ceil(np.sqrt(num_mz)))
-#     num_rows = int(np.ceil(num_mz / num_cols))
-
-#     fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
-#     progress_bar = st.progress(0)
-#     step = 1.0 / num_mz
-
-#     for i, mz in enumerate(mz_values):
-#         row, col = divmod(i, num_cols)
-#         ax = axes[row, col]
-
-#         try:
-#             data["__ydata__"] = np.log2(data[mz]) if use_log2 else data[mz]
-#         except Exception as e:
-#             st.warning(f"⚠️ Could not apply log2 to feature {mz}: {e}")
-#             data["__ydata__"] = data[mz]
-
-#         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
-
-#         if plot_type == 'box':
-#             sns.boxplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
-#         elif plot_type == 'violin':
-#             sns.violinplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
-#         elif plot_type == 'bar':
-#             sns.barplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
-
-#         if show_scatter:
-#             sns.swarmplot(data=data, x=label, y="__ydata__", order=order, ax=ax, color=".25")
-
-#         ax.set_ylabel(ylabel)
-#         ax.set_title(f"{mz}", fontsize=18)
-#         ax.set_xticklabels(order, fontsize=16)
-
-#         if len(np.unique(data["__ydata__"])) > 1:
-#             try:
-#                 annotator = Annotator(ax, box_pairs, data=data, x=label, y="__ydata__", order=order)
-#                 annotator.configure(test=test, text_format='star', loc=loc, verbose=0, pvalue_format_string="p = {:.3e}")
-#                 annotator.apply_and_annotate()
-#             except Exception as e:
-#                 st.warning(f"❌ Statistical annotation failed for {mz}: {e}")
-#         else:
-#             st.warning(f"⚠️ All values for {mz} are identical. Skipping annotation.")
-
-#         progress_bar.progress((i + 1) * step)
-
-#     for i in range(num_mz, num_rows * num_cols):
-#         fig.delaxes(axes.flatten()[i])
-
-#     plt.tight_layout()
-#     st.pyplot(fig)
 
 def plot_significant_features(
     data, 
@@ -776,11 +721,11 @@ def plot_significant_features(
     use_log2=False, 
     plot_type='box', 
     pval_correction=None,
-    significance_dict=None   # ✅ NEW
+    significance_dict=None   
 ):
 
     data = data.copy()
-    significance_dict = significance_dict or {}  # Si None, on évite les erreurs
+    significance_dict = significance_dict or {} 
 
     data.columns = data.columns.astype(str)
     label = 'Class'
@@ -801,9 +746,6 @@ def plot_significant_features(
         row, col = divmod(i, num_cols)
         ax = axes[row, col]
 
-        # ------------------------------
-        # 🔍 log2 transform si demandé
-        # ------------------------------
         try:
             data["__ydata__"] = np.log2(data[mz]) if use_log2 else data[mz]
         except Exception as e:
@@ -812,9 +754,7 @@ def plot_significant_features(
 
         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
 
-        # ------------------------------
-        # 🧪 Type de plot
-        # ------------------------------
+
         if plot_type == 'box':
             sns.boxplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
         elif plot_type == 'violin':
@@ -822,26 +762,19 @@ def plot_significant_features(
         elif plot_type == 'bar':
             sns.barplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
 
-        # ------------------------------
-        # 🟣 Scatter optionnel
-        # ------------------------------
+
         if show_scatter:
             sns.swarmplot(data=data, x=label, y="__ydata__", order=order, ax=ax, color=".25")
 
         ax.set_ylabel(ylabel)
 
-        # ------------------------------
-        # Ajouter ("(*)") ou ("NS") dans le titre
-        # ------------------------------
         pval = significance_dict.get(mz, 1.0)
         suffix = "(S)" if pval < 0.05 else "(NS)"
         ax.set_title(f"{mz} {suffix}", fontsize=18)
 
         ax.set_xticklabels(order, fontsize=16)
 
-        # ------------------------------
-        # 📌 Annotator si données variées
-        # ------------------------------
+
         if len(np.unique(data["__ydata__"])) > 1:
             try:
                 annotator = Annotator(ax, box_pairs, data=data, x=label, y="__ydata__", order=order)
@@ -854,9 +787,7 @@ def plot_significant_features(
 
         progress_bar.progress((i + 1) * step)
 
-    # ------------------------------
-    # 🔲 Delete unused axes
-    # ------------------------------
+
     for i in range(num_mz, num_rows * num_cols):
         fig.delaxes(axes.flatten()[i])
 
