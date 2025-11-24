@@ -3372,81 +3372,148 @@ def main():
 
 
 
-        if "show_boxplots" not in st.session_state: 
+        if "show_boxplots" not in st.session_state:
             st.session_state["show_boxplots"] = False
 
-        with st.expander("📊 **Statistical Visualization of Selected Features**", expanded=st.session_state["show_boxplots"]):
+        with st.expander("📊 **Statistical Visualization of Selected Features**",
+                        expanded=st.session_state["show_boxplots"]):
+
             st.markdown(
-                '<p style="color: gray; font-size: 14px;">Visualize and statistically compare the distribution of selected features across sample classes. Includes p-value correction and filtering.</p>',
+                '<p style="color: gray; font-size: 14px;">Visualize and statistically compare the distribution '
+                'of selected features across sample classes. Includes p-value correction and filtering.</p>',
                 unsafe_allow_html=True
             )
 
-            mz_values_input = st.text_input(
-                "🔬 Enter Feature Names",
-                help="Enter a comma-separated list of features (m/z or names) to visualize and compare."
-            )
+            # -------------------------------------
+            # Full form in st.form()
+            # -------------------------------------
+            with st.form("boxplot_stat_form", clear_on_submit=False):
 
-            test = st.selectbox(
-                "📐 Select Statistical Test",
-                ['Kruskal', 'Mann-Whitney', 't-test_ind', 'ANOVA'],
-                index=0,
-                key="statistical_test"
-            )
+                # Dataset selection
+                data_source = st.selectbox(
+                    "Select Data Source",
+                    ['Raw data', 'Preprocessed', 'Oversampled', 'Undersampled'],
+                    key="boxplot_data_source",
+                    help="Choose the dataset used for visualization and statistical comparison."
+                )
 
-            pval_correction = st.selectbox(
-                "🧮 Multiple Testing Correction",
-                ['None', 'Bonferroni', 'FDR (Benjamini-Hochberg)'],
-                key="pval_correction_method"
-            )
+                # Feature input
+                mz_values_input = st.text_input(
+                    "Enter Feature Names",
+                    help="Enter one or more feature names (m/z, prot, transcrit, gene...), separated by commas, space, tab.. or mix of theme"
+                )
 
-            plot_type = st.selectbox(
-                "📊 Choose Plot Type",
-                ['Box Plot', 'Violin Plot', 'Bar Plot'],
-                key="plot_type"
-            )
+                # Statistical test
+                test = st.selectbox(
+                    "Select Statistical Test",
+                    ['Kruskal', 'Mann-Whitney', 't-test_ind', 'ANOVA'],
+                    index=0,
+                    key="statistical_test",
+                    help=(
+                        "Choose a statistical test to compare groups:\n"
+                        "- **Kruskal**: non-parametric, for 2+ groups\n"
+                        "- **Mann-Whitney**: non-parametric, only for 2 groups\n"
+                        "- **t-test_ind**: parametric, only for 2 groups\n"
+                        "- **ANOVA**: parametric, for 2+ groups"
+                    )
+                )
 
-            col1, col2 = st.columns(2)
-            with col1:
-                show_scatter = st.checkbox("🔹 Show Individual Points", key="show_scatter")
-            with col2:
-                use_log2 = st.checkbox("Apply log2 Transformation", key="use_log2")
+                # P-value correction
+                pval_correction = st.selectbox(
+                    "Multiple Testing Correction",
+                    ['None', 'Bonferroni', 'FDR (Benjamini-Hochberg)'],
+                    key="pval_correction_method",
+                    help=(
+                        "Correction for multiple statistical tests:\n"
+                        "- **None**: no correction\n"
+                        "- **Bonferroni**: very strict, reduces false positives\n"
+                        "- **FDR (Benjamini-Hochberg)**: controls false discovery rate (recommended)"
+                    )
+                )
 
-            data_source = st.selectbox(
-                "Select Data Source",
-                ['Preprocessed', 'Oversampled', 'Undersampled', 'Raw data'],
-                key="boxplot_data_source"
-            )
+                # Plot type
+                plot_type = st.selectbox(
+                    "Choose Plot Type",
+                    ['Box Plot', 'Violin Plot', 'Bar Plot'],
+                    key="plot_type",
+                    help=(
+                        "Select the type of visualization:\n"
+                        "- **Box Plot**: distribution and quartiles\n"
+                        "- **Violin Plot**: smoothed distribution shape\n"
+                        "- **Bar Plot**: group means with error bars"
+                    )
+                )
 
-            if st.button("Run"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    show_scatter = st.checkbox(
+                        "🔹 Show Individual Points",
+                        key="show_scatter",
+                        help="Overlay individual sample points on the plot."
+                    )
+
+                with col2:
+                    use_log2 = st.checkbox(
+                        "🔹 Apply log2 Transformation",
+                        key="use_log2",
+                        help="Apply a log2 transformation to reduce skew and stabilize variance."
+                    )
+
+                # Submit
+                submitted = st.form_submit_button(
+                    "Run",
+                    help="Run statistical analysis and generate visualizations."
+                )
+
+            # --------------------------------------------------------
+            # PROCESSING (EXECUTES ONLY ON SUBMIT)
+            # --------------------------------------------------------
+            if submitted:
+
                 data_sig_key = {
+                    'Raw data': 'data',
                     'Preprocessed': 'preprocessed_data',
                     'Oversampled': 'oversampled_data',
-                    'Undersampled': 'undersampled_data',
-                    'Raw data': 'data'
+                    'Undersampled': 'undersampled_data'
                 }.get(data_source)
 
                 data_sig = st.session_state.get(data_sig_key, None)
 
                 if data_sig is None:
                     st.error("❌ Dataset not loaded.")
-                else:
-                    # ✅ Protection : on copie pour éviter toute modification de la source
-                    data_sig = data_sig.copy()
 
-                    mz_values = [mz.strip() for mz in mz_values_input.split(',') if mz.strip() in data_sig.columns]
+                else:
+                    import pandas as pd
+                    import scipy.stats as stats
+                    from statsmodels.stats.multitest import multipletests
+
+                    data_sig = data_sig.copy()
+                    class_col = st.session_state.get("label_column", "Class")
+
+                    # Parsing features
+                    # mz_values = [
+                    #     mz.strip() for mz in mz_values_input.split(',')
+                    #     if mz.strip() in data_sig.columns
+                    # ]
+
+                    raw_features = re.split(r"[,\s;]+", mz_values_input.strip())
+
+                    mz_values = [
+                        mz.strip() for mz in raw_features
+                        if mz.strip() in data_sig.columns
+                    ]
 
                     if not mz_values:
                         st.warning("⚠️ None of the entered features were found in the dataset.")
                     else:
-                        import pandas as pd
-                        import scipy.stats as stats
-                        from statsmodels.stats.multitest import multipletests
-
-                        class_col = st.session_state.get("label_column", "Class")
+                        # Compute stats
                         results = []
-
                         for mz in mz_values:
-                            groups = [data_sig[data_sig[class_col] == g][mz].dropna() for g in data_sig[class_col].unique()]
+                            groups = [
+                                data_sig[data_sig[class_col] == g][mz].dropna()
+                                for g in data_sig[class_col].unique()
+                            ]
                             p = None
                             try:
                                 if test == 'Kruskal':
@@ -3459,30 +3526,38 @@ def main():
                                     p = stats.f_oneway(*groups).pvalue
                             except Exception:
                                 p = None
-                            results.append({'feature': mz, 'pvalue': p})
+
+                            results.append({"feature": mz, "pvalue": p})
 
                         result_df = pd.DataFrame(results).dropna()
 
+                        # P-value correction
                         if pval_correction == 'Bonferroni':
-                            result_df['adj_pvalue'] = multipletests(result_df['pvalue'], method='bonferroni')[1]
+                            result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="bonferroni")[1]
                         elif pval_correction == 'FDR (Benjamini-Hochberg)':
-                            result_df['adj_pvalue'] = multipletests(result_df['pvalue'], method='fdr_bh')[1]
+                            result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="fdr_bh")[1]
                         else:
-                            result_df['adj_pvalue'] = result_df['pvalue']
+                            result_df["adj_pvalue"] = result_df["pvalue"]
 
-                        sig_features = result_df[result_df['adj_pvalue'] < 0.05]['feature'].tolist()
+                        sig_df = result_df[result_df["adj_pvalue"] < 0.05]
+                        nonsig_df = result_df[result_df["adj_pvalue"] >= 0.05]
+
+                        sig_features = sig_df["feature"].tolist()
+                        nonsig_features = nonsig_df["feature"].tolist()
+
+                        st.info(f"**Significant features (p < 0.05)**: {len(sig_features)} / {len(mz_values)}")
+                        st.info(f"**Non-significant features**: {len(nonsig_features)} / {len(mz_values)}")
+                        st.write("✔️ All features will be displayed (significant + non-significant).")
+
+                        # Features to plot
+                        features_to_plot = sig_features + nonsig_features
+
+                        # Mapping feature → adjusted p-value
+                        significance_dict = dict(zip(result_df.feature, result_df.adj_pvalue))
 
                         class_colors = st.session_state.get("class_colors", None)
 
-                        if not sig_features:
-                            st.warning("⚠️ No significant features (adjusted p < 0.05) after correction.")
-                            st.info(f"Displaying all {len(mz_values)} selected features anyway.")
-                            features_to_plot = mz_values
-                        else:
-                            st.success(f"✅ {len(sig_features)} significant feature(s) found (p < 0.05).")
-                            features_to_plot = sig_features
-
-                        # ✅ Appel protégé
+                        # Call plotting function
                         plot_significant_features(
                             data=data_sig,
                             mz_values=features_to_plot,
@@ -3491,9 +3566,9 @@ def main():
                             plot_type=plot_type.lower().split()[0],
                             show_scatter=show_scatter,
                             use_log2=use_log2,
-                            pval_correction=pval_correction
+                            pval_correction=pval_correction,
+                            significance_dict=significance_dict
                         )
-
 
 
         st.markdown(
