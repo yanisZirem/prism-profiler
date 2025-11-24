@@ -1165,18 +1165,15 @@ def main():
                     rows_to_keep = st.multiselect("Rows to keep:", row_options, key="rows_to_keep")
                     rows_keep_indexes = [int(row.split()[1]) for row in rows_to_keep] if rows_to_keep else []
 
-                    # ---------------------- COLUMNS TO KEEP (CLASS ALWAYS KEPT) ----------------------
-                    all_columns = [c for c in df.columns if c != "index"]
-                    default_keep = all_columns  # Class always included
 
-                    # UI: disable Class checkbox
+                    # ---------------------- COLUMNS TO KEEP (Class optional in UI) ----------------------
+                    all_columns = [c for c in df.columns if c != "index"]
+
                     columns_to_keep = st.multiselect(
                         "Columns to keep:",
                         all_columns,
-                        default=default_keep,
                         key="columns_to_keep"
                     )
-
                     # Force Class retention (protection)
                     if "Class" not in columns_to_keep:
                         columns_to_keep.append("Class")
@@ -1187,6 +1184,7 @@ def main():
                     with col2:
                         reset_changes = st.form_submit_button("🔄 Reset All Changes")
 
+
                 # ------------------------- APPLY CHANGES -------------------------
                 if apply_changes:
                     with st.spinner("Applying modifications..."):
@@ -1195,7 +1193,7 @@ def main():
                         if rows_keep_indexes:
                             st.session_state["final_data"] = st.session_state["final_data"].loc[rows_keep_indexes]
 
-                        # KEEP COLUMNS (Class always kept)
+                        # KEEP COLUMNS (force Class retention)
                         if columns_to_keep:
                             if "Class" not in columns_to_keep:
                                 columns_to_keep.append("Class")
@@ -1218,7 +1216,6 @@ def main():
                         st.session_state["final_data"].reset_index(drop=True, inplace=True)
                         st.session_state["data"] = st.session_state["final_data"]
                         st.success("✅ Modifications applied successfully.")
-
                 # ------------------------- RESET -------------------------
                 if reset_changes:
                     st.session_state["final_data"] = st.session_state["data"].copy()
@@ -1252,6 +1249,7 @@ def main():
                     file_name=custom_filename,
                     mime='text/csv'
                 )
+
 
 
 
