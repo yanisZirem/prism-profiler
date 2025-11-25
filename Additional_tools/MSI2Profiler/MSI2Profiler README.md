@@ -1,51 +1,49 @@
 # MSI2Profiler
 
-**MSI2Profiler** is an additional desktop tool for **Profiler**, designed to extract and preprocess **MSI (Mass Spectrometry Imaging)** data from `.imzML` files.
+**MSI2Profiler** is an additional desktop tool for **Profiler**, designed to extract and preprocess **MSI (Mass Spectrometry Imaging)** data from `.imzML` files.  
+
 It allows users to **bin**, **normalize**, **visualize**, and **export** MSI spectra for direct import into **Profiler** for downstream analysis.
 
 ---
 
-## Overview
+## 📥 Download
 
-`MSI2profiler.py` is a **standalone desktop application** developed in **Python with Tkinter**.
-It provides a simple graphical interface to process MSI data and export them as labeled CSV or Excel tables, ready for analysis in **Profiler**.
+The MSI2Profiler executable is now **available directly from the Profiler web page** for easy installation.  
+
+**🔗 Collaboration:** The source code (`MSI2profiler.py`) remains available for developers and bioinformaticians to explore, customize, or contribute to the tool.
 
 ---
 
-## Features
+## 🛠️ Features
 
 | Feature | Description |
 |---------|-------------|
-| **Load `.imzML` files** | Import MSI data from full tissue sections or defined regions of interest (ROIs). |
+| **Load `.imzML` files** | Import MSI data from full tissue sections or regions of interest (ROIs). |
 | **Bin spectral intensities** | Bin intensities over a user-defined m/z range with configurable bin size. |
-| **Normalize and transform** | Normalize and optionally log-transform spectral intensities. |
+| **Normalize & transform** | Normalize and optionally log-transform spectral intensities. |
 | **Export processed data** | Export as labeled `.csv` or `.xlsx` files, ready for import into **Profiler**. |
-| **Interactive visualization** | Visualize average spectra (using Plotly) to check data consistency and detect anomalies. |
-| **Reuse workflows** | Reuse parameters for multiple ROIs or replicate experiments. |
-| **Concatenate files** | Merge multiple CSV/Excel files into a single dataset for batch analysis in Profiler. |
+| **Interactive visualization** | Visualize average spectra to check data consistency and detect anomalies. |
+| **Reuse workflows** | Save and reuse processing parameters for multiple ROIs or experiments. |
+| **Concatenate files** | Merge multiple CSV/Excel files into a single dataset for batch analysis. |
 
 ---
 
-## 🖥️ Usage
+## 🖥️ Open-Source Usage (for collaboration)
 
-1. **Open a terminal** (CMD, PowerShell, or macOS/Linux terminal).
-2. Navigate to the folder containing `MSI2profiler.py`.
+For developers or bioinformaticians who want to run the source code:
+
+1. Open a terminal (CMD, PowerShell, or macOS/Linux terminal).  
+2. Navigate to the folder containing `MSI2profiler.py`.  
 3. Run the following command:
-   ```bash
-   python MSI2profiler.py
-   ```
-4. The GUI will open.
-5. Load your `.imzML` file.
-6. Set parameters (m/z min, m/z max, bin size, normalization, etc.).
-7. Generate and export your data for Profiler.
+```bash
+python MSI2profiler.py
 
----
 
 ## Requirements
 
 Before running, ensure all dependencies are installed:
 ```bash
-pip install pandas numpy plotly pyimzml
+pip install pandas numpy plotly pyimzml ttkthemes tkinter
 ```
 
 ---
