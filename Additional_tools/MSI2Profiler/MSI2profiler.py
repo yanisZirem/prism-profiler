@@ -1,11 +1,11 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from ttkthemes import ThemedTk
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from pyimzml.ImzMLParser import ImzMLParser
 import threading
-import os
 
 # ---------------------------- Spectrum Binning Function -----------------------------
 def matrix_class_binned(my_spectra, class_name="Class", bin_size=0.1, mz_min=600, mz_max=1000, normalize=False, log_transform=False):
@@ -45,55 +45,113 @@ def plot_average_spectra(data, class_column='Class'):
     fig.update_layout(width=1000, xaxis_title='m/z', yaxis_title='Intensity')
     fig.show()
 
-# ---------------------------- GUI Class -----------------------------
+
+
 class MSIExtractApp:
     def __init__(self, root):
         self.root = root
         self.root.title("MSI2Profiler-GUI")
-        self.root.geometry("700x500")
+        self.root.geometry("1100x850")  # Fenêtre plus large
         self.root.configure(bg="#f0f2f5")
-
         self.filepath = ""
         self.my_spectra = []
         self.df = None
-
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("TButton", padding=6, relief="flat", background="#007acc", foreground="white")
-        style.configure("TLabel", background="#f0f2f5")
-
+        style.configure("Accent.TButton", background="#1E90FF", foreground="white", font=("Arial", 10, "bold"), padding=10)
+        style.map("Accent.TButton", background=[("active", "#0066CC"), ("pressed", "#004499")])
+        style.configure("TLabel", background="#f0f2f5", font=("Arial", 10))
+        style.configure("TCheckbutton", background="#f0f2f5", font=("Arial", 10))
         self.build_ui()
 
     def build_ui(self):
-        ttk.Button(self.root, text="Load imzML File", command=self.load_imzml).pack(pady=10)
-        self.class_entry = self.labeled_entry("Class Name")
-        self.mz_min_entry = self.labeled_entry("Min m/z")
-        self.mz_max_entry = self.labeled_entry("Max m/z")
-        self.bin_entry = self.labeled_entry("Bin Size")
+        # -------- Description --------
+        self.frame_desc = ttk.LabelFrame(self.root, text="About MSI2Profiler")
+        self.frame_desc.pack(padx=10, pady=10, fill='both', expand=True)
+        desc_text = (
+            "MSI2Profiler is an additional desktop tool for Profiler, designed to extract and preprocess Mass Spectrometry Imaging data from imzML files for direct import into Profiler for downstream analysis.\n\n"
+            "Features:\n"
+            "• Load MSI .imzML files from tissue sections or ROIs\n"
+            "• Bin spectra with configurable mass range and bin size\n"
+            "• Normalize and log-transform intensities\n"
+            "• Export CSV/Excel files ready for Profiler\n"
+            "• Visualize average spectra\n"
+            "• Concatenate multiple CSV/Excel files"
+        )
+        desc_label = ttk.Label(
+            self.frame_desc,
+            text=desc_text,
+            justify=tk.LEFT,
+            wraplength=1100,
+            font=("Arial", 9, "bold"),
+            foreground="#333333"
+        )
+        desc_label.pack(padx=5, pady=5, fill='both', expand=True)
 
+        # -------- Frame principal en deux colonnes --------
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(padx=10, pady=10, fill='both', expand=True)
+
+        # -------- Colonne de gauche : Chargement et Preprocessing --------
+        self.left_frame = ttk.Frame(self.main_frame)
+        self.left_frame.grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
+
+        # Chargement
+        self.frame_top = ttk.Frame(self.left_frame)
+        self.frame_top.pack(pady=10, fill='x')
+        ttk.Button(self.frame_top, text="Load imzML File", style="Accent.TButton", command=self.load_imzml).pack()
+
+        # Options de preprocessing
+        self.frame_middle = ttk.LabelFrame(self.left_frame, text="Processing Options")
+        self.frame_middle.pack(padx=10, pady=10, fill='x')
+        ttk.Label(self.frame_middle, text="Class Name").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.class_entry = ttk.Entry(self.frame_middle)
+        self.class_entry.grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(self.frame_middle, text="Min m/z").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.mz_min_entry = ttk.Entry(self.frame_middle)
+        self.mz_min_entry.grid(row=1, column=1, padx=5, pady=5)
+        ttk.Label(self.frame_middle, text="Max m/z").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.mz_max_entry = ttk.Entry(self.frame_middle)
+        self.mz_max_entry.grid(row=2, column=1, padx=5, pady=5)
+        ttk.Label(self.frame_middle, text="Bin Size").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.bin_entry = ttk.Entry(self.frame_middle)
+        self.bin_entry.grid(row=3, column=1, padx=5, pady=5)
         self.normalize_var = tk.BooleanVar()
         self.log_var = tk.BooleanVar()
-        ttk.Checkbutton(self.root, text="Normalize", variable=self.normalize_var).pack()
-        ttk.Checkbutton(self.root, text="Log Transform", variable=self.log_var).pack()
+        ttk.Checkbutton(self.frame_middle, text="Normalize", variable=self.normalize_var).grid(row=4, column=0, padx=5, pady=5, sticky="w")
+        ttk.Checkbutton(self.frame_middle, text="Log Transform", variable=self.log_var).grid(row=4, column=1, padx=5, pady=5, sticky="w")
+        ttk.Button(self.frame_middle, text="Generate Matrix", style="Accent.TButton", command=self.start_processing).grid(row=5, column=0, columnspan=2, pady=10)
 
-        ttk.Button(self.root, text="Generate Matrix", command=self.start_processing).pack(pady=10)
-        ttk.Button(self.root, text="Plot Average Spectrum", command=self.show_avg_spectrum).pack()
-        ttk.Button(self.root, text="Export as CSV", command=self.export_csv).pack()
-        ttk.Button(self.root, text="Export as Excel", command=self.export_excel).pack()
+        # Boutons d'export et visualisation
+        self.frame_bottom_left = ttk.Frame(self.left_frame)
+        self.frame_bottom_left.pack(pady=10, fill='x')
+        ttk.Button(self.frame_bottom_left, text="Plot Average Spectrum", style="Accent.TButton", command=self.show_avg_spectrum).pack(pady=5)
+        ttk.Button(self.frame_bottom_left, text="Export CSV", style="Accent.TButton", command=self.export_csv).pack(pady=5)
+        ttk.Button(self.frame_bottom_left, text="Export Excel", style="Accent.TButton", command=self.export_excel).pack(pady=5)
 
-        ttk.Separator(self.root, orient='horizontal').pack(fill='x', pady=15)
-        ttk.Button(self.root, text="Import CSV/XLSX to Concatenate", command=self.import_and_concat_files).pack()
-        ttk.Button(self.root, text="Export Concatenated Data", command=self.export_combined).pack()
+        # -------- Colonne de droite : Concatenation --------
+        self.right_frame = ttk.Frame(self.main_frame)
+        self.right_frame.grid(row=0, column=1, padx=10, pady=10, sticky='nsew')
 
-        self.progress = ttk.Progressbar(self.root, orient='horizontal', length=400, mode='determinate')
-        self.progress.pack(pady=10)
+        self.frame_concat = ttk.LabelFrame(self.right_frame, text="Concatenation/Export")
+        self.frame_concat.pack(padx=10, pady=10, fill='both', expand=True)
+        ttk.Button(self.frame_concat, text="Import CSV/XLSX to Concatenate", style="Accent.TButton", command=self.import_and_concat_files).pack(pady=5)
+        ttk.Button(self.frame_concat, text="Export Concatenated Data", style="Accent.TButton", command=self.export_combined).pack(pady=5)
 
-    def labeled_entry(self, label):
-        ttk.Label(self.root, text=label).pack()
-        entry = ttk.Entry(self.root)
-        entry.pack()
-        return entry
+        # -------- Progress Bar --------
+        self.progress = ttk.Progressbar(self.root, orient='horizontal', length=500, mode='determinate')
+        self.progress.pack(pady=5)
+        self.progress_label = ttk.Label(self.root, text="Progress: 0%")
+        self.progress_label.pack()
 
+        # Configuration de la grille pour que les colonnes s'étirent
+        self.main_frame.columnconfigure(0, weight=1)
+        self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.rowconfigure(0, weight=1)
+
+    # [Le reste de tes méthodes reste identique]
+
+    # ---------------------------- File Loading -----------------------------
     def load_imzml(self):
         self.filepath = filedialog.askopenfilename(filetypes=[("imzML files", "*.imzML")])
         if not self.filepath:
@@ -109,15 +167,20 @@ class MSIExtractApp:
             for idx, (x, y, z) in enumerate(parser.coordinates):
                 mzs, intensities = parser.getspectrum(idx)
                 self.my_spectra.append([mzs, intensities, (x, y, z)])
-                self.progress['value'] = (idx + 1) / total * 100
+                progress_pct = int((idx + 1) / total * 100)
+                self.progress['value'] = progress_pct
+                self.progress_label.config(text=f"Progress: {progress_pct}%")
                 self.root.update_idletasks()
 
             messagebox.showinfo("Success", f"{len(self.my_spectra)} spectra loaded.")
             self.progress['value'] = 0
+            self.progress_label.config(text="Progress: 0%")
         except Exception as e:
             messagebox.showerror("Error", str(e))
             self.progress['value'] = 0
+            self.progress_label.config(text="Progress: 0%")
 
+    # ---------------------------- Processing -----------------------------
     def start_processing(self):
         threading.Thread(target=self.generate_matrix).start()
 
@@ -140,12 +203,14 @@ class MSIExtractApp:
             messagebox.showerror("Processing Error", str(e))
             self.progress.stop()
 
+    # ---------------------------- Plot -----------------------------
     def show_avg_spectrum(self):
         if self.df is not None:
             plot_average_spectra(self.df)
         else:
             messagebox.showwarning("Warning", "No matrix generated yet.")
 
+    # ---------------------------- Export -----------------------------
     def export_csv(self):
         if self.df is not None:
             f = filedialog.asksaveasfilename(defaultextension=".csv")
@@ -164,11 +229,11 @@ class MSIExtractApp:
         else:
             messagebox.showwarning("Warning", "No data to export.")
 
+    # ---------------------------- Concatenate -----------------------------
     def import_and_concat_files(self):
         files = filedialog.askopenfilenames(filetypes=[("Data files", "*.csv *.xlsx")])
         if not files:
             return
-
         try:
             df_list = []
             for f in files:
@@ -183,15 +248,18 @@ class MSIExtractApp:
 
     def export_combined(self):
         if self.df is not None:
-            f = filedialog.asksaveasfilename(defaultextension=".csv")
+            f = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx")])
             if f:
-                self.df.to_csv(f, index=False)
-                messagebox.showinfo("Export", "Combined file saved.")
+                if f.endswith(".csv"):
+                    self.df.to_csv(f, index=False)
+                else:
+                    self.df.to_excel(f, index=False)
+                messagebox.showinfo("Export", f"Concatenated data saved to {f}.")
         else:
-            messagebox.showwarning("Warning", "No data to export.")
+            messagebox.showwarning("Warning", "No concatenated data to export. Import files first.")
 
 # ---------------------------- Launch App -----------------------------
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ThemedTk(theme="arc")
     app = MSIExtractApp(root)
     root.mainloop()
