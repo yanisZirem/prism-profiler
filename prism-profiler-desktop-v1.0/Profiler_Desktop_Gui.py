@@ -571,16 +571,19 @@ def main():
 
     tabs = st.tabs(["**Home**", "**Data Exploration**", "**AI Modeling**", "**Biomarker Discovery**", "**Enrichment**", "**Survival Analysis**", "**Wizard**"])
 
+
+
     with tabs[0]:
+        # ---- HEADER ----
         st.markdown("""
             <h3 style="text-align: center; color: #318CE7; padding: 12px; background-color: #f0f8ff; border-radius: 8px;">
-                Welcome to <strong>Profiler</strong>
+                👋 Welcome to <strong>Profiler Desktop</strong>
             </h3>
             <p><strong>Profiler</strong> is an innovative omics data analysis platform developed by the
             <a href="https://www.laboratoire-prism.fr/" target="_blank"><strong>PRISM U1192 laboratory</strong></a> and protected by <strong>INSERM Transfer</strong>.
-            The platform was designed as part of ongoing academic research to advance automated, AI-driven analysis in the field of omics.</p>
-            <p>Profiler brings the power of artificial intelligence, statistical modeling, and automation to the analysis of complex biological data.</p>
-            <h4 style="color: #318CE7;"> Key features</h4>
+            The desktop version allows local execution of analyses with Profiler pipelines.</p>
+            <p>Profiler Desktop brings automation, AI, and multi-omics analysis to your local machine for efficient and secure research workflows.</p>
+            <h4 style="color: #318CE7;">✨ Key features</h4>
             <ul>
                 <li><strong>Multi-Omics Support:</strong> Proteomics, metabolomics, lipidomics, genomics, transcriptomics, and more.</li>
                 <li><strong>Simple Data Preprocessing:</strong> Convert, clean, and explore your data effortlessly.</li>
@@ -592,156 +595,95 @@ def main():
             </ul>
         """, unsafe_allow_html=True)
 
-        # Add download buttons for documentation and IDDN certificate
-        with st.container():
-            st.markdown("""
-                
+        # ---- Documentation & Certification ----
+        col1, col2 = st.columns(2)
+        with col1:
+            with open("documentation.pdf", "rb") as doc_file:
+                st.download_button(
+                    label="📘 Download Profiler Documentation",
+                    data=doc_file,
+                    file_name="documentation.pdf",
+                    mime="application/pdf"
+                )
+        with col2:
+            with open("IDDN Certificate.pdf", "rb") as iddn_file:
+                st.download_button(
+                    label="⚖️ Download INSERM Protection Certificate",
+                    data=iddn_file,
+                    file_name="IDDN Certificate.pdf",
+                    mime="application/pdf"
+                )
+
+        # ---- GitHub Links ----
+        for link, label in [
+            ("https://github.com/yanisZirem/Profiler_v1_requests_datatests.git", "➡️ Access Profiler's GitHub 🌐"),
+            ("https://github.com/yanisZirem/prism-profiler.git", "➡️ Profiler Desktop Version 🌐")
+        ]:
+            st.markdown(f"""
+                <div style='text-align:center; margin-top:40px; margin-bottom:40px;'>
+                    <a class="button-link" href="{link}" target="_blank" style='
+                        font-size: 22px;
+                        font-weight: bold;
+                        padding: 15px 30px;
+                        background-color: #318CE7;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 10px;
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);'>
+                        {label}
+                    </a>
+                </div>
             """, unsafe_allow_html=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                with open("documentation.pdf", "rb") as doc_file:
-                    st.download_button(
-                        label="📘 Download Profiler Documentation",
-                        data=doc_file,
-                        file_name="documentation.pdf",
-                        mime="application/pdf"
-                    )
-            with col2:
-                with open("IDDN Certificate.pdf", "rb") as iddn_file:
-                    st.download_button(
-                        label="⚖️  Download INSERM Protection Certificate",
-                        data=iddn_file,
-                        file_name="IDDN Certificate.pdf",
-                        mime="application/pdf"
-                    )
-
+        # ---- MSI2Profiler Highlight (redirect to Web) ----
         st.markdown("""
+            <hr>
+            <h3 style="color:#318CE7; text-align:center;">💻 MSI2Profiler – Desktop Tool</h3>
+            <p style="text-align:center; font-size:16px;">
+            <strong>MSI2Profiler</strong> is an additional desktop tool for Profiler, designed to extract and preprocess 
+            <strong>Mass Spectrometry Imaging (MSI)</strong> data from <code>.imzML</code> files for direct import into Profiler 
+            for downstream analysis.
+            </p>
             <div style='
-                text-align: center;
-                margin-top: 40px;
-                margin-bottom: 40px;'>
-                <a href='https://github.com/yanisZirem/Profiler_v1_requests_datatests.git' target='_blank' style='
-                    display: inline-block;
-                    font-size: 22px;
-                    font-weight: bold;
-                    padding: 15px 30px;
-                    background-color: #318CE7;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);'>
-                    ➡️ Access Profiler's GitHub 🌐
-                </a>
+                background-color:#f5faff;
+                border: 2px solid #318CE7;
+                border-radius: 12px;
+                padding: 20px;
+                margin-top: 15px;
+                font-size:15px;'>
+            <strong>Key Features:</strong>
+            <ul>
+                <li> Load MSI <strong>.imzML</strong> files from tissue sections or ROIs</li>
+                <li> Bin spectra with configurable mass range and bin size</li>
+                <li> Normalize and/or log-transform intensities</li>
+                <li> Export CSV / Excel files ready for Profiler</li>
+                <li> Visualize average spectra</li>
+                <li> Concatenate multiple (ROIs) CSV / Excel files</li>
+            </ul>
             </div>
+            <p style="text-align:center; margin-top: 20px;">
+             To download MSI2Profiler, please visit the <a href='https://prism-profiler.univ-lille.fr' target='_blank'>Profiler Web platform</a>, where a <strong>Download button</strong> is available.
+            </p>
         """, unsafe_allow_html=True)
 
+        # ---- Citations & Publications ----
         st.markdown("""
-            <div style='
-                text-align: center;
-                margin-top: 40px;
-                margin-bottom: 40px;'>
-                <a href='https://github.com/yanisZirem/prism-profiler.git' target='_blank' style='
-                    display: inline-block;
-                    font-size: 22px;
-                    font-weight: bold;
-                    padding: 15px 30px;
-                    background-color: #318CE7;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);'>
-                    ➡️ Profiler Desktop Version  🌐
-                </a>
-            </div>
-        """, unsafe_allow_html=True)
-
-
-        st.markdown("""
-             <h4 style="color: #318CE7;">📚 Citation & Publications</h4>
-             <p><strong>Until the peer-reviewed publication is released, please cite our pre-print:</strong></p>
-             <ul>
-                 <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, <strong>Fournier, I.</strong>, <strong>Salzet, M.</strong> "Profiler: an open web platform for multi-omics analysis" <em>Université de Lille</em>, 2025. DOI: <a href="https://doi.org/10.21203/rs.3.rs-7058776/v1">10.21203/rs.3.rs-7058776/v1</a></li>
-             </ul>
-             <p><strong>Related Papers:</strong></p>
-             <ul>
-                 <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, et al. "Real-time glioblastoma tumor microenvironment assessment by SpiderMass..." <em>Cell Reports Medicine</em>, 2024.</li>
-                 <li><strong>Zirem, Y.</strong>, et al. "Protocol to analyze 1D and 2D mass spectrometry data..." <em>STAR Protocols</em>, 2024.</li>
-                 <li><strong>Zirem, Y.</strong>, <strong>Lagache, L.</strong>, et al. "Predicting Protein Pathways Associated to Tumor Heterogeneity by Correlating Spatial Lipidomics : The Dry Proteomic Concept...<em>Molecular & Cellular Proteomics</em>, 2025"</li>
+            <h4 style="color: #318CE7;">📚 Citation & Publications</h4>
+            <p><strong>Until the peer-reviewed publication is released, please cite our pre-print:</strong></p>
+            <ul>
+                <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, <strong>Fournier, I.</strong>, <strong>Salzet, M.</strong> 
+                "Profiler: an open web platform for multi-omics analysis" <em>Université de Lille</em>, 2025. DOI: 
+                <a href="https://doi.org/10.21203/rs.3.rs-7058776/v1">10.21203/rs.3.rs-7058776/v1</a></li>
             </ul>
         """, unsafe_allow_html=True)
 
-
+        # ---- Workflow Tour ----
         st.markdown("""
             <div style='text-align: center; margin-top: 40px;'>
                 <h4 style='color: #318CE7;'>🔁 Profiler Workflow</h4>
                 <p style='font-size: 1.05rem;'>Follow an automatic tour of the full analysis pipeline</p>
             </div>
         """, unsafe_allow_html=True)
-
-        if "workflow_step" not in st.session_state:
-            st.session_state.workflow_step = 0
-        if "workflow_active" not in st.session_state:
-            st.session_state.workflow_active = False
-
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.markdown("""
-                <style>
-                div.stButton > button {
-                    font-size: 22px;
-                    font-weight: bold;
-                    padding: 15px 30px;
-                    background-color: #318CE7;
-                    color: white;
-                    border: none;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
-            if st.button("▶️ **Workflow Tour**"):
-                st.session_state.workflow_active = True
-                st.session_state.workflow_step = 0
-                st.rerun()
-
-
-            placeholder = st.empty()
-            progress_placeholder = st.empty()
-
-            if st.session_state.workflow_active:
-                i = st.session_state.workflow_step
-                with placeholder.container():
-                    st.markdown(f"""
-                        <div style='
-                            text-align: center;
-                            font-size: 1.2rem;
-                            padding: 25px;
-                            border-radius: 12px;
-                            margin-top: 10px;
-                            background-color: #f0f8ff;
-                            border: 2px solid #e0eaff;
-                            box-shadow: 0 0 10px rgba(0,0,0,0.05);'>
-                            {workflow_steps[i]}
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                progress_html = "<div style='text-align: center; padding: 10px;'>"
-                for j in range(len(workflow_steps)):
-                    color = "#318CE7" if j == i else "#d0d8e8"
-                    progress_html += f"<span style='display: inline-block; width: 14px; height: 14px; margin: 3px; border-radius: 50%; background-color: {color};'></span>"
-                progress_html += "</div>"
-                progress_placeholder.markdown(progress_html, unsafe_allow_html=True)
-
-                time.sleep(3)
-                if i < len(workflow_steps) - 1:
-                    st.session_state.workflow_step += 1
-                    st.rerun()
-                else:
-                    st.session_state.workflow_active = False
-
-
 
 
     with tabs[1]:
@@ -788,7 +730,7 @@ def main():
                     index=0,
                     key="overview_source_select"
                 )
-                load_btn = st.form_submit_button("📥 Load dataset features")
+                load_btn = st.form_submit_button("📥 Load Features")
             if load_btn:
                 # Map "Raw" to final_data (renamed classes) instead of data (raw data)
                 ds_map = {
@@ -820,14 +762,16 @@ def main():
                         st.success(f"Loaded '{source_choice}' — {sel_df.shape[0]:,} samples × {sel_df.shape[1]:,} features")
 
 
-
         # Récupère le DF chargé (ou None)
         df = st.session_state.get('overview_df')
 
         if df is None:
+
+
             st.info("No dataset loaded. Choose a source above and click ▶️ Load Features to start analysing.")
             # on n'affiche pas la suite si rien n'est chargé
         else:
+
 
             with st.expander("**ℹ️ Dataset Info and suggestions**", expanded=st.session_state.show_info["dataset_info"]):
 
@@ -838,6 +782,7 @@ def main():
                     st.session_state.show_info["dataset_info"] = not st.session_state.show_info["dataset_info"]
 
                 if st.session_state.show_info["dataset_info"]:
+
                     st.markdown(f"""
                         <div style='background-color: #f0f8ff; padding: 10px; border-radius: 10px; font-size: 15px;'>
                             <strong>Dataset source:</strong> {st.session_state.get('overview_source')}
@@ -848,6 +793,204 @@ def main():
 
                     display_class_info(df)
                     st.info("Summary: balanced classes → unbiased models.")
+
+
+            with st.expander("**🚨 Outliers Control and Suggestions**", expanded=False):
+                st.markdown(
+                    "<p style='color: gray'>Identify and control abnormal samples that may bias model performance. Generates:Features per sample table, Boxplot visualization, Statistical suggestions and Outlier detection (IQR method).</p>",
+                    unsafe_allow_html=True
+                )
+
+                df = st.session_state.get("overview_df")
+                if df is None:
+                    st.warning("Please load a dataset first.")
+                else:
+                    # --- 1. ANALYSE COMPLÈTE (TABLE + BOXPLOT + SUGGESTIONS + DÉTECTION) ---
+                    with st.form("full_analysis_form"):
+
+                        run_analysis = st.form_submit_button("Run Analysis")
+
+                    if run_analysis:
+                        with st.spinner("Analyzing data..."):
+                            # Préparation des données
+                            df_features = df.copy()
+
+                            
+                            df_features = df.copy()
+
+                            df_features["Features per sample"] = (
+                                df.drop(columns=['Class'], errors='ignore')
+                                .notna()
+                                .sum(axis=1)
+                            )
+
+                            # --- STATISTIQUES RAPIDES ---
+                            mean_val = df_features["Features per sample"].mean()
+                            median_val = df_features["Features per sample"].median()
+                            std_val = df_features["Features per sample"].std()
+                            min_val = df_features["Features per sample"].min()
+                            max_val = df_features["Features per sample"].max()
+
+                            # --- AFFICHAGE DES RÉSULTATS ---
+                            st.markdown("**Features per Sample Analysis**")
+
+                            # Tableau des échantillons
+                            display_df = df_features.reset_index().rename(columns={"index": "Original index"})
+                            display_cols = ["Original index"]
+                            if "Class" in display_df.columns:
+                                display_cols.append("Class")
+                            display_cols.append("Features per sample")
+                            display_df = display_df[display_cols]
+                            st.dataframe(display_df, height=300, use_container_width=True)
+
+                            # Statistiques
+                            st.info(f"""
+                            **Features per sample statistics**
+                            - Min: {min_val}
+                            - Max: {max_val}
+                            - Mean: {mean_val:.2f}
+                            - Median: {median_val:.2f}
+                            - Std: {std_val:.2f}
+                            """)
+
+                            # --- SUGGESTIONS ET DÉTECTION UNIFIÉES ---
+                            st.markdown("**ℹ️ Suggestions and Outlier Detection**")
+                            heterogeneity_detected = std_val > 0.25 * mean_val or max_val > median_val * 1.5
+
+                            # Paramètres fixes pour IQR (cohérents avec les suggestions)
+                            q1_percentile = 25  # Fixé à 25%
+                            q3_percentile = 75  # Fixé à 75%
+                            iqr_factor = 1.5   # Fixé à 1.5
+
+                            # Détection des outliers (méthode IQR unifiée)
+                            if "Class" in df_features.columns:
+                                outlier_indices = []
+                                for cls, group in df_features.groupby("Class"):
+                                    Q1 = group["Features per sample"].quantile(q1_percentile / 100)
+                                    Q3 = group["Features per sample"].quantile(q3_percentile / 100)
+                                    IQR = Q3 - Q1
+                                    lower = Q1 - iqr_factor * IQR
+                                    upper = Q3 + iqr_factor * IQR
+                                    outliers = group[
+                                        (group["Features per sample"] < lower) |
+                                        (group["Features per sample"] > upper)
+                                    ]
+                                    outlier_indices.extend(outliers.index.tolist())
+                            else:
+                                Q1 = df_features["Features per sample"].quantile(q1_percentile / 100)
+                                Q3 = df_features["Features per sample"].quantile(q3_percentile / 100)
+                                IQR = Q3 - Q1
+                                lower = Q1 - iqr_factor * IQR
+                                upper = Q3 + iqr_factor * IQR
+                                outlier_indices = df_features[
+                                    (df_features["Features per sample"] < lower) |
+                                    (df_features["Features per sample"] > upper)
+                                ].index.tolist()
+
+                            st.session_state["detected_outliers"] = outlier_indices
+
+                            # Affichage des suggestions (cohérentes avec la détection)
+                            if heterogeneity_detected or outlier_indices:
+                                st.warning("""
+                                ⚠️ **High heterogeneity or outliers detected**
+                                - Some samples may negatively affect model fairness and stability.
+                                - **Recommended actions:**
+                                    - 🔹 Check for incomplete or corrupted samples
+                                    - 🔹 Consider removing the detected outliers
+                                    - 🔹 Inspect outliers manually in the table below
+                                """)
+                            else:
+                                st.success("""
+                                ✅ **Dataset homogeneity is acceptable.**
+                                - No critical imbalance or outliers detected.
+                                - Your dataset is suitable for modeling without structural bias.
+                                """)
+
+
+                            if outlier_indices:
+                                # Si des outliers sont détectés : afficher la table + boxplot
+                                left_col, right_col = st.columns([1, 1])
+                                with left_col:
+                                    st.markdown(f"**{len(outlier_indices)} outliers found**")
+                                    st.dataframe(
+                                        df.loc[outlier_indices][["Class"]]
+                                        .assign(Features=df_features.loc[outlier_indices]["Features per sample"])
+                                    )
+
+                                    
+                                with right_col:
+                                    import plotly.express as px
+                                    # Utilisation des couleurs existantes dans st.session_state
+                                    color_map = None
+                                    if "Class" in df_features.columns and 'class_colors' in st.session_state:
+                                        # Crée une map de couleurs à partir des couleurs existantes
+                                        unique_classes = df_features["Class"].unique()
+                                        color_map = {
+                                            cls: st.session_state['class_colors'].get(cls, f"#{hash(cls) % 0xFFFFFF:06x}")
+                                            for cls in unique_classes
+                                        }
+                                    fig = px.box(
+                                        df_features,
+                                        y="Features per sample",
+                                        points="outliers",
+                                        color="Class" if "Class" in df_features.columns else None,
+                                        color_discrete_map=color_map,
+                                        title="Features per Sample Distribution"
+                                    )
+                                    st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                # Si aucun outlier : afficher uniquement le boxplot en plein écran
+                                import plotly.express as px
+                                color_map = None
+                                if "Class" in df_features.columns and 'class_colors' in st.session_state:
+                                    unique_classes = df_features["Class"].unique()
+                                    color_map = {
+                                        cls: st.session_state['class_colors'].get(cls, f"#{hash(cls) % 0xFFFFFF:06x}")
+                                        for cls in unique_classes
+                                    }
+                                fig = px.box(
+                                    df_features,
+                                    y="Features per sample",
+                                    points="outliers",
+                                    color="Class" if "Class" in df_features.columns else None,
+                                    color_discrete_map=color_map,
+                                    title="Features per Sample Distribution (No Outliers Detected)"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+
+                            # Nettoyage mémoire
+                            del df_features
+                            import gc; gc.collect()
+
+
+                    if "detected_outliers" in st.session_state and st.session_state["detected_outliers"]:
+                        with st.form("remove_outliers_form"):
+
+                            st.info(f"{len(st.session_state['detected_outliers'])} outliers ready for removal.")
+                            remove_outliers_button = st.form_submit_button("🗑 Remove Outliers")
+
+                        if remove_outliers_button:
+                            with st.spinner("Removing outliers..."):
+                                idx = st.session_state["detected_outliers"]
+
+                                # Mise à jour de toutes les clés pertinentes dans st.session_state
+                                for key in ["data", "final_data", "overview_df"]:
+                                    if key in st.session_state and st.session_state[key] is not None:
+                                        df_tmp = st.session_state[key].copy()
+
+                                        # ⚡ Assurer que "Class" reste
+                                        if "Class" not in df_tmp.columns:
+                                            df_tmp["Class"] = st.session_state["final_data"]["Class"]
+
+                                        # Supprimer les outliers
+                                        df_tmp = df_tmp.drop(index=idx, errors='ignore').reset_index(drop=True)
+                                        st.session_state[key] = df_tmp
+
+                                # Conserver une trace des outliers supprimés
+                                st.session_state["removed_outliers"] = idx
+                                st.session_state["detected_outliers"] = []
+                                st.success(f"✅ **{len(idx)} outliers removed** — All datasets updated!")
+
 
             # ---------------- Missing Values ----------------
 
@@ -1126,57 +1269,45 @@ def main():
                     gc.collect()
 
 
-        with st.expander("**🧹 Edit Dataset Options**", expanded=False):
+        with st.expander("🧹 **Edit Dataset Options**", expanded=False):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
                 unsafe_allow_html=True
             )
             if "final_data" in st.session_state:
+                # --- Ajouter la colonne Original_Index dès le départ ---
+                df = st.session_state["final_data"].reset_index(drop=False)
+                df.rename(columns={'index': 'Original_Index'}, inplace=True)
 
-                df = st.session_state["final_data"].reset_index()
-                label_df = df[["index", "Class"]]
-
-                row_options = list(label_df.apply(lambda row: f"Index {row['index']} → {row['Class']}", axis=1))
+                # Pour l'affichage dans les multiselect
+                label_df = df[["Original_Index", "Class"]]
+                row_options = list(label_df.apply(lambda row: f"Index {row['Original_Index']} → {row['Class']}", axis=1))
 
                 with st.form(key="edit_dataset_form"):
-
-                    # ---------------------- ROWS TO REMOVE ----------------------
+                    # --- Sélection des rows à supprimer ---
                     selected_rows = st.multiselect("Rows to remove:", row_options, key="selected_rows_to_remove")
                     selected_indexes = [int(row.split()[1]) for row in selected_rows] if selected_rows else []
 
-                    # ---------------------- COLUMNS TO REMOVE (EXCLUDE CLASS) ----------------------
-                    columns_available_to_remove = [col for col in df.columns if col not in ["Class", "index"]]
-
+                    # --- Colonnes disponibles à supprimer (protéger Class et Original_Index) ---
+                    columns_available_to_remove = [col for col in df.columns if col not in ["Class", "Original_Index"]]
                     selected_columns = st.multiselect(
-                        "Columns to remove:",
-                        columns_available_to_remove,
-                        key="selected_columns_to_remove"
+                        "Columns to remove:", columns_available_to_remove, key="selected_columns_to_remove"
                     )
 
-                    # ---------------------- REMOVE CLASS VALUES ----------------------
+                    # --- Classes à supprimer ---
                     unique_classes = sorted(df["Class"].dropna().unique().tolist())
                     selected_classes_to_remove = st.multiselect(
-                        "Remove all samples belonging to the following Class(es):",
-                        unique_classes,
-                        key="classes_to_remove"
+                        "Remove all samples belonging to the following Class(es):", unique_classes, key="classes_to_remove"
                     )
 
-                    # ---------------------- ROWS TO KEEP ----------------------
+                    # --- Rows à garder ---
                     rows_to_keep = st.multiselect("Rows to keep:", row_options, key="rows_to_keep")
                     rows_keep_indexes = [int(row.split()[1]) for row in rows_to_keep] if rows_to_keep else []
 
-
-                    # ---------------------- COLUMNS TO KEEP (Class optional in UI) ----------------------
-                    all_columns = [c for c in df.columns if c != "index"]
-
+                    # --- Colonnes à garder ---
                     columns_to_keep = st.multiselect(
-                        "Columns to keep:",
-                        all_columns,
-                        key="columns_to_keep"
+                        "Columns to keep:", list(df.columns), key="columns_to_keep"
                     )
-                    # Force Class retention (protection)
-                    if "Class" not in columns_to_keep:
-                        columns_to_keep.append("Class")
 
                     col1, col2 = st.columns(2)
                     with col1:
@@ -1184,38 +1315,41 @@ def main():
                     with col2:
                         reset_changes = st.form_submit_button("🔄 Reset All Changes")
 
-
                 # ------------------------- APPLY CHANGES -------------------------
                 if apply_changes:
                     with st.spinner("Applying modifications..."):
 
-                        # KEEP ROWS first (if selected)
+                        # Keep rows first
                         if rows_keep_indexes:
                             st.session_state["final_data"] = st.session_state["final_data"].loc[rows_keep_indexes]
 
-                        # KEEP COLUMNS (force Class retention)
+                        # Keep columns (force Class & Original_Index retention)
                         if columns_to_keep:
-                            if "Class" not in columns_to_keep:
-                                columns_to_keep.append("Class")
+                            for col in ["Class", "Original_Index"]:
+                                if col not in columns_to_keep:
+                                    columns_to_keep.append(col)
                             st.session_state["final_data"] = st.session_state["final_data"][columns_to_keep]
 
-                        # REMOVE ROWS
+                        # Remove selected rows
                         if selected_indexes:
-                            st.session_state["final_data"].drop(index=selected_indexes, inplace=True)
+                            st.session_state["final_data"].drop(index=selected_indexes, inplace=True, errors='ignore')
 
-                        # REMOVE COLUMNS (Class excluded automatically)
+                        # Remove selected columns (Class & Original_Index protected)
                         if selected_columns:
-                            st.session_state["final_data"].drop(columns=selected_columns, inplace=True)
+                            columns_to_drop = [col for col in selected_columns if col not in ["Class", "Original_Index"]]
+                            st.session_state["final_data"].drop(columns=columns_to_drop, inplace=True, errors='ignore')
 
-                        # REMOVE CLASS SAMPLES
+                        # Remove selected class samples
                         if selected_classes_to_remove:
                             st.session_state["final_data"] = st.session_state["final_data"][
                                 ~st.session_state["final_data"]["Class"].isin(selected_classes_to_remove)
                             ]
 
+                        # Reset index
                         st.session_state["final_data"].reset_index(drop=True, inplace=True)
                         st.session_state["data"] = st.session_state["final_data"]
                         st.success("✅ Modifications applied successfully.")
+
                 # ------------------------- RESET -------------------------
                 if reset_changes:
                     st.session_state["final_data"] = st.session_state["data"].copy()
@@ -1230,14 +1364,13 @@ def main():
                 else:
                     st.dataframe(preview_df)
 
-                # Ask user for filename
+                # ------------------------- DOWNLOAD CSV -------------------------
                 custom_filename = st.text_input(
                     "📄 Filename for the cleaned dataset:",
                     value="Cleaned_Data.csv",
                     help="Enter a filename (must end with .csv)."
                 )
 
-                # Safety: enforce .csv extension
                 if not custom_filename.lower().endswith(".csv"):
                     custom_filename = custom_filename + ".csv"
 
@@ -1249,6 +1382,7 @@ def main():
                     file_name=custom_filename,
                     mime='text/csv'
                 )
+
 
 
 
