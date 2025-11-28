@@ -3615,27 +3615,28 @@ def main():
 
 
 
-            # ----------------- Exécution quand le formulaire est soumis -----------------
             if submitted:
                 try:
                     st.session_state["show_heatmap"] = True
-
                     # Charger la source des données
                     if data_source == 'Raw data':
                         data_heat = st.session_state.get('data')
+                        data_source_df = st.session_state.get('data') 
                     elif data_source == 'Preprocessed':
                         data_heat = st.session_state.get('preprocessed_data')
+                        data_source_df = st.session_state.get('preprocessed_data') 
                     elif data_source == 'Oversampled':
                         data_heat = st.session_state.get('oversampled_data')
+                        data_source_df = st.session_state.get('oversampled_data')  
                     elif data_source == 'Undersampled':
                         data_heat = st.session_state.get('undersampled_data')
+                        data_source_df = st.session_state.get('undersampled_data') 
                     else:
                         data_heat = None
-
+                        data_source_df = None
                     if data_heat is None:
                         st.warning("Please select a valid data source.")
                         st.stop()
-
                     # Déterminer les features sélectionnées
                     if select_all_features:
                         selected_features = [col for col in data_heat.columns if col not in ['Class', 'File', 'RT', 'Sum']]
@@ -3644,29 +3645,23 @@ def main():
                         if not selected_features:
                             st.warning("Please select features for the heatmap.")
                             st.stop()
-
                     # Vérifier que les features existent vraiment
                     selected_features = [f for f in selected_features if f in data_heat.columns]
                     if not selected_features:
                         st.error("No valid features found in the dataset. Please check your selection.")
                         st.stop()
-
                     # Appliquer log2 sur tout le DataFrame si demandé (évite NaN/-inf)
                     if perform_stat_test and data_type == 'Log2':
                         data_heat[selected_features] = np.log2(data_heat[selected_features].clip(lower=1e-6))
-
                     # Test statistique si demandé
                     if select_all_features and perform_stat_test:
                         significant_features = []
                         classes = data_heat['Class'].unique()
-
                         if len(classes) < 2:
                             st.error("The 'Class' column must contain at least two unique classes.")
                             st.stop()
-
                         for feature in selected_features:
                             groups = [data_heat[data_heat['Class'] == c][feature] for c in classes]
-
                             # Vérifier qu'il y a assez de données
                             if all(len(g) > 1 for g in groups):
                                 if len(classes) > 2:
@@ -3677,21 +3672,16 @@ def main():
                                     significant_features.append(feature)
                             else:
                                 st.warning(f"Not enough data for feature '{feature}' in one of the classes.")
-
                         if not significant_features:
                             st.warning("No significant features found. Please adjust the p-value threshold.")
                             st.stop()
-
                         selected_features = significant_features
 
-                    # Moyenne par classe si demandé
                     if average_by_class:
                         data_heat = data_heat.groupby("Class").mean().reset_index()
-
                     st.markdown(f"**{len(selected_features)} feature(s)** selected for clustering.")
                     if perform_stat_test:
                         st.markdown(f"P-value threshold: `{p_value_threshold}` on `{data_type}` data")
-
                     # Affichage heatmap
                     with st.spinner("Generating heatmap..."):
                         plot_heatmap_samples(
@@ -3701,40 +3691,109 @@ def main():
                             custom_colors,
                             show_sample_names=show_sample_names
                         )
-
                     st.markdown("**Overexpressed Features by Class**")
                     if average_by_class:
                         df_for_overexpr = data_heat.set_index("Class")
                     else:
                         df_for_overexpr = data_heat.copy()
-
                     classes = data_heat['Class'].unique()
                     overexpressed_features = {}
-
                     for cls in classes:
                         cls_mask = df_for_overexpr.index == cls if average_by_class else data_heat['Class'] == cls
                         cls_values = df_for_overexpr.loc[cls_mask, selected_features].mean() if average_by_class else df_for_overexpr.loc[cls_mask, selected_features].mean()
                         other_values = df_for_overexpr.loc[~cls_mask, selected_features].mean() if average_by_class else df_for_overexpr.loc[~cls_mask, selected_features].mean()
-                        
+
                         diff = cls_values - other_values
                         # Features plus hautes que les autres classes
                         overexpressed_features[cls] = list(diff[diff > 0].sort_values(ascending=False).index)
 
-                    # Affichage
                     for cls, feats in overexpressed_features.items():
                         if feats:
                             st.info(f"**Class {cls}**: {', '.join(feats)}")
                         else:
                             st.info(f"**Class {cls}**: No overexpressed features detected")
 
-                    del data_heat, selected_features, custom_colors
+
+
+                    if perform_stat_test and 'significant_features' in locals():
+                        st.session_state["heatmap_significant_features"] = significant_features
+                        st.session_state["heatmap_data_source_df"] = data_source_df  
+
+                        valid_significant_features = [f for f in significant_features if f in data_source_df.columns]
+                        
+                        if not valid_significant_features:
+                            st.warning("No significant features available in the data source selected.")
+                            st.stop()
+
+                        # Garder les intensités brutes
+                        significant_df = data_source_df[['Class'] + valid_significant_features].copy()
+
+                        st.markdown("**Significant Features**")
+                        # st.subheader("Significant Features")
+                        st.dataframe(significant_df, hide_index=True)
+
+                        over_df = []
+
+                        classes = significant_df['Class'].unique()
+                        for cls in classes:
+                            cls_values = significant_df[significant_df['Class'] == cls][valid_significant_features].mean()
+                            other_values = significant_df[significant_df['Class'] != cls][valid_significant_features].mean()
+                            
+                            diff = cls_values - other_values
+                            cls_over = diff[diff > 0].sort_values(ascending=False)
+                            
+                            for feature, score in cls_over.items():
+                                over_df.append({
+                                    "Class": cls,
+                                    "Feature": feature,
+                                    "Overexpression Score": round(score, 4)
+                                })
+
+                        if over_df:
+                            over_df = pd.DataFrame(over_df)
+
+                            st.markdown("**Over-expressed Features by Class**")
+                            st.dataframe(over_df, hide_index=True)
+                        else:
+                            st.info("No overexpressed features detected for selected classes.")
+
+                        st.markdown("**Common Overexpressed Features Between Classes**")
+
+
+                        valid_over = {cls: feats for cls, feats in overexpressed_features.items() if feats}
+
+                        if len(valid_over) < 2:
+                            st.info("Not enough classes with overexpressed features to compute intersections.")
+                        else:
+ 
+                            common_all = set.intersection(*map(set, valid_over.values()))
+                            
+                            if common_all:
+                                st.success(f"**Common to ALL Classes ({len(common_all)}):** {', '.join(sorted(common_all))}")
+                            else:
+                                st.warning("No features are commonly overexpressed across ALL classes.")
+
+
+                            st.markdown("**Pairwise Intersections**")
+                            for i, cls1 in enumerate(valid_over):
+                                for cls2 in list(valid_over)[i + 1:]:
+                                    inter = set(valid_over[cls1]).intersection(valid_over[cls2])
+                                    if inter:
+                                        st.info(
+                                            f"**{cls1} ∩ {cls2}** ({len(inter)} features): "
+                                            + ", ".join(sorted(inter))
+                                        )
+                                    else:
+                                        st.info(f"**{cls1} ∩ {cls2}**: None")
+
+                    # Nettoyage
+                    del data_heat, data_source_df, selected_features, custom_colors, common_all, valid_over, over_df
                     gc.collect()
 
                 except Exception as e:
                     import traceback
                     st.error(f"An error occurred while generating the Heatmap: {e}")
                     st.text(traceback.format_exc())
-
 
 
         if "show_boxplots" not in st.session_state:
