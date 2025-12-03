@@ -7,14 +7,14 @@
 Designed for users who prefer **local execution**, Profiler Desktop delivers the same analytical power as the web version, directly on your computer.
 
 ### Citation
-Until the peer-reviewed publication is available, please cite the following reference when using Profiler or Profiler Desktop in publications or presentations:
+If you use **Profiler** or **Profiler Desktop** in your research, please cite our peer-reviewed publication:
 
-> **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**  
-> *Profiler: an open web platform for multi-omics analysis.*  
-> Université de Lille, 2025.  
-> DOI: [10.21203/rs.3.rs-7058776/v1](https://doi.org/10.21203/rs.3.rs-7058776/v1)
+> **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**
+> *Profiler: an open web platform for multi-omics analysis.*
+> **Bioinformatics**, 2025.
+> DOI: [10.1093/bioinformatics/btaf644](https://doi.org/10.1093/bioinformatics/btaf644)
+> PMID: [41324558](https://pubmed.ncbi.nlm.nih.gov/41324558/)
 
----
 ---
 
 ## 🖥️ Installation Guide
