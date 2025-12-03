@@ -21,21 +21,20 @@ If you use **Profiler** or **Profiler Desktop** in your research, please cite ou
 Follow the steps below to install and run **Profiler Desktop**.
 
 ---
-
 ### 1️⃣ Clone or Download the Repository
 You can either **clone** or **download** the Profiler Desktop folder.
 
-#### Option A – Clone via Git
-```bash
-git clone https://github.com/yanisZirem/prism-profiler
-cd prism-profiler-desktop-v1.0
-```
-
-#### Option B – Download ZIP
+#### Option A – Download ZIP
 1. Go to the GitHub repository page.
 2. Click **Code** → **Download ZIP**.
 3. Extract the folder (e.g., `prism_profiler-desktop-v1.0`) on your computer.
 
+
+
+#### Option B – Clone via Git
+```bash
+git clone https://github.com/yanisZirem/prism-profiler
+```
 ---
 
 ### 2️⃣ Install Anaconda
@@ -47,20 +46,16 @@ During installation, check the box:
 
 ---
 
-### 3️⃣ Optional: Automatic Installation Script (Windows Only)
+### 3️⃣ Automatic Installation Script (Windows Only)
 For Windows users, Profiler Desktop can be installed automatically using the provided PowerShell script `install_profiler.ps1`.
-This script will handle everything for you (environment setup, dependency installation and ProteoWizard configuration).
+This script will handle everything for you (environment setup, dependency installation and ProteoWizard configuration). Supported System : Windows 10 or 11
 
-#### 🖥️ Supported System
-✅ Windows 10 or 11
-
-####  Quick Start (Automatic Installation)
-1. Clone or download the Profiler Desktop repository:
-   ```bash
-   git clone https://github.com/yanisZirem/prism-profiler
-   cd prism-profiler-desktop-v1.0
+####  Automatic Installation)
+1. Open **Windows PowerShell as Administrator**.
+   navigate to prism-profiler-desktop-v1.0 folder :
    ```
-2. Open **PowerShell as Administrator**.
+   cd /yourpath/prism-profiler-desktop-v1.0
+   ```
 3. Run the installer (bypass PowerShell restrictions if needed):
    ```powershell
    Set-ExecutionPolicy Bypass -Scope Process -Force
