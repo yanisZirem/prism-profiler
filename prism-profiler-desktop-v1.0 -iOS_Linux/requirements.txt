@@ -67,7 +67,7 @@ lifelines
 networkx
 Ipython 
 statsmodels
-gseapy==1.1.5
+gseapy
 neurocombat_sklearn==0.1.3
 bcrypt==4.3.0
 passlib==1.7.4
@@ -78,3 +78,4 @@ numexpr==2.8.6
 pandarallel==1.6.5
 chardet
 streamlit_autorefresh==1.0.1
+requests
