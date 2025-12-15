@@ -577,12 +577,12 @@ def main():
         # ---- HEADER ----
         st.markdown("""
             <h3 style="text-align: center; color: #318CE7; padding: 12px; background-color: #f0f8ff; border-radius: 8px;">
-                👋 Welcome to <strong>Profiler Desktop</strong>
+                👋 Welcome to <strong>Profiler</strong>
             </h3>
-            <p><strong>Profiler</strong> is an innovative omics data analysis platform developed by the
+            <p><strong>Profiler</strong> is a <strong>peer-reviewed</strong> and <strong>open-source omics</strong> data analysis platform developed by the
             <a href="https://www.laboratoire-prism.fr/" target="_blank"><strong>PRISM U1192 laboratory</strong></a> and protected by <strong>INSERM Transfer</strong>.
-            The desktop version allows local execution of analyses with Profiler pipelines.</p>
-            <p>Profiler Desktop brings automation, AI, and multi-omics analysis to your local machine for efficient and secure research workflows.</p>
+            The platform was designed as part of ongoing academic research to advance automated, AI-driven analysis in the field of omics.</p>
+            <p>Profiler brings the power of artificial intelligence, statistical modeling, and automation to the analysis of complex biological data.</p>
             <h4 style="color: #318CE7;">✨ Key features</h4>
             <ul>
                 <li><strong>Multi-Omics Support:</strong> Proteomics, metabolomics, lipidomics, genomics, transcriptomics, and more.</li>
@@ -592,10 +592,28 @@ def main():
                 <li><strong>Smart Suggestions:</strong> Recommended tests and imputations based on your data.</li>
                 <li><strong>High-Speed Processing:</strong> Optimized for performance with powerful back-end.</li>
                 <li><strong>End-to-End Workflow:</strong> From raw input to biological insights.</li>
+                <li><strong>Additional Tool:</strong> MSI2Profiler desktop tool for Mass Spectrometry Imaging (MSI) preprocessing.</li>
             </ul>
         """, unsafe_allow_html=True)
 
-        # ---- Documentation & Certification ----
+        # ---- Styled download buttons ----
+        st.markdown("""
+            <style>
+            div.stDownloadButton > button, div.stButton > button, a.button-link {
+                font-size: 22px;
+                font-weight: bold;
+                padding: 15px 30px;
+                background-color: #318CE7;
+                color: white !important;
+                border: none;
+                border-radius: 10px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                text-decoration: none;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Documentation and IDDN certificate buttons
         col1, col2 = st.columns(2)
         with col1:
             with open("documentation.pdf", "rb") as doc_file:
@@ -608,34 +626,24 @@ def main():
         with col2:
             with open("IDDN Certificate.pdf", "rb") as iddn_file:
                 st.download_button(
-                    label="⚖️ Download INSERM Protection Certificate",
+                    label="⚖️ Download INSERM Certification",
                     data=iddn_file,
                     file_name="IDDN Certificate.pdf",
                     mime="application/pdf"
                 )
 
-        # ---- GitHub Links ----
+        # GitHub and Desktop version buttons
         for link, label in [
             ("https://github.com/yanisZirem/Profiler_v1_requests_datatests.git", "➡️ Access Profiler's GitHub 🌐"),
             ("https://github.com/yanisZirem/prism-profiler.git", "➡️ Profiler Desktop Version 🌐")
         ]:
             st.markdown(f"""
                 <div style='text-align:center; margin-top:40px; margin-bottom:40px;'>
-                    <a class="button-link" href="{link}" target="_blank" style='
-                        font-size: 22px;
-                        font-weight: bold;
-                        padding: 15px 30px;
-                        background-color: #318CE7;
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);'>
-                        {label}
-                    </a>
+                    <a class="button-link" href="{link}" target="_blank">{label}</a>
                 </div>
             """, unsafe_allow_html=True)
 
-        # ---- MSI2Profiler Highlight (redirect to Web) ----
+        # MSI2Profiler section
         st.markdown("""
             <hr>
             <h3 style="color:#318CE7; text-align:center;">💻 MSI2Profiler – Desktop Tool</h3>
@@ -650,7 +658,8 @@ def main():
                 border-radius: 12px;
                 padding: 20px;
                 margin-top: 15px;
-                font-size:15px;'>
+                font-size:15px;
+            '>
             <strong>Key Features:</strong>
             <ul>
                 <li> Load MSI <strong>.imzML</strong> files from tissue sections or ROIs</li>
@@ -666,14 +675,24 @@ def main():
             </p>
         """, unsafe_allow_html=True)
 
-        # ---- Citations & Publications ----
+
+
+        # Citation & publications
+
         st.markdown("""
             <h4 style="color: #318CE7;">📚 Citation & Publications</h4>
-            <p><strong>Until the peer-reviewed publication is released, please cite our pre-print:</strong></p>
+            <p><strong>Please cite our peer-reviewed publication:</strong></p>
             <ul>
-                <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, <strong>Fournier, I.</strong>, <strong>Salzet, M.</strong> 
-                "Profiler: an open web platform for multi-omics analysis" <em>Université de Lille</em>, 2025. DOI: 
-                <a href="https://doi.org/10.21203/rs.3.rs-7058776/v1">10.21203/rs.3.rs-7058776/v1</a></li>
+                <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, <strong>Fournier, I.</strong>, <strong>Salzet, M.</strong>
+                "Profiler: an open web platform for multi-omics analysis" <em>Bioinformatics</em>, 2025.
+                DOI: <a href="https://doi.org/10.1093/bioinformatics/btaf644">10.1093/bioinformatics/btaf644</a>
+                (PMID: <a href="https://pubmed.ncbi.nlm.nih.gov/41324558/">41324558</a>)</li>
+            </ul>
+            <p><strong>Related Papers:</strong></p>
+            <ul>
+                <li><strong>Zirem, Y.</strong>, <strong>Ledoux, L.</strong>, et al. "Real-time glioblastoma tumor microenvironment assessment by SpiderMass..." <em>Cell Reports Medicine</em>, 2024.</li>
+                <li><strong>Zirem, Y.</strong>, et al. "Protocol to analyze 1D and 2D mass spectrometry data..." <em>STAR Protocols</em>, 2024.</li>
+                <li><strong>Zirem, Y.</strong>, <strong>Lagache, L.</strong>, et al. "Predicting Protein Pathways Associated to Tumor Heterogeneity..." <em>Molecular & Cellular Proteomics</em>, 2025.</li>
             </ul>
         """, unsafe_allow_html=True)
 
@@ -1274,108 +1293,115 @@ def main():
                 '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
                 unsafe_allow_html=True
             )
+            
             if "final_data" in st.session_state:
-                # --- Ajouter la colonne Original_Index dès le départ ---
-                df = st.session_state["final_data"].reset_index(drop=False)
-                df.rename(columns={'index': 'Original_Index'}, inplace=True)
-
+                df = st.session_state["final_data"].copy()
+                
+                # ✅ Créer un index temporaire UNIQUEMENT pour l'affichage
+                display_df = df.reset_index(drop=False)
+                display_df.rename(columns={'index': 'Display_Index'}, inplace=True)
+                
                 # Pour l'affichage dans les multiselect
-                label_df = df[["Original_Index", "Class"]]
-                row_options = list(label_df.apply(lambda row: f"Index {row['Original_Index']} → {row['Class']}", axis=1))
-
+                label_df = display_df[["Display_Index", "Class"]]
+                row_options = list(label_df.apply(lambda row: f"Index {row['Display_Index']} → {row['Class']}", axis=1))
+                
                 with st.form(key="edit_dataset_form"):
                     # --- Sélection des rows à supprimer ---
                     selected_rows = st.multiselect("Rows to remove:", row_options, key="selected_rows_to_remove")
                     selected_indexes = [int(row.split()[1]) for row in selected_rows] if selected_rows else []
-
-                    # --- Colonnes disponibles à supprimer (protéger Class et Original_Index) ---
-                    columns_available_to_remove = [col for col in df.columns if col not in ["Class", "Original_Index"]]
+                    
+                    # --- Colonnes disponibles à supprimer (protéger Class uniquement) ---
+                    columns_available_to_remove = [col for col in df.columns if col != "Class"]
                     selected_columns = st.multiselect(
                         "Columns to remove:", columns_available_to_remove, key="selected_columns_to_remove"
                     )
-
+                    
                     # --- Classes à supprimer ---
                     unique_classes = sorted(df["Class"].dropna().unique().tolist())
                     selected_classes_to_remove = st.multiselect(
                         "Remove all samples belonging to the following Class(es):", unique_classes, key="classes_to_remove"
                     )
-
+                    
                     # --- Rows à garder ---
                     rows_to_keep = st.multiselect("Rows to keep:", row_options, key="rows_to_keep")
                     rows_keep_indexes = [int(row.split()[1]) for row in rows_to_keep] if rows_to_keep else []
-
+                    
                     # --- Colonnes à garder ---
                     columns_to_keep = st.multiselect(
                         "Columns to keep:", list(df.columns), key="columns_to_keep"
                     )
-
+                    
                     col1, col2 = st.columns(2)
                     with col1:
                         apply_changes = st.form_submit_button("Apply Changes")
                     with col2:
                         reset_changes = st.form_submit_button("🔄 Reset All Changes")
-
+                
                 # ------------------------- APPLY CHANGES -------------------------
                 if apply_changes:
                     with st.spinner("Applying modifications..."):
-
-                        # Keep rows first
+                        modified_df = df.copy()
+                        
+                        # Keep rows first (utiliser l'index actuel du DataFrame)
                         if rows_keep_indexes:
-                            st.session_state["final_data"] = st.session_state["final_data"].loc[rows_keep_indexes]
-
-                        # Keep columns (force Class & Original_Index retention)
+                            modified_df = modified_df.iloc[rows_keep_indexes]
+                        
+                        # Keep columns (force Class retention)
                         if columns_to_keep:
-                            for col in ["Class", "Original_Index"]:
-                                if col not in columns_to_keep:
-                                    columns_to_keep.append(col)
-                            st.session_state["final_data"] = st.session_state["final_data"][columns_to_keep]
-
-                        # Remove selected rows
+                            if "Class" not in columns_to_keep:
+                                columns_to_keep.append("Class")
+                            modified_df = modified_df[columns_to_keep]
+                        
+                        # Remove selected rows (utiliser l'index actuel)
                         if selected_indexes:
-                            st.session_state["final_data"].drop(index=selected_indexes, inplace=True, errors='ignore')
-
-                        # Remove selected columns (Class & Original_Index protected)
+                            # Convertir les index d'affichage en index réels
+                            indexes_to_drop = [i for i in selected_indexes if i < len(modified_df)]
+                            modified_df = modified_df.drop(modified_df.index[indexes_to_drop], errors='ignore')
+                        
+                        # Remove selected columns (Class protected)
                         if selected_columns:
-                            columns_to_drop = [col for col in selected_columns if col not in ["Class", "Original_Index"]]
-                            st.session_state["final_data"].drop(columns=columns_to_drop, inplace=True, errors='ignore')
-
+                            columns_to_drop = [col for col in selected_columns if col != "Class"]
+                            modified_df = modified_df.drop(columns=columns_to_drop, errors='ignore')
+                        
                         # Remove selected class samples
                         if selected_classes_to_remove:
-                            st.session_state["final_data"] = st.session_state["final_data"][
-                                ~st.session_state["final_data"]["Class"].isin(selected_classes_to_remove)
-                            ]
-
-                        # Reset index
-                        st.session_state["final_data"].reset_index(drop=True, inplace=True)
-                        st.session_state["data"] = st.session_state["final_data"]
+                            modified_df = modified_df[~modified_df["Class"].isin(selected_classes_to_remove)]
+                        
+                        # ✅ Reset index pour nettoyer (pas de colonne Original_Index créée)
+                        modified_df.reset_index(drop=True, inplace=True)
+                        
+                        st.session_state["final_data"] = modified_df
+                        st.session_state["data"] = modified_df.copy()
                         st.success("✅ Modifications applied successfully.")
-
+                
                 # ------------------------- RESET -------------------------
                 if reset_changes:
                     st.session_state["final_data"] = st.session_state["data"].copy()
                     st.success("🔁 Dataset has been restored to its original state.")
-
+                
                 # ------------------------- PREVIEW -------------------------
                 st.markdown("**Preview Updated Dataset**")
                 preview_df = st.session_state["final_data"]
-
-                if preview_df.shape[1] > 100:
-                    st.dataframe(pd.concat([preview_df.iloc[:, :50], preview_df.iloc[:, -50:]], axis=1))
+                
+                # ✅ Vérifier qu'il n'y a pas de colonnes index parasites
+                preview_display = preview_df.copy()
+                
+                if preview_display.shape[1] > 100:
+                    st.dataframe(pd.concat([preview_display.iloc[:, :50], preview_display.iloc[:, -50:]], axis=1))
                 else:
-                    st.dataframe(preview_df)
-
+                    st.dataframe(preview_display)
+                
                 # ------------------------- DOWNLOAD CSV -------------------------
                 custom_filename = st.text_input(
                     "📄 Filename for the cleaned dataset:",
                     value="Cleaned_Data.csv",
                     help="Enter a filename (must end with .csv)."
                 )
-
                 if not custom_filename.lower().endswith(".csv"):
                     custom_filename = custom_filename + ".csv"
-
+                
+                # ✅ S'assurer qu'on n'exporte pas l'index
                 csv = preview_df.to_csv(index=False).encode('utf-8')
-
                 st.download_button(
                     label="📥 Download Cleaned Dataset (CSV)",
                     data=csv,
@@ -4190,6 +4216,306 @@ def main():
                 gc.collect()
 
 
+    # with tabs[4]:
+    #     st.markdown("""
+    #         <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
+    #         background-color: #f0f8ff; padding: 10px; border-radius: 5px;">
+    #         Biological and Molecular Pathway Enrichment
+    #         </h3>""", unsafe_allow_html=True)
+
+
+    #     with st.expander("🕸️ **Enrichment Analysis**", expanded=True):
+    #         st.markdown(
+    #             """
+    #             <div style="color: #4A4A4A; font-size: 14px; margin-bottom: 10px;">
+    #                 🧬 <strong>Analyze biological pathways</strong> to identify enriched molecular processes
+    #                 across different gene/protein classes.
+    #             </div>
+    #             """,
+    #             unsafe_allow_html=True
+    #         )
+
+    #         # ✅ Initialisation
+    #         if 'gene_set_categories' not in st.session_state:
+    #             st.session_state.gene_set_categories = {}
+    #         if 'categories_loaded' not in st.session_state:
+    #             st.session_state.categories_loaded = False
+    #         if 'selected_category' not in st.session_state:
+    #             st.session_state.selected_category = "None"
+
+    #         # --- Bouton pour charger les catégories et selectbox hors formulaire ---
+    #         col1, col2 = st.columns([1, 3])
+    #         with col1:
+    #             if st.button("📥 Load databases categories"):
+    #                 with st.spinner("Loading available gene databases categories..."):
+    #                     try:
+    #                         tmp_sets = load_gene_sets()
+    #                         if isinstance(tmp_sets, dict):
+    #                             st.session_state.gene_set_categories = tmp_sets
+    #                             st.session_state.categories_loaded = True
+    #                             st.success("✅ Categories loaded!")
+    #                         else:
+    #                             st.warning("⚠️ Invalid gene set format. Expected a dictionary.")
+    #                     except Exception as e:
+    #                         st.error(f"❌ Failed to load gene sets: {e}")
+    #                         st.error(f"❌ API down ! try later: {e}")
+    #                         st.session_state.gene_set_categories = {}
+    #                         st.session_state.categories_loaded = False
+    #         with col2:
+    #             if st.session_state.categories_loaded and st.session_state.gene_set_categories:
+    #                 categories = ["None"] + list(st.session_state.gene_set_categories.keys())
+    #             else:
+    #                 categories = ["None"]
+    #             st.session_state.selected_category = st.selectbox("Select a gene/protein specific database in a category", options=categories, index=0)
+
+    #         # --- FORMULAIRE PRINCIPAL ---
+    #         with st.form("enrichment_form", clear_on_submit=False):
+    #             st.markdown("**⚙️ Configuration**", unsafe_allow_html=True)
+
+    #             # --- Selectbox pour la database selon la catégorie choisie ---
+    #             if st.session_state.selected_category != "None" and st.session_state.selected_category in st.session_state.gene_set_categories:
+    #                 db_options = ["None"] + st.session_state.gene_set_categories[st.session_state.selected_category]
+    #             else:
+    #                 db_options = ["None"]
+    #             selected_gene_set = st.selectbox("Select a database", options=db_options)
+
+    #             # --- Autres paramètres ---
+    #             selected_organism = st.selectbox("Select an organism", ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"])
+    #             num_pathways = st.slider("Number of pathways to display", min_value=1, max_value=100, value=10)
+
+    #             st.markdown("---")
+    #             st.markdown("**Gene/proteins Classes**", unsafe_allow_html=True)
+
+    #             if 'num_classes_enrich' not in st.session_state:
+    #                 st.session_state.num_classes_enrich = 1
+
+    #             gene_lists, class_names = [], []
+    #             for i in range(st.session_state.num_classes_enrich):
+    #                 with st.container():
+    #                     col1, col2 = st.columns([1, 3])
+    #                     with col1:
+    #                         class_name = st.text_input(f"Class name {i + 1}", key=f"class_name_enrich{i}", value=f"Class_{i+1}")
+    #                     with col2:
+    #                         class_genes_input = st.text_area(
+    #                             f"Genes list {i + 1}",
+    #                             placeholder="Enter genes separated by commas, spaces, or new lines",
+    #                             key=f"class_genes_enrich{i}"
+    #                         )
+    #                         class_genes = [g.strip() for g in re.split(r'[,\s]+', class_genes_input) if g.strip()]
+    #                     class_names.append(class_name)
+    #                     gene_lists.append(class_genes)
+
+    #             # --- Boutons d’ajout/suppression de classes ---
+    #             col_add, col_remove = st.columns(2)
+    #             with col_add:
+    #                 if st.form_submit_button("➕ Add Class"):
+    #                     st.session_state.num_classes_enrich += 1
+    #                     st.rerun()
+    #             with col_remove:
+    #                 if st.form_submit_button("➖ Remove Class"):
+    #                     st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
+    #                     st.rerun()
+
+    #             st.markdown("---")
+    #             run_enrichment = st.form_submit_button("✅ Perform Enrichment")
+
+    #         # --- Logique après soumission ---
+    #         if run_enrichment:
+    #             if not selected_gene_set or selected_gene_set == "None":
+    #                 st.error("Please select a gene set database before running enrichment.")
+    #             elif any(len(g) == 0 for g in gene_lists):
+    #                 st.error("Each class must contain at least one gene.")
+    #             elif any(not name.strip() for name in class_names):
+    #                 st.error("Each class must have a name.")
+    #             else:
+    #                 with st.spinner("Running GSEA and enrichment analysis..."):
+    #                     # perform_gsea(
+    #                     #     gene_lists=gene_lists,
+    #                     #     class_names=class_names,
+    #                     #     gene_set_db=selected_gene_set,
+    #                     #     organism=selected_organism,
+    #                     #     num_pathways=num_pathways
+    #                     # )
+    #                     perform_gsea(
+    #                         gene_lists,
+    #                         class_names,
+    #                         selected_gene_set,
+    #                         selected_organism,
+    #                         num_pathways
+    #                     )
+    #                 st.success("✅ Enrichment analysis completed successfully!")
+
+
+    # with tabs[4]:
+    #     st.markdown("""
+    #         <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
+    #         background-color: #f0f8ff; padding: 10px; border-radius: 5px;">
+    #         Biological and Molecular Pathway Enrichment
+    #         </h3>""", unsafe_allow_html=True)
+
+    #     with st.expander("🕸️ Enrichment Analysis", expanded=True):
+
+    #         # ---- Initialisation ---- #
+    #         if 'gene_set_categories' not in st.session_state:
+    #             st.session_state.gene_set_categories = {}
+    #         if 'categories_loaded' not in st.session_state:
+    #             st.session_state.categories_loaded = False
+    #         if 'selected_category' not in st.session_state:
+    #             st.session_state.selected_category = "None"
+
+    #         # ---- Mode selection ---- #
+    #         st.markdown("### ⚙️ Enrichment Mode")
+    #         analysis_mode = st.radio(
+    #             "Choose mode:",
+    #             ["Online (Enrichr API)", "Offline (local .gmt)"],
+    #             index=0
+    #         )
+
+    #         # ============================================================== #
+    #         #                  OFFLINE MODE (.GMT local)                     #
+    #         # ============================================================== #
+    #         uploaded_gmt = None
+    #         if analysis_mode == "Offline (local .gmt)":
+
+    #             st.info("You selected offline mode. Upload a .gmt file.")
+
+    #             uploaded_gmt = st.file_uploader("Upload .gmt", type=["gmt"])
+
+    #             if uploaded_gmt:
+    #                 try:
+    #                     st.session_state.gene_set_categories = load_gene_sets_offline(uploaded_gmt)
+    #                     st.session_state.categories_loaded = True
+    #                     st.success("Offline categories loaded!")
+    #                 except Exception as e:
+    #                     st.error(f"Error loading GMT: {e}")
+
+    #         # ============================================================== #
+    #         #                       ONLINE MODE (API)                        #
+    #         # ============================================================== #
+    #         if analysis_mode == "Online (Enrichr API)":
+    #             col1, col2 = st.columns([1, 3])
+
+    #             with col1:
+    #                 if st.button("📥 Load database categories (Online)"):
+    #                     with st.spinner("Fetching categories from Enrichr API..."):
+    #                         try:
+    #                             tmp_sets = load_gene_sets()
+    #                             if isinstance(tmp_sets, dict):
+    #                                 st.session_state.gene_set_categories = tmp_sets
+    #                                 st.session_state.categories_loaded = True
+    #                                 st.success("Categories loaded!")
+    #                             else:
+    #                                 st.error("Invalid format returned by API.")
+    #                         except Exception as e:
+    #                             st.error(f"❌ API error: {e}")
+
+    #         # ============================================================== #
+    #         #                       CATEGORY SELECT BOX                      #
+    #         # ============================================================== #
+    #         if st.session_state.categories_loaded:
+    #             categories = ["None"] + list(st.session_state.gene_set_categories.keys())
+    #         else:
+    #             categories = ["None"]
+
+    #         st.session_state.selected_category = st.selectbox(
+    #             "Select Gene Set Category",
+    #             categories
+    #         )
+
+    #         # ============================================================== #
+    #         #                        MAIN FORM                               #
+    #         # ============================================================== #
+    #         with st.form("enrichment_form", clear_on_submit=False):
+
+    #             # Database list depends on mode
+    #             if st.session_state.selected_category != "None":
+    #                 db_options = ["None"] + st.session_state.gene_set_categories[st.session_state.selected_category]
+    #             else:
+    #                 db_options = ["None"]
+
+    #             selected_gene_set = st.selectbox("Select a database", db_options)
+
+    #             # Organism only in ONLINE mode
+    #             if analysis_mode == "Online (Enrichr API)":
+    #                 selected_organism = st.selectbox(
+    #                     "Select organism",
+    #                     ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"]
+    #                 )
+    #             else:
+    #                 selected_organism = None  # ignored in offline
+
+    #             num_pathways = st.slider("Number of pathways to display", 1, 100, 10)
+
+    #             st.markdown("---")
+    #             st.markdown("### Gene/protein Classes")
+
+    #             # MULTI-CLASS INPUTS
+    #             if 'num_classes_enrich' not in st.session_state:
+    #                 st.session_state.num_classes_enrich = 1
+
+    #             gene_lists = []
+    #             class_names = []
+
+    #             for i in range(st.session_state.num_classes_enrich):
+    #                 with st.container():
+    #                     col1, col2 = st.columns([1, 3])
+    #                     with col1:
+    #                         class_name = st.text_input(f"Class name {i+1}", key=f"class_name_{i}", value=f"Class_{i+1}")
+    #                     with col2:
+    #                         raw = st.text_area(f"Genes list {i+1}", key=f"class_genes_{i}")
+    #                         genes = [g.strip() for g in re.split(r"[,\s]+", raw) if g.strip()]
+
+    #                     class_names.append(class_name)
+    #                     gene_lists.append(genes)
+
+    #             col_add, col_remove = st.columns(2)
+    #             with col_add:
+    #                 if st.form_submit_button("➕ Add Class"):
+    #                     st.session_state.num_classes_enrich += 1
+    #                     st.rerun()
+
+    #             with col_remove:
+    #                 if st.form_submit_button("➖ Remove Class"):
+    #                     st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
+    #                     st.rerun()
+
+    #             st.markdown("---")
+    #             run_enrichment = st.form_submit_button("✅ Perform Enrichment")
+
+    #         # ============================================================== #
+    #         #                   RUNNING ENRICHMENT                           #
+    #         # ============================================================== #
+    #         if run_enrichment:
+
+    #             # Safety checks
+    #             if analysis_mode == "Online (Enrichr API)" and selected_gene_set == "None":
+    #                 st.error("Select a database for Online mode.")
+    #             elif analysis_mode == "Offline (local .gmt)" and uploaded_gmt is None:
+    #                 st.error("Upload a .gmt file in Offline mode.")
+    #             elif any(len(lst) == 0 for lst in gene_lists):
+    #                 st.error("Each class must contain at least one gene.")
+    #             else:
+    #                 with st.spinner("Running enrichment..."):
+
+    #                     if analysis_mode == "Online (Enrichr API)":
+    #                         perform_gsea(
+    #                             gene_lists=gene_lists,
+    #                             class_names=class_names,
+    #                             gene_set=selected_gene_set,
+    #                             organism=selected_organism,
+    #                             num_pathways=num_pathways
+    #                         )
+
+    #                     else:  # OFFLINE
+    #                         perform_gsea_offline(
+    #                             gene_lists=gene_lists,
+    #                             class_names=class_names,
+    #                             gmt_file=uploaded_gmt,
+    #                             num_pathways=num_pathways
+    #                         )
+
+    #                 st.success("✅ Enrichment analysis completed!")
+
     with tabs[4]:
         st.markdown("""
             <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
@@ -4197,19 +4523,9 @@ def main():
             Biological and Molecular Pathway Enrichment
             </h3>""", unsafe_allow_html=True)
 
+        with st.expander("🕸️ Enrichment Analysis", expanded=True):
 
-        with st.expander("🕸️ **Enrichment Analysis**", expanded=True):
-            st.markdown(
-                """
-                <div style="color: #4A4A4A; font-size: 14px; margin-bottom: 10px;">
-                    🧬 <strong>Analyze biological pathways</strong> to identify enriched molecular processes
-                    across different gene/protein classes.
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            # ✅ Initialisation
+            # ---- Initialisation ---- #
             if 'gene_set_categories' not in st.session_state:
                 st.session_state.gene_set_categories = {}
             if 'categories_loaded' not in st.session_state:
@@ -4217,73 +4533,128 @@ def main():
             if 'selected_category' not in st.session_state:
                 st.session_state.selected_category = "None"
 
-            # --- Bouton pour charger les catégories et selectbox hors formulaire ---
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("📥 Load databases categories"):
-                    with st.spinner("Loading available gene databases categories..."):
-                        try:
-                            tmp_sets = load_gene_sets()
-                            if isinstance(tmp_sets, dict):
-                                st.session_state.gene_set_categories = tmp_sets
-                                st.session_state.categories_loaded = True
-                                st.success("✅ Categories loaded!")
-                            else:
-                                st.warning("⚠️ Invalid gene set format. Expected a dictionary.")
-                        except Exception as e:
-                            st.error(f"❌ Failed to load gene sets: {e}")
-                            st.session_state.gene_set_categories = {}
-                            st.session_state.categories_loaded = False
-            with col2:
-                if st.session_state.categories_loaded and st.session_state.gene_set_categories:
-                    categories = ["None"] + list(st.session_state.gene_set_categories.keys())
+            # ---- Mode selection ---- #
+            st.markdown("### ⚙️ Enrichment Mode")
+            analysis_mode = st.radio(
+                "Choose mode:",
+                ["Online (Enrichr API)", "Offline (local .gmt)"],
+                index=0
+            )
+
+            # ============================================================== #
+            #                  OFFLINE MODE (.GMT local)                     #
+            # ============================================================== #
+            gmt_file_path = None
+            if analysis_mode == "Offline (local .gmt)":
+                st.info("You selected offline mode.")
+
+                # Vérifier les fichiers GMT locaux
+                gmt_folder = Path("gmt_databases")
+                local_gmts = list(gmt_folder.glob("*.gmt")) if gmt_folder.exists() else []
+
+                if local_gmts:
+                    st.markdown("**Select an installed GMT or upload your own**")
+                    choices = ["-- Select installed GMT --"] + [f.name for f in local_gmts]
+                    selected_local = st.selectbox("Installed GMT files", choices)
+                    if selected_local != choices[0]:
+                        gmt_file_path = gmt_folder / selected_local
+
+                # Upload option
+                uploaded_gmt = st.file_uploader("Or upload your own .gmt file", type=["gmt"])
+                if uploaded_gmt:
+                    gmt_file_path = uploaded_gmt
+
+                if gmt_file_path:
+                    # st.session_state.gene_set_categories = load_gene_sets_offline(gmt_file_path)
+                    st.session_state.gene_set_categories = load_gene_sets_offline()
+
+                    st.session_state.categories_loaded = True
+                    st.success(f"GMT loaded: {Path(gmt_file_path).name}")
                 else:
-                    categories = ["None"]
-                st.session_state.selected_category = st.selectbox("Select a gene/protein specific database in a category", options=categories, index=0)
+                    st.warning("No GMT selected or uploaded yet.")
 
-            # --- FORMULAIRE PRINCIPAL ---
+            # ============================================================== #
+            #                       ONLINE MODE (API)                        #
+            # ============================================================== #
+            if analysis_mode == "Online (Enrichr API)":
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button("📥 Load database categories (Online)"):
+                        with st.spinner("Fetching categories from Enrichr API..."):
+                            try:
+                                tmp_sets = load_gene_sets()
+                                if isinstance(tmp_sets, dict):
+                                    st.session_state.gene_set_categories = tmp_sets
+                                    st.session_state.categories_loaded = True
+                                    st.success("Categories loaded!")
+                                else:
+                                    st.error("Invalid format returned by API.")
+                            except Exception as e:
+                                st.error(f"❌ API error: {e}")
+
+            # ============================================================== #
+            #                       CATEGORY SELECT BOX                      #
+            # ============================================================== #
+            if st.session_state.categories_loaded:
+                categories = ["None"] + list(st.session_state.gene_set_categories.keys())
+            else:
+                categories = ["None"]
+
+            st.session_state.selected_category = st.selectbox(
+                "Select Gene Set Category",
+                categories
+            )
+
+            # ============================================================== #
+            #                        MAIN FORM                               #
+            # ============================================================== #
             with st.form("enrichment_form", clear_on_submit=False):
-                st.markdown("**⚙️ Configuration**", unsafe_allow_html=True)
-
-                # --- Selectbox pour la database selon la catégorie choisie ---
-                if st.session_state.selected_category != "None" and st.session_state.selected_category in st.session_state.gene_set_categories:
+                # Database list depends on mode
+                if st.session_state.selected_category != "None":
                     db_options = ["None"] + st.session_state.gene_set_categories[st.session_state.selected_category]
                 else:
                     db_options = ["None"]
-                selected_gene_set = st.selectbox("Select a database", options=db_options)
 
-                # --- Autres paramètres ---
-                selected_organism = st.selectbox("Select an organism", ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"])
-                num_pathways = st.slider("Number of pathways to display", min_value=1, max_value=100, value=10)
+                selected_gene_set = st.selectbox("Select a database", db_options)
+
+                # Organism only in ONLINE mode
+                selected_organism = None
+                if analysis_mode == "Online (Enrichr API)":
+                    selected_organism = st.selectbox(
+                        "Select organism",
+                        ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"]
+                    )
+
+                num_pathways = st.slider("Number of pathways to display", 1, 100, 10)
 
                 st.markdown("---")
-                st.markdown("**Gene/proteins Classes**", unsafe_allow_html=True)
+                st.markdown("### Gene/protein Classes")
 
+                # MULTI-CLASS INPUTS
                 if 'num_classes_enrich' not in st.session_state:
                     st.session_state.num_classes_enrich = 1
 
-                gene_lists, class_names = [], []
+                gene_lists = []
+                class_names = []
+
                 for i in range(st.session_state.num_classes_enrich):
                     with st.container():
                         col1, col2 = st.columns([1, 3])
                         with col1:
-                            class_name = st.text_input(f"Class name {i + 1}", key=f"class_name_enrich{i}", value=f"Class_{i+1}")
+                            class_name = st.text_input(f"Class name {i+1}", key=f"class_name_{i}", value=f"Class_{i+1}")
                         with col2:
-                            class_genes_input = st.text_area(
-                                f"Genes list {i + 1}",
-                                placeholder="Enter genes separated by commas, spaces, or new lines",
-                                key=f"class_genes_enrich{i}"
-                            )
-                            class_genes = [g.strip() for g in re.split(r'[,\s]+', class_genes_input) if g.strip()]
-                        class_names.append(class_name)
-                        gene_lists.append(class_genes)
+                            raw = st.text_area(f"Genes list {i+1}", key=f"class_genes_{i}")
+                            genes = [g.strip() for g in re.split(r"[,\s]+", raw) if g.strip()]
 
-                # --- Boutons d’ajout/suppression de classes ---
+                        class_names.append(class_name)
+                        gene_lists.append(genes)
+
                 col_add, col_remove = st.columns(2)
                 with col_add:
                     if st.form_submit_button("➕ Add Class"):
                         st.session_state.num_classes_enrich += 1
                         st.rerun()
+
                 with col_remove:
                     if st.form_submit_button("➖ Remove Class"):
                         st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
@@ -4292,33 +4663,35 @@ def main():
                 st.markdown("---")
                 run_enrichment = st.form_submit_button("✅ Perform Enrichment")
 
-            # --- Logique après soumission ---
+            # ============================================================== #
+            #                   RUNNING ENRICHMENT                           #
+            # ============================================================== #
             if run_enrichment:
-                if not selected_gene_set or selected_gene_set == "None":
-                    st.error("Please select a gene set database before running enrichment.")
-                elif any(len(g) == 0 for g in gene_lists):
+                if analysis_mode == "Online (Enrichr API)" and selected_gene_set == "None":
+                    st.error("Select a database for Online mode.")
+                elif analysis_mode == "Offline (local .gmt)" and not gmt_file_path:
+                    st.error("Select or upload a GMT file for Offline mode.")
+                elif any(len(lst) == 0 for lst in gene_lists):
                     st.error("Each class must contain at least one gene.")
-                elif any(not name.strip() for name in class_names):
-                    st.error("Each class must have a name.")
                 else:
-                    with st.spinner("Running GSEA and enrichment analysis..."):
-                        # perform_gsea(
-                        #     gene_lists=gene_lists,
-                        #     class_names=class_names,
-                        #     gene_set_db=selected_gene_set,
-                        #     organism=selected_organism,
-                        #     num_pathways=num_pathways
-                        # )
-                        perform_gsea(
-                            gene_lists,
-                            class_names,
-                            selected_gene_set,
-                            selected_organism,
-                            num_pathways
-                        )
-                    st.success("✅ Enrichment analysis completed successfully!")
-
-
+                    with st.spinner("Running enrichment..."):
+                        if analysis_mode == "Online (Enrichr API)":
+                            perform_gsea(
+                                gene_lists=gene_lists,
+                                class_names=class_names,
+                                gene_set=selected_gene_set,
+                                organism=selected_organism,
+                                num_pathways=num_pathways
+                            )
+                        else:  # OFFLINE
+                            perform_gsea_offline(
+                                gene_lists=gene_lists,
+                                class_names=class_names,
+                                gene_set_path=gmt_file_path,
+                                organism=None,
+                                num_pathways=num_pathways
+                            )
+                    st.success("✅ Enrichment analysis completed!")
 
 
     with tabs[5]:
