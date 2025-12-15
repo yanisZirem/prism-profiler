@@ -6,7 +6,7 @@
 **Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive application for **multi-omics data analysis**.
 Designed for users who prefer **local execution**, Profiler Desktop delivers the same analytical power as the web version, directly on your computer.
 
-### Citation
+## Citation
 If you use **Profiler** or **Profiler Desktop** in your research, please cite our peer-reviewed publication:
 
 > **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**
@@ -14,6 +14,10 @@ If you use **Profiler** or **Profiler Desktop** in your research, please cite ou
 > **Bioinformatics**, 2025.
 > DOI: [10.1093/bioinformatics/btaf644](https://doi.org/10.1093/bioinformatics/btaf644)
 > PMID: [41324558](https://pubmed.ncbi.nlm.nih.gov/41324558/)
+
+## Test Data
+Example and test datasets for Profiler Desktop can be found here:  
+https://github.com/yanisZirem/Profiler_v1_requests_datatests
 
 ---
 
