@@ -4187,22 +4187,29 @@ def main():
                         fig.update_layout(
                             yaxis=dict(
                                 autorange="reversed",
-                                title="Features",
-                                titlefont=dict(size=16, color='black'),
-                                tickfont=dict(size=14, color='black')
+                                title=dict(
+                                    text="Features",
+                                    font=dict(size=16, color="black")
+                                ),
+                                tickfont=dict(size=14, color="black")
                             ),
                             xaxis=dict(
-                                title="Contribution (Weight)",
-                                titlefont=dict(size=16, color='black'),
-                                tickfont=dict(size=14, color='black')
+                                title=dict(
+                                    text="Contribution (Weight)",
+                                    font=dict(size=16, color="black")
+                                ),
+                                tickfont=dict(size=14, color="black")
                             ),
                             title=dict(
-                                font=dict(size=20, color='black')
+                                text="Top LIME Features Contributions",
+                                font=dict(size=20, color="black")
                             ),
                             coloraxis_colorbar=dict(
-                                title="Weight",
-                                titlefont=dict(size=14, color='black'),
-                                tickfont=dict(size=12, color='black')
+                                title=dict(
+                                    text="Weight",
+                                    font=dict(size=14, color="black")
+                                ),
+                                tickfont=dict(size=12, color="black")
                             )
                         )
 
@@ -5239,4 +5246,5 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
 
