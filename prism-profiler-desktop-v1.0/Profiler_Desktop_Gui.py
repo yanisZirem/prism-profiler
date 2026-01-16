@@ -3,7 +3,7 @@ Software Name: Profiler
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 23/10/2025
+Last Updated: 16/01/2025
 Version: 1.0.0
 
 Context:
@@ -4747,7 +4747,7 @@ def main():
                 num_pathways = st.slider("Number of pathways to display", 1, 100, 10)
 
                 st.markdown("---")
-                st.markdown("### Gene/protein Classes")
+                st.markdown("**Gene/protein Classes**")
 
                 # MULTI-CLASS INPUTS
                 if 'num_classes_enrich' not in st.session_state:
@@ -5361,4 +5361,5 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
 
