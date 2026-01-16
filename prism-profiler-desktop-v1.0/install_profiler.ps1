@@ -80,3 +80,16 @@ Write-Host "2?? Run: conda activate profiler"
 Write-Host "3?? Navigate to the Profiler Desktop folder"
 Write-Host "4?? Launch with: python profiler_desktop.py"
 Write-Host "`nProfiler Desktop is now ready to use!" -ForegroundColor Cyan
+
+Write-Host "Creating desktop shortcut..."
+
+$WshShell = New-Object -ComObject WScript.Shell
+$DesktopPath = [Environment]::GetFolderPath("Desktop")
+$Shortcut = $WshShell.CreateShortcut("$DesktopPath\Profiler Desktop.lnk")
+
+$Shortcut.TargetPath = "$PSScriptRoot\run_profiler.bat"
+$Shortcut.WorkingDirectory = $PSScriptRoot
+$Shortcut.IconLocation = "$PSScriptRoot\profiler.ico"
+$Shortcut.Save()
+
+Write-Host "Profiler Desktop shortcut created on Desktop."
