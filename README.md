@@ -1,10 +1,16 @@
 # Profiler Desktop
-
 ---
 
 ## Overview
-**Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive application for **multi-omics data analysis**.
-Designed for users who prefer **local execution**, Profiler Desktop delivers the same analytical power as the web version, directly on your computer.
+**Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive  interactive application dedicated to **multi-omics data analysis**, designed for users who want to run analyses **locally on their own computer**, without uploading data to a remote server.
+
+Profiler Desktop provides:
+- full offline execution
+- local data privacy
+- the same analytical features as the web version
+
+
+
 
 ## Citation
 If you use **Profiler** or **Profiler Desktop** in your research, please cite our peer-reviewed publication:
@@ -21,89 +27,142 @@ https://github.com/yanisZirem/Profiler_v1_requests_datatests
 
 ---
 
-## 🖥️ Installation Guide (Windows – Recommended)
+## 🖥️ Installation Guide
 
-Profiler Desktop is designed to be installed **automatically on Windows** with a single click.  
-⚠️ **Manual installation is only required if the automatic setup fails.**
+Profiler Desktop is primarily designed for **Windows users** with a **fully automated installer**.  
+A manual installation is also available for advanced users or non-Windows systems.
 
 ---
 
-## ✅ Recommended Installation (Automatic – Windows 10 / 11)
+## ✅ Recommended Installation (Windows 10 / 11 – Automatic)
 
 ### 1️⃣ Download Profiler Desktop
 
-You can either **download** or **clone** the repository.
-
-#### Option A – Download ZIP (recommended for most users)
-1. Go to the GitHub repository page.
+#### Option A – Download ZIP (recommended)
+1. Go to the Profiler Desktop GitHub repository.
 2. Click **Code → Download ZIP**.
-3. Extract the folder on your computer  
-   (example: `prism-profiler-desktop-v1.0`).
+3. **Extract the ZIP archive** anywhere on your computer  
+   (example: `C:\Users\YourName\Downloads\prism-profiler-desktop-v1.0`).
+
+⚠️ **Do not run anything before extracting the ZIP file.**
 
 ---
 
-### 2️⃣ Install Anaconda (Required)
+### 2️⃣ Start the Automatic Installer (VERY IMPORTANT)
 
-Download and install **Anaconda** from:  
-👉 https://www.anaconda.com/download
+After extracting the folder:
 
-During installation, **make sure to check**:  
-✅ **“Add Anaconda3 to my PATH environment variable”**
-
-Then **restart your computer**.
-
----
-
-### 3️⃣ Automatic Installation (One Click)
-
-Profiler Desktop includes an automatic installer for Windows.
-
-#### How to run the installer
 1. Open the extracted folder `prism-profiler-desktop-v1.0`
-2. **Right-click** on `install_profiler.ps1`
-3. Click **“Run with PowerShell”**
-4. If a security message appears, click **Yes / Allow**
+2. **Double-click on:**
+   install_profiler.cmd file
+✅ **This is the only file you need to run.**  
+❌ Do **NOT** run `install_profiler.ps1` manually.
 
-⏳ The installation may take several minutes.
+The installer will open in a command window and guide you automatically.
 
-#### What the installer does automatically
-- Verifies your Anaconda installation
-- Creates a Conda environment named **`profiler`** (Python 3.8.20)
-- Installs all required Python dependencies
-- Downloads and installs **ProteoWizard (msconvert)**
-- Adds ProteoWizard to the system PATH
-- Creates a **desktop shortcut** named **Profiler Desktop**
+⏳ Installation may take several minutes — this is normal.
 
 ---
 
-### ✅ After Installation
+### 🔧 What the Automatic Installer Does
 
-Once the installation is finished:
+The installer automatically:
+- Detects whether **Conda** is already installed
+- Installs **Miniconda (user-only)** if Conda is missing
+- Creates a Conda environment named **`profiler`**
+- Installs all required Python dependencies
+- Downloads and installs **ProteoWizard (msconvert)** locally
+- Adds ProteoWizard to the **user PATH**
+- Creates a **Desktop shortcut** named **Profiler Desktop**
+
+💡 **Administrator rights are NOT required.**
+
+---
+
+### 🚀 Launch Profiler Desktop
+
+Once installation is complete:
 
 👉 **Double-click the “Profiler Desktop” shortcut on your Desktop**
 
-Profiler Desktop will start automatically and open in your default web browser.
+Profiler Desktop will:
+- start automatically
+- open in your default web browser
+- run fully locally on your machine
 
-💡 **You do NOT need to open Anaconda or a terminal anymore.**
+✅ No terminal  
+✅ No Conda commands  
+✅ No configuration required  
 
+---
+
+
+✅ **This is the only file you need to run.**  
+❌ Do **NOT** run `install_profiler.ps1` manually.
+
+The installer will open in a command window and guide you automatically.
+
+⏳ Installation may take several minutes — this is normal.
+
+---
+
+### 🔧 What the Automatic Installer Does
+
+The installer automatically:
+- Detects whether **Conda** is already installed
+- Installs **Miniconda (user-only)** if Conda is missing
+- Creates a Conda environment named **`profiler`**
+- Installs all required Python dependencies
+- Downloads and installs **ProteoWizard (msconvert)** locally
+- Adds ProteoWizard to the **user PATH**
+- Creates a **Desktop shortcut** named **Profiler Desktop**
+
+💡 **Administrator rights are NOT required.**
+
+---
+
+### 🚀 Launch Profiler Desktop
+
+Once installation is complete:
+
+👉 **Double-click the “Profiler Desktop” shortcut on your Desktop**
+
+Profiler Desktop will:
+- start automatically
+- open in your default web browser
+- run fully locally on your machine
+
+✅ No terminal  
+✅ No Conda commands  
+✅ No configuration required  
 
 ---
 
 ## ❌ If the Automatic Installation Fails
 
-If the PowerShell installer does not work on your system, follow the **manual installation** below.
+In rare cases (corporate firewall, offline machines), the automatic installer may fail.
+
+➡️ In that case, follow the **manual installation** below.
 
 ---
 
+## 🛠️ Manual Installation (All Platforms)
 
-### 4️⃣ Manual Installation (All Platforms)
-If you are not using the automatic script (or are on macOS/Linux), follow these steps:
+### 1️⃣ Install Conda
+Install **Anaconda** or **Miniconda**:
+- https://www.anaconda.com/download  
+- https://docs.conda.io/en/latest/miniconda.html  
 
-#### Create a Python Environment
-Open **Anaconda Prompt** (or terminal on Linux/macOS) and type:
+Restart your terminal after installation.
+
+---
+
+### 2️⃣ Create the Conda Environment
+Open **Anaconda Prompt** (Windows) or a terminal (Linux/macOS):
+
 ```bash
 conda create -n profiler python=3.8.20
-```
+
 When asked:
 **Proceed ([y]/n)?**
 Type `y` and press **Enter**.
@@ -113,7 +172,7 @@ Type `y` and press **Enter**.
 conda activate profiler
 ```
 
-#### Install Dependencies
+### 3️⃣Install Dependencies
 Go to your **Profiler Desktop** folder, for example:
 ```bash
 cd /path/to/prism-profiler-desktop-v1.0
@@ -125,7 +184,7 @@ pip install -r requirements.txt
 
 ---
 
-### 5️⃣ Install ProteoWizard (msconvert) – Optional
+### 4️⃣Install ProteoWizard (msconvert) – Optional
 **Note:** This step is only required if you plan to convert raw mass spectrometry files (e.g., `.raw`, `.wiff`, `.d` to `.mzML` or `.mzXML`). If you do not need this functionality, you can skip to the next step.
 
 #### 🔧 Windows Installation
@@ -165,7 +224,7 @@ pip install -r requirements.txt
 
 ---
 
-### 6️⃣ Run Profiler Desktop
+### 5️⃣ Run Profiler Desktop (Manual)
 Each time you want to use **Profiler Desktop**:
 1. Open **Anaconda Prompt** (or terminal on Linux/macOS).
 2. Activate your environment:
@@ -184,7 +243,7 @@ Profiler Desktop will open automatically in your default web browser.
 
 ---
 
-### 7️⃣ (Optional) Automate Launch with Scripts
+### 6️⃣ (Optional) Automate Launch with Scripts
 To simplify the launch process, you can create a script to activate the environment and run Profiler Desktop automatically.
 
 #### 🪟 Windows (`.bat` file)
