@@ -21,77 +21,80 @@ https://github.com/yanisZirem/Profiler_v1_requests_datatests
 
 ---
 
-## 🖥️ Installation Guide
-Follow the steps below to install and run **Profiler Desktop**.
+## 🖥️ Installation Guide (Windows – Recommended)
+
+Profiler Desktop is designed to be installed **automatically on Windows** with a single click.  
+⚠️ **Manual installation is only required if the automatic setup fails.**
 
 ---
-### 1️⃣ Clone or Download the Repository
-You can either **clone** or **download** the Profiler Desktop folder.
 
-#### Option A – Download ZIP
+## ✅ Recommended Installation (Automatic – Windows 10 / 11)
+
+### 1️⃣ Download Profiler Desktop
+
+You can either **download** or **clone** the repository.
+
+#### Option A – Download ZIP (recommended for most users)
 1. Go to the GitHub repository page.
-2. Click **Code** → **Download ZIP**.
-3. Extract the folder (e.g., `prism_profiler-desktop-v1.0`) on your computer.
-
-
-
-#### Option B – Clone via Git
-```bash
-git clone https://github.com/yanisZirem/prism-profiler
-```
----
-
-### 2️⃣ Install Anaconda
-Download and install Anaconda from:
-👉 [https://www.anaconda.com/download](https://www.anaconda.com/download)
-
-During installation, check the box:
-✅ **"Add Anaconda3 to my PATH environment variable"**
+2. Click **Code → Download ZIP**.
+3. Extract the folder on your computer  
+   (example: `prism-profiler-desktop-v1.0`).
 
 ---
 
-### 3️⃣ Automatic Installation Script (Windows Only)
-For Windows users, Profiler Desktop can be installed automatically using the provided PowerShell script `install_profiler.ps1`.
-This script will handle everything for you (environment setup, dependency installation and ProteoWizard configuration). Supported System : Windows 10 or 11
+### 2️⃣ Install Anaconda (Required)
 
-####  Automatic Installation)
-1. Open **Windows PowerShell as Administrator**.
-   navigate to prism-profiler-desktop-v1.0 folder :
-   ```
-   cd /yourpath/prism-profiler-desktop-v1.0
-   ```
-3. Run the installer (bypass PowerShell restrictions if needed):
-   ```powershell
-   Set-ExecutionPolicy Bypass -Scope Process -Force
-   .\install_profiler.ps1
-   ```
-   The script will:
-   - Verify your Anaconda installation
-   - Create a Conda environment named `profiler` with Python 3.8.20
-   - Install all dependencies from `requirements.txt`
-   - Download and install ProteoWizard (msconvert)
-   - Add ProteoWizard to your system PATH
+Download and install **Anaconda** from:  
+👉 https://www.anaconda.com/download
 
-####  After Installation
-Once the setup is complete:
-1. Open **Anaconda Prompt**.
-2. Activate the environment:
-   ```bash
-   conda activate profiler
-   ```
-3. Navigate to your Profiler Desktop folder:
-   ```bash
-   cd path\to\prism-profiler-desktop-v1.0
-   ```
-4. Run Profiler Desktop:
-   ```bash
-   python profiler_desktop.py
-   ```
+During installation, **make sure to check**:  
+✅ **“Add Anaconda3 to my PATH environment variable”**
 
-####  Notes
-- If `msconvert` is not recognized after installation, simply restart your computer to refresh the PATH.
+Then **restart your computer**.
 
 ---
+
+### 3️⃣ Automatic Installation (One Click)
+
+Profiler Desktop includes an automatic installer for Windows.
+
+#### How to run the installer
+1. Open the extracted folder `prism-profiler-desktop-v1.0`
+2. **Right-click** on `install_profiler.ps1`
+3. Click **“Run with PowerShell”**
+4. If a security message appears, click **Yes / Allow**
+
+⏳ The installation may take several minutes.
+
+#### What the installer does automatically
+- Verifies your Anaconda installation
+- Creates a Conda environment named **`profiler`** (Python 3.8.20)
+- Installs all required Python dependencies
+- Downloads and installs **ProteoWizard (msconvert)**
+- Adds ProteoWizard to the system PATH
+- Creates a **desktop shortcut** named **Profiler Desktop**
+
+---
+
+### ✅ After Installation
+
+Once the installation is finished:
+
+👉 **Double-click the “Profiler Desktop” shortcut on your Desktop**
+
+Profiler Desktop will start automatically and open in your default web browser.
+
+💡 **You do NOT need to open Anaconda or a terminal anymore.**
+
+
+---
+
+## ❌ If the Automatic Installation Fails
+
+If the PowerShell installer does not work on your system, follow the **manual installation** below.
+
+---
+
 
 ### 4️⃣ Manual Installation (All Platforms)
 If you are not using the automatic script (or are on macOS/Linux), follow these steps:
