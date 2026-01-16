@@ -84,6 +84,15 @@ def check_stop(message="Analysis stopped by user"):
         st.session_state['stop_analysis'] = False  # Reset
         st.stop()
 
+
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 if "workflow_step" not in st.session_state:
     st.session_state.workflow_step = 0
 # Liste des étapes
@@ -251,13 +260,15 @@ def main():
                     del st.session_state[key]
                 import gc
                 gc.collect()
-                st.rerun()
+                # st.rerun()
+                st.experimental_rerun()
 
         with col2:
             if st.button("⏹ Stop", help="Stop current analysis", key="global_stop_button"):
                 st.session_state['stop_analysis'] = True
                 st.warning("⚠️ Stop requested – Processing will halt at next checkpoint.")
-                st.rerun()
+                # st.rerun()
+                st.experimental_rerun()
 
     # Sidebar Inputs for Conversion
     with st.sidebar.expander("**🧭 Data Conversion**"):
@@ -703,12 +714,69 @@ def main():
             </ul>
         """, unsafe_allow_html=True)
 
-        # ---- Workflow Tour ----
+        # Workflow tour
         st.markdown("""
             <div style='text-align: center; margin-top: 40px;'>
                 <h4 style='color: #318CE7;'>🔁 Profiler Workflow</h4>
                 <p style='font-size: 1.05rem;'>Follow an automatic tour of the full analysis pipeline</p>
             </div>
+        """, unsafe_allow_html=True)
+
+        if "workflow_step" not in st.session_state:
+            st.session_state.workflow_step = 0
+        if "workflow_active" not in st.session_state:
+            st.session_state.workflow_active = False
+
+        col1, col2, col3 = st.columns([1,1,1])
+        with col2:
+            if st.button("▶️ **Workflow Tour**"):
+                st.session_state.workflow_active = True
+                st.session_state.workflow_step = 0
+                # st.rerun()
+                st.experimental_rerun()
+
+            placeholder = st.empty()
+            progress_placeholder = st.empty()
+
+            if st.session_state.workflow_active:
+                i = st.session_state.workflow_step
+                with placeholder.container():
+                    st.markdown(f"""
+                        <div style='
+                            text-align: center;
+                            font-size: 1.2rem;
+                            padding: 25px;
+                            border-radius: 12px;
+                            margin-top: 10px;
+                            background-color: #f0f8ff;
+                            border: 2px solid #e0eaff;
+                            box-shadow: 0 0 10px rgba(0,0,0,0.05);'>
+                            {workflow_steps[i]}
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                progress_html = "<div style='text-align: center; padding: 10px;'>"
+                for j in range(len(workflow_steps)):
+                    color = "#318CE7" if j == i else "#d0d8e8"
+                    progress_html += f"<span style='display: inline-block; width: 14px; height: 14px; margin: 3px; border-radius: 50%; background-color: {color};'></span>"
+                progress_html += "</div>"
+                progress_placeholder.markdown(progress_html, unsafe_allow_html=True)
+
+                time.sleep(3)
+                if i < len(workflow_steps) - 1:
+                    st.session_state.workflow_step += 1
+                    # st.rerun()
+                    st.experimental_rerun()
+                else:
+                    st.session_state.workflow_active = False
+
+
+        # Copyright & version
+        st.markdown("""
+            <hr>
+            <p style="text-align:center; font-size:14px; color:#888;">
+                &copy; 2025 Profiler. All rights reserved. | Version 1.0
+            </p>
         """, unsafe_allow_html=True)
 
 
@@ -728,7 +796,7 @@ def main():
             unsafe_allow_html=True
         )
 
-        
+
         # -------------------- Data Overview (avec Load Features) --------------------
         if 'show_info' not in st.session_state:
             st.session_state.show_info = {
@@ -1382,7 +1450,8 @@ def main():
                                             del st.session_state[f"group_name_{i}"]
                                     
                                     st.success("✅ Class grouping applied successfully!")
-                                    st.rerun()
+                                    # st.rerun()
+                                    st.experimental_rerun()
                             else:
                                 st.warning("⚠️ No classes have been assigned to groups yet.")
                     
@@ -1404,7 +1473,8 @@ def main():
                             
                             st.success("🗑️ All changes have been reset to original classes.")
                             gc.collect()
-                            st.rerun()
+                            # st.rerun()
+                            st.experimental_rerun()
 
 
         with st.expander("🧹 **Edit Dataset Options and Save Renamed Matrix**", expanded=True):
@@ -1925,9 +1995,9 @@ def main():
                         if total_cols > 100:
                             st.info(f"Too many features ({total_cols}). Showing first 50 & last 50 columns. You can download the full preprocessed dataset below.")
                             preview_df = pd.concat([df_preview.iloc[:, :50], df_preview.iloc[:, -50:]], axis=1)
-                            st.dataframe(preview_df, hide_index=True)
+                            st.dataframe(preview_df)
                         else:
-                            st.dataframe(df_preview, hide_index=True)
+                            st.dataframe(df_preview)
 
                         # Text input pour nom du fichier
                         file_name_input = st.text_input(
@@ -1943,6 +2013,8 @@ def main():
                             file_name=f"{file_name_input}.csv",
                             mime='text/csv'
                         )
+
+
                     except Exception as e:
                         st.error(f"Preprocessing failed: {e}")
 
@@ -2774,7 +2846,8 @@ def main():
                         }).assign(Abs_Contribution=lambda df: df['Contribution'].abs()) \
                             .sort_values(by='Abs_Contribution', ascending=False)
 
-                        st.dataframe(contribs, hide_index=True)
+                        # st.dataframe(contribs, hide_index=True)
+                        st.dataframe(contribs)
 
                         top_contribs = contribs.head(top_n).sort_values(by="Contribution")
 
@@ -2944,7 +3017,8 @@ def main():
                             progress.progress(1.0)
 
                             st.write("###### Updated DataFrame with Cluster Labels")
-                            st.dataframe(df, hide_index=True)
+                            # st.dataframe(df, hide_index=True)
+                            st.dataframe(df)
                             st.write("###### Cluster Distribution")
                             st.write(df['Class'].value_counts())
 
@@ -3856,7 +3930,8 @@ def main():
                         if class_column in data_vol.columns:
                             significant_data = data_vol[[class_column] + significant_features]
                             st.write("**DataFrame with Significant Features from Selected Source:**")
-                            st.dataframe(significant_data, hide_index=True)
+                            # st.dataframe(significant_data, hide_index=True)
+                            st.dataframe(significant_data)
                         else:
                             st.error("Class column missing from the selected data source.")
                     elif not significant_features:
@@ -4066,7 +4141,8 @@ def main():
 
                         st.markdown("**Significant Features**")
                         # st.subheader("Significant Features")
-                        st.dataframe(significant_df, hide_index=True)
+                        # st.dataframe(significant_df, hide_index=True)
+                        st.dataframe(significant_df)
 
                         over_df = []
 
@@ -4089,7 +4165,8 @@ def main():
                             over_df = pd.DataFrame(over_df)
 
                             st.markdown("**Over-expressed Features by Class**")
-                            st.dataframe(over_df, hide_index=True)
+                            # st.dataframe(over_df, hide_index=True)
+                            st.dataframe(over_df)
                         else:
                             st.info("No overexpressed features detected for selected classes.")
 
@@ -4695,12 +4772,14 @@ def main():
                 with col_add:
                     if st.form_submit_button("➕ Add Class"):
                         st.session_state.num_classes_enrich += 1
-                        st.rerun()
+                        # st.rerun()
+                        st.experimental_rerun()
 
                 with col_remove:
                     if st.form_submit_button("➖ Remove Class"):
                         st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
-                        st.rerun()
+                        # st.rerun()
+                        st.experimental_rerun()
 
                 st.markdown("---")
                 run_enrichment = st.form_submit_button("✅ Perform Enrichment")
@@ -5107,7 +5186,8 @@ def main():
                     visualize_predictions_circles_rt(st.session_state['latest_result'])
 
                 time.sleep(2)
-                st.rerun()
+                # st.rerun()
+                st.experimental_rerun()
 
 
 
