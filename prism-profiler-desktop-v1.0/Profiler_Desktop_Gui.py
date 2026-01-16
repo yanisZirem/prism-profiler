@@ -74,6 +74,16 @@ import seaborn as sns
 
 
 
+def check_stop(message="Analysis stopped by user"):
+    """
+    Vérifie si l'utilisateur a demandé l'arrêt.
+    Si oui, affiche un message et arrête l'exécution.
+    """
+    if st.session_state.get('stop_analysis', False):
+        st.warning(f"⚠️ {message}")
+        st.session_state['stop_analysis'] = False  # Reset
+        st.stop()
+
 if "workflow_step" not in st.session_state:
     st.session_state.workflow_step = 0
 # Liste des étapes
@@ -219,26 +229,38 @@ def main():
         'expand_load_data': True,
         'expander_open_anomaly': True,
         'workflow_step': 0,
-        'workflow_active': False
+        'workflow_active': False,
+        'stop_analysis': False
     }
 
     for key, default in keys_with_defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    with st.sidebar.expander("🔄 Session Management"):
-        if st.sidebar.button("Reset session", help="Clear all analysis-related data"):
-            keys_to_keep = {"auth_status", "username", "password", "name", "last_active"}
-            keys_to_remove = [key for key in st.session_state.keys() if key not in keys_to_keep]
 
-            for key in keys_to_remove:
-                del st.session_state[key]
-            import gc
-            gc.collect()
-            st.rerun()
+
+    with st.sidebar.expander("🔄 Session Management"):
+        col1, col2 = st.sidebar.columns(2)
+
+        with col1:
+            if st.button("Reset", help="Clear all analysis-related data"):
+                keys_to_keep = {"auth_status", "username", "password", "name", "last_active"}
+                keys_to_remove = [key for key in st.session_state.keys() if key not in keys_to_keep]
+
+                for key in keys_to_remove:
+                    del st.session_state[key]
+                import gc
+                gc.collect()
+                st.rerun()
+
+        with col2:
+            if st.button("⏹ Stop", help="Stop current analysis", key="global_stop_button"):
+                st.session_state['stop_analysis'] = True
+                st.warning("⚠️ Stop requested – Processing will halt at next checkpoint.")
+                st.rerun()
 
     # Sidebar Inputs for Conversion
-    with st.sidebar.expander("🧭 Data Conversion"):
+    with st.sidebar.expander("**🧭 Data Conversion**"):
         raw_dir = st.text_input("RAW Files Directory", key="raw_dir")
         output_dir = st.text_input("Output Directory", key="output_dir")
         file_type = st.selectbox("File Type", ["waters", "thermo", "bruker"], key="file_type")
@@ -264,7 +286,7 @@ def main():
                 st.error(f"Error during conversion: {e}")
 
 
-    with st.sidebar.expander("📂 Load MS1 spectra standard format"):
+    with st.sidebar.expander("**📂 Load MS1 spectra standard format**"):
         for i, group in enumerate(st.session_state["file_groups"]):
             st.session_state["file_groups"][i]["class_name"] = st.text_input(
                 f"Class name",
@@ -322,7 +344,7 @@ def main():
         st.session_state.expand_load_data = False
 
 
-    with st.sidebar.expander("🗂️ Load Tabular Data", expanded=st.session_state.expand_load_data):
+    with st.sidebar.expander("**🗂️ Load Tabular Data**", expanded=st.session_state.expand_load_data):
         st.markdown("Supports Protein Group files directly from DIA-NN or MaxQuant.")
         uploaded_file = st.file_uploader(
             "Upload a tabular dataset: Proteomic, Metabolomic, RNAseq...",
@@ -331,21 +353,6 @@ def main():
             help="Upload a CSV, Excel, or text file containing your structured omics data. Make sure it includes a 'Class' column if possible."
         )
 
-        def finalize_data_load(df, source_label):
-            """Add required columns and store dataframe in session state."""
-            if df is not None:
-                for col in ['File', 'RT', 'Sum']:
-                    if col not in df.columns:
-                        df[col] = "Unknown" if col == 'File' else 0
-                st.session_state['data'] = df
-                if 'Class' in df.columns:
-                    st.session_state['class_renaming'] = {cls: cls for cls in df['Class'].unique()}
-                    import plotly.express as px
-                    st.session_state['class_colors'] = {
-                        class_name: px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]
-                        for i, class_name in enumerate(df['Class'].unique())
-                    }
-                st.success(f"{source_label} data processed successfully!")
 
         if uploaded_file is not None:
             df = load_structured_data(uploaded_file)
@@ -401,7 +408,7 @@ def main():
             """
         )
 
-    with st.sidebar.expander("🕰️ Load Survival Data"):
+    with st.sidebar.expander("**🕰️ Load Survival Data**"):
         import pandas as pd 
         uploaded_file = st.file_uploader(
             "Upload a survival dataset (CSV, XLSX, TXT):",
@@ -1213,6 +1220,7 @@ def main():
                         gc.collect()
 
 
+
         with st.expander("**📝 Class Renaming Options**", expanded=False):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Standardize class labels: unify replicates, merge groups, or relabel unknowns.</p>',
@@ -1223,9 +1231,11 @@ def main():
             else:
                 if "final_data" not in st.session_state:
                     st.session_state["final_data"] = st.session_state["data"].copy()
+                
                 class_names = list(st.session_state["final_data"]["Class"].unique())
                 st.session_state.setdefault("class_renaming", {cls: cls for cls in class_names})
                 st.session_state.setdefault("rename_pending", {cls: cls for cls in class_names})
+                
                 mode = st.radio(
                     "🔧 Select renaming mode:",
                     [
@@ -1236,59 +1246,168 @@ def main():
                     key="rename_mode",
                     help="Choose whether to apply a global name, rename individually, or group multiple classes."
                 )
-                n_groups = 1
-                if mode.startswith("🧩"):
-                    n_groups = st.number_input("Number of class groups:", 1, 100, 1, key="num_groups")
-                with st.form(key="class_renaming_form"):
-                    temp_mapping = st.session_state["rename_pending"].copy()
-                    if mode.startswith("🔁"):
-                        global_name = st.text_input("🆕 New name for all classes:", "UnifiedClass", key="global_class_name")
-                        if global_name:
-                            temp_mapping = {cls: global_name for cls in class_names}
-                    elif mode.startswith("✏️"):
-                        for cls in class_names:
-                            new_name = st.text_input(
-                                f"Rename '**{cls}**' to:",
-                                st.session_state["rename_pending"].get(cls, cls),
-                                key=f"rename_{cls}"
+                
+                # MODE 1 & 2: Avec formulaire (pas de problème de rafraîchissement)
+                if not mode.startswith("🧩"):
+                    with st.form(key="class_renaming_form"):
+                        temp_mapping = st.session_state["rename_pending"].copy()
+                        
+                        if mode.startswith("🔁"):
+                            global_name = st.text_input("🆕 New name for all classes:", "UnifiedClass", key="global_class_name")
+                            if global_name:
+                                temp_mapping = {cls: global_name for cls in class_names}
+                        
+                        elif mode.startswith("✏️"):
+                            for cls in class_names:
+                                new_name = st.text_input(
+                                    f"Rename '**{cls}**' to:",
+                                    st.session_state["rename_pending"].get(cls, cls),
+                                    key=f"rename_{cls}"
+                                )
+                                temp_mapping[cls] = new_name
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            apply_changes = st.form_submit_button("Apply Renaming")
+                        with col2:
+                            reset_changes = st.form_submit_button("🔄 Reset Changes")
+                    
+                    if apply_changes:
+                        with st.spinner("Applying class name changes..."):
+                            st.session_state["rename_pending"] = temp_mapping.copy()
+                            st.session_state["class_renaming"] = st.session_state["rename_pending"].copy()
+                            st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].replace(
+                                st.session_state["class_renaming"]
                             )
-                            temp_mapping[cls] = new_name
-                    elif mode.startswith("🧩"):
-                        for i in range(n_groups):
-                            gname = st.text_input(f"Group {i+1} name:", key=f"group_name_{i}")
-                            selected = st.multiselect(
-                                f"Select classes to include in Group {i+1}:", class_names, key=f"selected_classes_{i}"
-                            )
-                            if gname and selected:
-                                for cls in selected:
-                                    temp_mapping[cls] = gname
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        apply_changes = st.form_submit_button("Apply Renaming")
-                    with col2:
-                        reset_changes = st.form_submit_button("🔄 Reset Changes")
-                if apply_changes:
-                    with st.spinner("Applying class name changes..."):
-                        st.session_state["rename_pending"] = temp_mapping.copy()
-                        st.session_state["class_renaming"] = st.session_state["rename_pending"].copy()
-                        st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].replace(
-                            st.session_state["class_renaming"]
+                            st.session_state["data"] = st.session_state["final_data"]
+                            st.success("Class names updated successfully!")
+                    
+                    if reset_changes:
+                        st.session_state["rename_pending"] = {cls: cls for cls in class_names}
+                        st.session_state["class_renaming"] = {cls: cls for cls in class_names}
+                        st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].map(
+                            lambda x: x if x in class_names else x
                         )
                         st.session_state["data"] = st.session_state["final_data"]
-                        st.success("Class names updated successfully!")
-                if reset_changes:
-                    st.session_state["rename_pending"] = {cls: cls for cls in class_names}
-                    st.session_state["class_renaming"] = {cls: cls for cls in class_names}
-                    st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].map(
-                        lambda x: x if x in class_names else x
-                    )
-                    st.session_state["data"] = st.session_state["final_data"]
-                    st.success("🗑️ All renaming changes have been reset.")
+                        st.success("🗑️ All renaming changes have been reset.")
+                        gc.collect()
+                
 
-                    gc.collect()
+                # MODE 3: 
+                else:
+
+                    if "group_temp_mapping" not in st.session_state:
+                        st.session_state["group_temp_mapping"] = {}
+
+                    n_groups = st.number_input("Number of class groups:", 1, 100, 1, key="num_groups")
+
+                    st.markdown("---")
+
+                    for i in range(n_groups):
+                        st.markdown(f"**📦 Group** {i+1}")
+
+                        gname = st.text_input(
+                            f"Group name:",
+                            value=st.session_state.get(f"group_name_{i}", ""),
+                            key=f"group_name_{i}",
+                            placeholder=f"Enter name for group {i+1}"
+                        )
+                        current_group_classes = [
+                            cls for cls, grp_name in st.session_state["group_temp_mapping"].items()
+                            if grp_name == gname
+                        ] if gname else []
+
+                        assigned_classes = set(st.session_state["group_temp_mapping"].keys())
+
+                        available_classes = [cls for cls in class_names if cls not in assigned_classes or cls in current_group_classes]
+                        available_classes.sort()
+
+                        selected = st.multiselect(
+                            f"Select classes:",
+                            available_classes,
+                            default=current_group_classes,
+                            key=f"selected_classes_{i}",
+                            help=f"Available: {len(available_classes)} classes"
+                        )
+
+                        if gname and selected:
+
+                            for cls in current_group_classes:
+                                if cls not in selected and cls in st.session_state["group_temp_mapping"]:
+                                    del st.session_state["group_temp_mapping"][cls]
 
 
-        with st.expander("🧹 **Edit Dataset Options**", expanded=False):
+                            for cls in selected:
+                                st.session_state["group_temp_mapping"][cls] = gname
+                        elif not selected:
+
+                            for cls in current_group_classes:
+                                if cls in st.session_state["group_temp_mapping"]:
+                                    del st.session_state["group_temp_mapping"][cls]
+
+                        st.markdown("---")
+
+                    # Résumé
+                    assigned_count = len(st.session_state["group_temp_mapping"])
+                    remaining_classes = set(class_names) - set(st.session_state["group_temp_mapping"].keys())
+
+                    if assigned_count > 0:
+                        if remaining_classes:
+                            st.info(f"📊 **Summary:** {assigned_count} classes assigned to groups, {len(remaining_classes)} remaining: {', '.join(sorted(remaining_classes))}")
+                        else:
+                            st.success(f"✅ **Summary:** All {len(class_names)} classes have been assigned to groups!")
+
+
+                    # Boutons d'action
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("✅ Apply Grouping", type="primary", use_container_width=True):
+                            if st.session_state["group_temp_mapping"]:
+                                with st.spinner("Applying class grouping..."):
+                                    # Appliquer le mapping
+                                    st.session_state["rename_pending"] = st.session_state["group_temp_mapping"].copy()
+                                    st.session_state["class_renaming"] = st.session_state["rename_pending"].copy()
+                                    st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].replace(
+                                        st.session_state["class_renaming"]
+                                    )
+                                    st.session_state["data"] = st.session_state["final_data"]
+                                    
+                                    # Nettoyer les états temporaires
+                                    st.session_state["group_temp_mapping"] = {}
+                                    for i in range(n_groups):
+                                        if f"selected_classes_{i}" in st.session_state:
+                                            del st.session_state[f"selected_classes_{i}"]
+                                        if f"group_name_{i}" in st.session_state:
+                                            del st.session_state[f"group_name_{i}"]
+                                    
+                                    st.success("✅ Class grouping applied successfully!")
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ No classes have been assigned to groups yet.")
+                    
+                    with col2:
+                        if st.button("🔄 Reset Changes", use_container_width=True):
+                            # Reset complet vers les classes originales
+                            original_classes = list(st.session_state["data"]["Class"].unique())
+                            st.session_state["rename_pending"] = {cls: cls for cls in original_classes}
+                            st.session_state["class_renaming"] = {cls: cls for cls in original_classes}
+                            st.session_state["final_data"] = st.session_state["data"].copy()
+                            st.session_state["group_temp_mapping"] = {}
+                            
+                            # Nettoyer tous les états de groupes
+                            for i in range(n_groups):
+                                if f"selected_classes_{i}" in st.session_state:
+                                    del st.session_state[f"selected_classes_{i}"]
+                                if f"group_name_{i}" in st.session_state:
+                                    del st.session_state[f"group_name_{i}"]
+                            
+                            st.success("🗑️ All changes have been reset to original classes.")
+                            gc.collect()
+                            st.rerun()
+
+
+        with st.expander("🧹 **Edit Dataset Options and Save Renamed Matrix**", expanded=True):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
                 unsafe_allow_html=True
@@ -1408,8 +1527,6 @@ def main():
                     file_name=custom_filename,
                     mime='text/csv'
                 )
-
-
 
 
 
@@ -2170,75 +2287,7 @@ def main():
 
             gc.collect()
         
-        import gc
-        from itertools import combinations
-        from collections import defaultdict
-        import matplotlib.pyplot as plt
-
-        # --- Fonction optimisée pour les intersections ---
-        def calculate_maximal_intersections(venn_data, classes):
-            class_features = {}
-            for cls in classes:
-                cls_features = set(venn_data[venn_data['Class'] == cls].drop(columns=['Class']).columns)
-                class_features[cls] = cls_features
-
-            feature_counts = defaultdict(int)
-            feature_to_classes = defaultdict(set)
-
-            for cls, features in class_features.items():
-                for feature in features:
-                    feature_counts[feature] += 1
-                    feature_to_classes[feature].add(cls)
-
-            shared_features = {feature: classes for feature, classes in feature_to_classes.items() if len(classes) >= 2}
-
-            maximal_intersections = defaultdict(set)
-            for feature, cls_set in shared_features.items():
-                for r in range(2, len(cls_set) + 1):
-                    for combo in combinations(cls_set, r):
-                        maximal_intersections[combo].add(feature)
-
-            maximal_intersections_filtered = {}
-            for combo, features in maximal_intersections.items():
-                is_maximal = True
-                for other_combo, other_features in maximal_intersections.items():
-                    if set(combo).issubset(other_combo) and features <= other_features and combo != other_combo:
-                        is_maximal = False
-                        break
-                if is_maximal:
-                    maximal_intersections_filtered[combo] = features
-
-            return maximal_intersections_filtered
-
-
-
-
-        def calculate_all_intersections(venn_data, classes):
-            # Dictionnaire {classe: set(features non-nulles)}
-            class_features = {}
-            relevant_cols = [col for col in venn_data.columns if col != 'Class']
-            
-            for cls in classes:
-                mask = venn_data['Class'] == cls
-                cls_features = set(venn_data.loc[mask, relevant_cols].columns[venn_data.loc[mask, relevant_cols].notnull().any()])
-                class_features[cls] = cls_features
-
-            all_intersections = {}
-            used_features = set()  # pour éviter les duplications
-
-            # On parcourt d'abord les combinaisons les plus larges (N classes), puis descend
-            for r in range(len(classes), 1, -1):
-                for combo in combinations(classes, r):
-                    intersect = set.intersection(*(class_features[cls] for cls in combo))
-                    # On enlève ce qui a déjà été attribué à une intersection plus grande
-                    intersect -= used_features
-                    if intersect:
-                        all_intersections[combo] = intersect
-                        used_features.update(intersect)  # marquer ces features comme utilisées
-
-            return all_intersections
-        
-
+       
 
         with st.expander("**🧮 Venn / UpSet Analysis**", expanded=False):
             st.markdown(
@@ -2404,6 +2453,74 @@ def main():
                 gc.collect()
 
 
+        # with st.expander("**📐 Similarity**", expanded=False):
+        #     st.markdown(
+        #         '<p style="color: gray; font-size: 14px">Compare class profiles using Cosine Similarity (continuous) or Cohen\'s Kappa (categorical after discretization).</p>',
+        #         unsafe_allow_html=True
+        #     )
+        #     with st.form("similarity_form"):
+        #         data_source_sim = st.selectbox(
+        #             "Select Data Source for Similarity",
+        #             ['Raw Data', 'Preprocessed', 'Oversampled', 'Undersampled'],
+        #             key="sim_data_source",
+        #         )
+        #         similarity_method = st.selectbox(
+        #             "Similarity Method",
+        #             ['None', 'Cosine Similarity', "Cohen's Kappa"],
+        #             index=0,
+        #             key="sim_method"
+        #         )
+        #         apply_sim = st.form_submit_button("✅ Apply Similarity")
+            
+        #     if apply_sim:
+        #         data_sim = get_data(data_source_sim)
+                
+        #         # Check if data is valid
+        #         if data_sim is None or 'Class' not in data_sim.columns:
+        #             st.warning("No valid data available for similarity.")
+        #         elif similarity_method == 'None':
+        #             st.warning("Please select a similarity method.")
+        #         else:
+        #             # Check for missing values
+        #             if data_sim.drop(columns=['Class'], errors='ignore').isnull().values.any():
+        #                 st.error(
+        #                     "⚠️ Missing values detected in the dataset. "
+        #                     "Please go to the Preprocessing step to either remove or impute missing values before running similarity analysis."
+        #                 )
+        #             else:
+        #                 numeric_data = data_sim.drop(columns=['Class'], errors='ignore').select_dtypes(include='number')
+        #                 if numeric_data.empty:
+        #                     st.warning("No numeric features found for similarity analysis.")
+        #                 else:
+        #                     grouped = data_sim.groupby('Class')[numeric_data.columns].mean()
+        #                     classes = grouped.index
+
+        #                     if similarity_method == "Cosine Similarity":
+        #                         sim_matrix = cosine_similarity(grouped)
+        #                         sim_df = pd.DataFrame(sim_matrix, index=classes, columns=classes)
+        #                         plot_heatmap(
+        #                             sim_df,
+        #                             "Cosine Similarity",
+        #                             "Cosine similarity measures the angle between feature vectors of each class (1=identical, 0=orthogonal)."
+        #                         )
+
+        #                     elif similarity_method == "Cohen's Kappa":
+        #                         nb_bins = st.slider(
+        #                             "Discretization Levels (Bins)", 2, 6, 3, 1,
+        #                             help="Number of bins to discretize features for Cohen's Kappa."
+        #                         )
+        #                         kappa_matrix = pd.DataFrame(index=classes, columns=classes, dtype=float)
+        #                         for i, class_i in enumerate(classes):
+        #                             for j, class_j in enumerate(classes):
+        #                                 vec1_cat = pd.qcut(grouped.loc[class_i].rank(method="first"), q=nb_bins, labels=False)
+        #                                 vec2_cat = pd.qcut(grouped.loc[class_j].rank(method="first"), q=nb_bins, labels=False)
+        #                                 kappa_matrix.iloc[i, j] = cohen_kappa_score(vec1_cat, vec2_cat)
+        #                         plot_heatmap(
+        #                             kappa_matrix,
+        #                             "Cohen's Kappa Similarity",
+        #                             "Cohen’s Kappa evaluates the agreement in categorized feature profiles (1=perfect, 0=random, <0=disagreement)."
+        #                         )
+
         with st.expander("**📐 Similarity**", expanded=False):
             st.markdown(
                 '<p style="color: gray; font-size: 14px">Compare class profiles using Cosine Similarity (continuous) or Cohen\'s Kappa (categorical after discretization).</p>',
@@ -2422,10 +2539,10 @@ def main():
                     key="sim_method"
                 )
                 apply_sim = st.form_submit_button("✅ Apply Similarity")
-            
+
             if apply_sim:
-                data_sim = get_data(data_source_sim)
-                
+                data_sim = get_data_for_source(data_source_sim)
+
                 # Check if data is valid
                 if data_sim is None or 'Class' not in data_sim.columns:
                     st.warning("No valid data available for similarity.")
@@ -2456,10 +2573,8 @@ def main():
                                 )
 
                             elif similarity_method == "Cohen's Kappa":
-                                nb_bins = st.slider(
-                                    "Discretization Levels (Bins)", 2, 6, 3, 1,
-                                    help="Number of bins to discretize features for Cohen's Kappa."
-                                )
+                                # Définir par défaut le nombre de bins à 3
+                                nb_bins = 3
                                 kappa_matrix = pd.DataFrame(index=classes, columns=classes, dtype=float)
                                 for i, class_i in enumerate(classes):
                                     for j, class_j in enumerate(classes):
@@ -2470,7 +2585,7 @@ def main():
                                     kappa_matrix,
                                     "Cohen's Kappa Similarity",
                                     "Cohen’s Kappa evaluates the agreement in categorized feature profiles (1=perfect, 0=random, <0=disagreement)."
-                                )
+                                )        
                 del data_sim
                 gc.collect()
 
@@ -2977,7 +3092,6 @@ def main():
                             st.code(traceback.format_exc(), language="python")
 
             # ----- Formulaire pour analyse des modèles -----
-            # ----- Formulaire pour analyse des modèles -----
             if 'models' in st.session_state and st.session_state['models']:
                 with st.form("ml_report_form"):
                     show_comparison_btn = st.form_submit_button("Show Model Comparison")
@@ -2989,29 +3103,227 @@ def main():
                         key="form_selected_model"
                     )
                     
-                    # 🔑 Synchroniser avec la clé utilisée par SHAP/LIME
+                    # Synchroniser avec la clé utilisée par SHAP/LIME
                     st.session_state["selected_model"] = selected_model  
 
                     show_report_btn = st.form_submit_button("Show Model Report")
 
+            #     if show_report_btn and selected_model != 'None':
+            #         model_data = st.session_state['models'][selected_model]
+
+            #         # Classification Report
+            #         st.write("**Classification Report**")
+            #         report_data = model_data['classification_report']
+            #         if isinstance(report_data, dict):
+            #             st.dataframe(pd.DataFrame(report_data).T)
+            #         else:
+            #             st.text(report_data)
+
+            #         # Confusion Matrix
+            #         st.write("**Confusion Matrix**")
+            #         fig, ax = plt.subplots()
+            #         labels = model_data['label_encoder'].classes_
+            #         sns.heatmap(model_data['confusion_matrix'], annot=True, fmt='d',
+            #                     cmap='viridis', xticklabels=labels, yticklabels=labels, ax=ax)
+            #         st.pyplot(fig)
+
+            #         # Learning Curves
+            #         try:
+            #             learning_curve_fig = plot_learning_curve(model_data['model'], X, y, n_splits=n_splits)
+            #             st.plotly_chart(learning_curve_fig)
+            #         except Exception as e:
+            #             st.error(f"Error plotting learning curve: {e}")
+
+            #     # Affichage de la comparaison de modèles
+            #     if show_comparison_btn:
+            #         fig = compare_models(st.session_state['models'])
+            #         st.plotly_chart(fig)
+
+            # del X, y
+            # gc.collect()
+
                 if show_report_btn and selected_model != 'None':
                     model_data = st.session_state['models'][selected_model]
-
-                    # Classification Report
                     st.write("**Classification Report**")
                     report_data = model_data['classification_report']
-                    if isinstance(report_data, dict):
-                        st.dataframe(pd.DataFrame(report_data).T)
-                    else:
-                        st.text(report_data)
 
-                    # Confusion Matrix
-                    st.write("**Confusion Matrix**")
-                    fig, ax = plt.subplots()
+                    # Cas 1 : Si report_data est un dictionnaire
+                    if isinstance(report_data, dict):
+                        report_df = pd.DataFrame(report_data).transpose()
+
+                        # Extraire les métriques globales
+                        global_metrics = report_df.loc[['accuracy', 'macro avg', 'weighted avg']]
+                        # Extraire les métriques par classe
+                        class_metrics = report_df.drop(['accuracy', 'macro avg', 'weighted avg'])
+
+                        # Créer un DataFrame combiné
+                        combined_df = pd.concat([class_metrics, pd.DataFrame([[''] * len(class_metrics.columns)], columns=class_metrics.columns), global_metrics])
+
+                        # Afficher le tableau combiné
+                        # Sélectionner uniquement les colonnes numériques attendues
+                        numeric_cols = ['precision', 'recall', 'f1-score', 'support']
+                        numeric_cols = [c for c in numeric_cols if c in combined_df.columns]
+
+                        # Forcer la conversion en float (les strings deviennent NaN)
+                        combined_df[numeric_cols] = combined_df[numeric_cols].apply(
+                            pd.to_numeric, errors='coerce'
+                        )
+
+
+
+                        st.dataframe(
+                            combined_df.style
+                            .format("{:.4f}", subset=numeric_cols)
+                            .highlight_max(subset=numeric_cols, axis=0, color='lightgreen')
+                            .set_table_styles([
+                                {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
+                                                            ('font-size', '18px'),
+                                                            ('text-align', 'center'),
+                                                            ('font-weight', 'bold')]},
+                                {'selector': 'td', 'props': [('font-size', '16px'),
+                                                            ('text-align', 'center')]},
+                                {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+                                {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
+                            ])
+                            .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
+                            use_container_width=True,
+                            height=400
+                        )
+
+                    # Cas 2 : Si report_data est une chaîne de caractères
+                    elif isinstance(report_data, str):
+                        lines = report_data.strip().split('\n')
+                        data = []
+                        for line in lines:
+                            if line.strip() and not line.strip().startswith((' ', '\t')):
+                                data.append(line.strip().split())
+
+                        headers = ['class', 'precision', 'recall', 'f1-score', 'support']
+                        df_list = []
+                        for line in data:
+                            if len(line) == 5:
+                                df_list.append(line)
+
+                        report_df = pd.DataFrame(df_list, columns=headers)
+                        report_df = report_df.set_index('class')
+
+                        # Afficher le DataFrame
+                        st.dataframe(
+                            report_df.style
+                            .format("{:.4f}", subset=['precision', 'recall', 'f1-score'])
+                            .set_table_styles([
+                                {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
+                                                            ('font-size', '18px'),
+                                                            ('text-align', 'center'),
+                                                            ('font-weight', 'bold')]},
+                                {'selector': 'td', 'props': [('font-size', '16px'),
+                                                            ('text-align', 'center')]},
+                                {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+                                {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
+                            ])
+                            .highlight_max(axis=0, color='lightgreen')
+                            .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
+                            use_container_width=True,
+                            height=400
+                        )
+
+                    # Cas 3 : Fallback
+                    else:
+                        st.code(report_data)
+
+
+                    # ===== Shared layout parameters (uniform article style) =====
+                    FIG_SIZE = 850
+                    TITLE_SIZE = 20
+                    AXIS_TITLE_SIZE = 24
+                    TICK_SIZE = 20
+                    FONT_FAMILY = "Arial"
+
                     labels = model_data['label_encoder'].classes_
-                    sns.heatmap(model_data['confusion_matrix'], annot=True, fmt='d',
-                                cmap='viridis', xticklabels=labels, yticklabels=labels, ax=ax)
-                    st.pyplot(fig)
+                    cm = model_data['confusion_matrix']
+
+                    fig = go.Figure(data=go.Heatmap(
+                        z=cm,
+                        x=labels,
+                        y=labels,
+                        colorscale='Viridis',
+                        text=cm,
+                        texttemplate="<b>%{text}</b>",
+                        textfont=dict(
+                            size=26,         
+                            family=FONT_FAMILY
+                        ),
+                        
+                        hoverinfo="z"
+                    ))
+                    fig.update_layout(
+                        title=dict(
+                            text="Confusion Matrix",
+                            font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
+                        ),
+                        width=FIG_SIZE,
+                        height=FIG_SIZE,
+                        margin=dict(l=50, r=50, b=50, t=80),
+                        xaxis=dict(
+                            title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+                            scaleanchor="y",
+                            constrain="domain"
+                        ),
+                        yaxis=dict(
+                            title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+                            scaleanchor="x",
+                            constrain="domain"
+                        ),
+                        font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    # Normalized Confusion Matrix (%)
+                    cm_norm = cm.astype(float) / cm.sum(axis=1)[:, np.newaxis] * 100
+                    fig_norm = go.Figure(data=go.Heatmap(
+                        z=cm_norm,
+                        x=labels,
+                        y=labels,
+                        colorscale='jet',
+                        text=np.round(cm_norm, 2),
+                        texttemplate="<b>%{text}%</b>",
+                        textfont=dict(
+                            size=11,         
+                            family=FONT_FAMILY
+                        ),
+                        
+                        hoverinfo="z"
+                    ))
+
+                    fig_norm.update_layout(
+                        title=dict(
+                            text="Normalized Confusion Matrix (%)",
+                            font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
+                        ),
+                        width=FIG_SIZE,
+                        height=FIG_SIZE,
+                        margin=dict(l=50, r=50, b=50, t=80),  # Réduire les marges
+                        xaxis=dict(
+                            title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+                            scaleanchor="y",  # Forcer l'aspect carré
+                            constrain="domain"  # Aligner les axes
+                        ),
+                        yaxis=dict(
+                            title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+                            scaleanchor="x",  # Forcer l'aspect carré
+                            constrain="domain"  # Aligner les axes
+                        ),
+                        font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
+                    )
+
+                    # Affichage avec adaptation à la largeur du conteneur
+                    st.plotly_chart(fig_norm, use_container_width=True)
+
+
 
                     # Learning Curves
                     try:
@@ -3027,8 +3339,6 @@ def main():
 
             del X, y
             gc.collect()
-
-
 
 
 
@@ -4184,6 +4494,28 @@ def main():
                             title="Top LIME Features Contributions"
                         )
 
+                        # fig.update_layout(
+                        #     yaxis=dict(
+                        #         autorange="reversed",
+                        #         title="Features",
+                        #         titlefont=dict(size=16, color='black'),
+                        #         tickfont=dict(size=14, color='black')
+                        #     ),
+                        #     xaxis=dict(
+                        #         title="Contribution (Weight)",
+                        #         titlefont=dict(size=16, color='black'),
+                        #         tickfont=dict(size=14, color='black')
+                        #     ),
+                        #     title=dict(
+                        #         font=dict(size=20, color='black')
+                        #     ),
+                        #     coloraxis_colorbar=dict(
+                        #         title="Weight",
+                        #         titlefont=dict(size=14, color='black'),
+                        #         tickfont=dict(size=12, color='black')
+                        #     )
+                        # )
+
                         fig.update_layout(
                             yaxis=dict(
                                 autorange="reversed",
@@ -4213,6 +4545,7 @@ def main():
                             )
                         )
 
+
                         st.plotly_chart(fig, use_container_width=True)
                         # st.info("This plot is interpretable only for binary classification")
                     except Exception as e:
@@ -4223,305 +4556,7 @@ def main():
                 gc.collect()
 
 
-    # with tabs[4]:
-    #     st.markdown("""
-    #         <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
-    #         background-color: #f0f8ff; padding: 10px; border-radius: 5px;">
-    #         Biological and Molecular Pathway Enrichment
-    #         </h3>""", unsafe_allow_html=True)
 
-
-    #     with st.expander("🕸️ **Enrichment Analysis**", expanded=True):
-    #         st.markdown(
-    #             """
-    #             <div style="color: #4A4A4A; font-size: 14px; margin-bottom: 10px;">
-    #                 🧬 <strong>Analyze biological pathways</strong> to identify enriched molecular processes
-    #                 across different gene/protein classes.
-    #             </div>
-    #             """,
-    #             unsafe_allow_html=True
-    #         )
-
-    #         # ✅ Initialisation
-    #         if 'gene_set_categories' not in st.session_state:
-    #             st.session_state.gene_set_categories = {}
-    #         if 'categories_loaded' not in st.session_state:
-    #             st.session_state.categories_loaded = False
-    #         if 'selected_category' not in st.session_state:
-    #             st.session_state.selected_category = "None"
-
-    #         # --- Bouton pour charger les catégories et selectbox hors formulaire ---
-    #         col1, col2 = st.columns([1, 3])
-    #         with col1:
-    #             if st.button("📥 Load databases categories"):
-    #                 with st.spinner("Loading available gene databases categories..."):
-    #                     try:
-    #                         tmp_sets = load_gene_sets()
-    #                         if isinstance(tmp_sets, dict):
-    #                             st.session_state.gene_set_categories = tmp_sets
-    #                             st.session_state.categories_loaded = True
-    #                             st.success("✅ Categories loaded!")
-    #                         else:
-    #                             st.warning("⚠️ Invalid gene set format. Expected a dictionary.")
-    #                     except Exception as e:
-    #                         st.error(f"❌ Failed to load gene sets: {e}")
-    #                         st.error(f"❌ API down ! try later: {e}")
-    #                         st.session_state.gene_set_categories = {}
-    #                         st.session_state.categories_loaded = False
-    #         with col2:
-    #             if st.session_state.categories_loaded and st.session_state.gene_set_categories:
-    #                 categories = ["None"] + list(st.session_state.gene_set_categories.keys())
-    #             else:
-    #                 categories = ["None"]
-    #             st.session_state.selected_category = st.selectbox("Select a gene/protein specific database in a category", options=categories, index=0)
-
-    #         # --- FORMULAIRE PRINCIPAL ---
-    #         with st.form("enrichment_form", clear_on_submit=False):
-    #             st.markdown("**⚙️ Configuration**", unsafe_allow_html=True)
-
-    #             # --- Selectbox pour la database selon la catégorie choisie ---
-    #             if st.session_state.selected_category != "None" and st.session_state.selected_category in st.session_state.gene_set_categories:
-    #                 db_options = ["None"] + st.session_state.gene_set_categories[st.session_state.selected_category]
-    #             else:
-    #                 db_options = ["None"]
-    #             selected_gene_set = st.selectbox("Select a database", options=db_options)
-
-    #             # --- Autres paramètres ---
-    #             selected_organism = st.selectbox("Select an organism", ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"])
-    #             num_pathways = st.slider("Number of pathways to display", min_value=1, max_value=100, value=10)
-
-    #             st.markdown("---")
-    #             st.markdown("**Gene/proteins Classes**", unsafe_allow_html=True)
-
-    #             if 'num_classes_enrich' not in st.session_state:
-    #                 st.session_state.num_classes_enrich = 1
-
-    #             gene_lists, class_names = [], []
-    #             for i in range(st.session_state.num_classes_enrich):
-    #                 with st.container():
-    #                     col1, col2 = st.columns([1, 3])
-    #                     with col1:
-    #                         class_name = st.text_input(f"Class name {i + 1}", key=f"class_name_enrich{i}", value=f"Class_{i+1}")
-    #                     with col2:
-    #                         class_genes_input = st.text_area(
-    #                             f"Genes list {i + 1}",
-    #                             placeholder="Enter genes separated by commas, spaces, or new lines",
-    #                             key=f"class_genes_enrich{i}"
-    #                         )
-    #                         class_genes = [g.strip() for g in re.split(r'[,\s]+', class_genes_input) if g.strip()]
-    #                     class_names.append(class_name)
-    #                     gene_lists.append(class_genes)
-
-    #             # --- Boutons d’ajout/suppression de classes ---
-    #             col_add, col_remove = st.columns(2)
-    #             with col_add:
-    #                 if st.form_submit_button("➕ Add Class"):
-    #                     st.session_state.num_classes_enrich += 1
-    #                     st.rerun()
-    #             with col_remove:
-    #                 if st.form_submit_button("➖ Remove Class"):
-    #                     st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
-    #                     st.rerun()
-
-    #             st.markdown("---")
-    #             run_enrichment = st.form_submit_button("✅ Perform Enrichment")
-
-    #         # --- Logique après soumission ---
-    #         if run_enrichment:
-    #             if not selected_gene_set or selected_gene_set == "None":
-    #                 st.error("Please select a gene set database before running enrichment.")
-    #             elif any(len(g) == 0 for g in gene_lists):
-    #                 st.error("Each class must contain at least one gene.")
-    #             elif any(not name.strip() for name in class_names):
-    #                 st.error("Each class must have a name.")
-    #             else:
-    #                 with st.spinner("Running GSEA and enrichment analysis..."):
-    #                     # perform_gsea(
-    #                     #     gene_lists=gene_lists,
-    #                     #     class_names=class_names,
-    #                     #     gene_set_db=selected_gene_set,
-    #                     #     organism=selected_organism,
-    #                     #     num_pathways=num_pathways
-    #                     # )
-    #                     perform_gsea(
-    #                         gene_lists,
-    #                         class_names,
-    #                         selected_gene_set,
-    #                         selected_organism,
-    #                         num_pathways
-    #                     )
-    #                 st.success("✅ Enrichment analysis completed successfully!")
-
-
-    # with tabs[4]:
-    #     st.markdown("""
-    #         <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
-    #         background-color: #f0f8ff; padding: 10px; border-radius: 5px;">
-    #         Biological and Molecular Pathway Enrichment
-    #         </h3>""", unsafe_allow_html=True)
-
-    #     with st.expander("🕸️ Enrichment Analysis", expanded=True):
-
-    #         # ---- Initialisation ---- #
-    #         if 'gene_set_categories' not in st.session_state:
-    #             st.session_state.gene_set_categories = {}
-    #         if 'categories_loaded' not in st.session_state:
-    #             st.session_state.categories_loaded = False
-    #         if 'selected_category' not in st.session_state:
-    #             st.session_state.selected_category = "None"
-
-    #         # ---- Mode selection ---- #
-    #         st.markdown("### ⚙️ Enrichment Mode")
-    #         analysis_mode = st.radio(
-    #             "Choose mode:",
-    #             ["Online (Enrichr API)", "Offline (local .gmt)"],
-    #             index=0
-    #         )
-
-    #         # ============================================================== #
-    #         #                  OFFLINE MODE (.GMT local)                     #
-    #         # ============================================================== #
-    #         uploaded_gmt = None
-    #         if analysis_mode == "Offline (local .gmt)":
-
-    #             st.info("You selected offline mode. Upload a .gmt file.")
-
-    #             uploaded_gmt = st.file_uploader("Upload .gmt", type=["gmt"])
-
-    #             if uploaded_gmt:
-    #                 try:
-    #                     st.session_state.gene_set_categories = load_gene_sets_offline(uploaded_gmt)
-    #                     st.session_state.categories_loaded = True
-    #                     st.success("Offline categories loaded!")
-    #                 except Exception as e:
-    #                     st.error(f"Error loading GMT: {e}")
-
-    #         # ============================================================== #
-    #         #                       ONLINE MODE (API)                        #
-    #         # ============================================================== #
-    #         if analysis_mode == "Online (Enrichr API)":
-    #             col1, col2 = st.columns([1, 3])
-
-    #             with col1:
-    #                 if st.button("📥 Load database categories (Online)"):
-    #                     with st.spinner("Fetching categories from Enrichr API..."):
-    #                         try:
-    #                             tmp_sets = load_gene_sets()
-    #                             if isinstance(tmp_sets, dict):
-    #                                 st.session_state.gene_set_categories = tmp_sets
-    #                                 st.session_state.categories_loaded = True
-    #                                 st.success("Categories loaded!")
-    #                             else:
-    #                                 st.error("Invalid format returned by API.")
-    #                         except Exception as e:
-    #                             st.error(f"❌ API error: {e}")
-
-    #         # ============================================================== #
-    #         #                       CATEGORY SELECT BOX                      #
-    #         # ============================================================== #
-    #         if st.session_state.categories_loaded:
-    #             categories = ["None"] + list(st.session_state.gene_set_categories.keys())
-    #         else:
-    #             categories = ["None"]
-
-    #         st.session_state.selected_category = st.selectbox(
-    #             "Select Gene Set Category",
-    #             categories
-    #         )
-
-    #         # ============================================================== #
-    #         #                        MAIN FORM                               #
-    #         # ============================================================== #
-    #         with st.form("enrichment_form", clear_on_submit=False):
-
-    #             # Database list depends on mode
-    #             if st.session_state.selected_category != "None":
-    #                 db_options = ["None"] + st.session_state.gene_set_categories[st.session_state.selected_category]
-    #             else:
-    #                 db_options = ["None"]
-
-    #             selected_gene_set = st.selectbox("Select a database", db_options)
-
-    #             # Organism only in ONLINE mode
-    #             if analysis_mode == "Online (Enrichr API)":
-    #                 selected_organism = st.selectbox(
-    #                     "Select organism",
-    #                     ["Human", "Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"]
-    #                 )
-    #             else:
-    #                 selected_organism = None  # ignored in offline
-
-    #             num_pathways = st.slider("Number of pathways to display", 1, 100, 10)
-
-    #             st.markdown("---")
-    #             st.markdown("### Gene/protein Classes")
-
-    #             # MULTI-CLASS INPUTS
-    #             if 'num_classes_enrich' not in st.session_state:
-    #                 st.session_state.num_classes_enrich = 1
-
-    #             gene_lists = []
-    #             class_names = []
-
-    #             for i in range(st.session_state.num_classes_enrich):
-    #                 with st.container():
-    #                     col1, col2 = st.columns([1, 3])
-    #                     with col1:
-    #                         class_name = st.text_input(f"Class name {i+1}", key=f"class_name_{i}", value=f"Class_{i+1}")
-    #                     with col2:
-    #                         raw = st.text_area(f"Genes list {i+1}", key=f"class_genes_{i}")
-    #                         genes = [g.strip() for g in re.split(r"[,\s]+", raw) if g.strip()]
-
-    #                     class_names.append(class_name)
-    #                     gene_lists.append(genes)
-
-    #             col_add, col_remove = st.columns(2)
-    #             with col_add:
-    #                 if st.form_submit_button("➕ Add Class"):
-    #                     st.session_state.num_classes_enrich += 1
-    #                     st.rerun()
-
-    #             with col_remove:
-    #                 if st.form_submit_button("➖ Remove Class"):
-    #                     st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
-    #                     st.rerun()
-
-    #             st.markdown("---")
-    #             run_enrichment = st.form_submit_button("✅ Perform Enrichment")
-
-    #         # ============================================================== #
-    #         #                   RUNNING ENRICHMENT                           #
-    #         # ============================================================== #
-    #         if run_enrichment:
-
-    #             # Safety checks
-    #             if analysis_mode == "Online (Enrichr API)" and selected_gene_set == "None":
-    #                 st.error("Select a database for Online mode.")
-    #             elif analysis_mode == "Offline (local .gmt)" and uploaded_gmt is None:
-    #                 st.error("Upload a .gmt file in Offline mode.")
-    #             elif any(len(lst) == 0 for lst in gene_lists):
-    #                 st.error("Each class must contain at least one gene.")
-    #             else:
-    #                 with st.spinner("Running enrichment..."):
-
-    #                     if analysis_mode == "Online (Enrichr API)":
-    #                         perform_gsea(
-    #                             gene_lists=gene_lists,
-    #                             class_names=class_names,
-    #                             gene_set=selected_gene_set,
-    #                             organism=selected_organism,
-    #                             num_pathways=num_pathways
-    #                         )
-
-    #                     else:  # OFFLINE
-    #                         perform_gsea_offline(
-    #                             gene_lists=gene_lists,
-    #                             class_names=class_names,
-    #                             gmt_file=uploaded_gmt,
-    #                             num_pathways=num_pathways
-    #                         )
-
-    #                 st.success("✅ Enrichment analysis completed!")
 
     with tabs[4]:
         st.markdown("""
@@ -4541,7 +4576,7 @@ def main():
                 st.session_state.selected_category = "None"
 
             # ---- Mode selection ---- #
-            st.markdown("### ⚙️ Enrichment Mode")
+            st.markdown("**⚙️ Enrichment Mode**")
             analysis_mode = st.radio(
                 "Choose mode:",
                 ["Online (Enrichr API)", "Offline (local .gmt)"],
@@ -5246,5 +5281,4 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
-
 

@@ -276,3 +276,32 @@ def safe_load_data(data_source):
             else:
                 st.session_state[session_key] = None
     return st.session_state[session_key]
+
+
+
+# --- Fonction utilitaire pour récupérer les données selon la source ---
+def get_data_for_source(source_name):
+    mapping = {
+        "Raw Data": st.session_state.get('final_data', st.session_state.get('data')),
+        "Preprocessed": st.session_state.get('preprocessed_data'),
+        "Oversampled": st.session_state.get('oversampled_data'),
+        "Undersampled": st.session_state.get('undersampled_data')
+    }
+    return mapping.get(source_name, None)
+
+
+def finalize_data_load(df, source_label):
+    """Add required columns and store dataframe in session state."""
+    if df is not None:
+        for col in ['File', 'RT', 'Sum']:
+            if col not in df.columns:
+                df[col] = "Unknown" if col == 'File' else 0
+        st.session_state['data'] = df
+        if 'Class' in df.columns:
+            st.session_state['class_renaming'] = {cls: cls for cls in df['Class'].unique()}
+            import plotly.express as px
+            st.session_state['class_colors'] = {
+                class_name: px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]
+                for i, class_name in enumerate(df['Class'].unique())
+            }
+        st.success(f"{source_label} data processed successfully!")

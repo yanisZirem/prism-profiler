@@ -82,7 +82,7 @@ from sklearn.impute import KNNImputer
 
 # Import Profiler modules (developped modules by Yanis Zirem)
 from profiler_conversion_desk import convert_raw_to_mzml
-from profiler_data_loading import save_uploaded_file, load_uploaded_files, add_group, get_data, lazy_import,safe_load_data
+from profiler_data_loading import save_uploaded_file, load_uploaded_files, add_group, get_data, lazy_import,safe_load_data, get_data_for_source, finalize_data_load
 from profiler_preprocessing import load_and_preprocess_data, preprocess_data, apply_binning_to_mass_range
 from profiler_sampling import apply_sampling
 from profiler_unsupervised import (
@@ -91,7 +91,7 @@ from profiler_unsupervised import (
 from profiler_ML import train_models, plot_learning_curve, compare_models
 from profiler_visualization import (
     display_data_section, display_model_results, plot_mean_spectrum, 
-    plot_individual_spectra, plot_heatmap
+    plot_individual_spectra, plot_heatmap, calculate_maximal_intersections,calculate_all_intersections
 )
 from profiler_data_exploration import plot_feature_distribution, plot_venn_diagram, plot_upset, plot_multiple_features_line, plot_multiple_features_radar, plot_multiple_features_distribution 
 from profiler_features_importance import (
@@ -113,4 +113,8 @@ from profiler_rt import (
 )
 from profiler_normality import(
     diagnose_normality, display_class_info,calculate_missing_values,perform_shapiro_wilk_test, display_distribution
+)
+
+from offline_enrichr import(
+    load_gene_sets_offline, perform_gsea_offline  
 )

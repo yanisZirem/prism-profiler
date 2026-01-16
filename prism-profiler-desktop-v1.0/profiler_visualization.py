@@ -27,7 +27,9 @@ import plotly.graph_objects as go
 import shap
 import pandas as pd
 import seaborn as sns
-
+import gc
+from itertools import combinations
+from collections import defaultdict
 
 def display_dataframe_section(df):
     """
@@ -404,3 +406,70 @@ def plot_heatmap(df, title, caption=None):
     del fig, ax
     import gc
     gc.collect()
+
+
+
+
+
+# --- Fonction optimisée pour les intersections ---
+def calculate_maximal_intersections(venn_data, classes):
+    class_features = {}
+    for cls in classes:
+        cls_features = set(venn_data[venn_data['Class'] == cls].drop(columns=['Class']).columns)
+        class_features[cls] = cls_features
+
+    feature_counts = defaultdict(int)
+    feature_to_classes = defaultdict(set)
+
+    for cls, features in class_features.items():
+        for feature in features:
+            feature_counts[feature] += 1
+            feature_to_classes[feature].add(cls)
+
+    shared_features = {feature: classes for feature, classes in feature_to_classes.items() if len(classes) >= 2}
+
+    maximal_intersections = defaultdict(set)
+    for feature, cls_set in shared_features.items():
+        for r in range(2, len(cls_set) + 1):
+            for combo in combinations(cls_set, r):
+                maximal_intersections[combo].add(feature)
+
+    maximal_intersections_filtered = {}
+    for combo, features in maximal_intersections.items():
+        is_maximal = True
+        for other_combo, other_features in maximal_intersections.items():
+            if set(combo).issubset(other_combo) and features <= other_features and combo != other_combo:
+                is_maximal = False
+                break
+        if is_maximal:
+            maximal_intersections_filtered[combo] = features
+
+    return maximal_intersections_filtered
+
+
+
+
+def calculate_all_intersections(venn_data, classes):
+    # Dictionnaire {classe: set(features non-nulles)}
+    class_features = {}
+    relevant_cols = [col for col in venn_data.columns if col != 'Class']
+    
+    for cls in classes:
+        mask = venn_data['Class'] == cls
+        cls_features = set(venn_data.loc[mask, relevant_cols].columns[venn_data.loc[mask, relevant_cols].notnull().any()])
+        class_features[cls] = cls_features
+
+    all_intersections = {}
+    used_features = set()  # pour éviter les duplications
+
+    # On parcourt d'abord les combinaisons les plus larges (N classes), puis descend
+    for r in range(len(classes), 1, -1):
+        for combo in combinations(classes, r):
+            intersect = set.intersection(*(class_features[cls] for cls in combo))
+            # On enlève ce qui a déjà été attribué à une intersection plus grande
+            intersect -= used_features
+            if intersect:
+                all_intersections[combo] = intersect
+                used_features.update(intersect)  # marquer ces features comme utilisées
+
+    return all_intersections
