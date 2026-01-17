@@ -2,7 +2,7 @@
 ---
 
 ## Overview
-**Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive  interactive application dedicated to **multi-omics data analysis**, designed for users who want to run analyses **locally on their own computer**, without uploading data to a remote server.
+**Profiler Desktop** is the standalone, offline version of the Profiler platform ([prism-profiler.univ-lille.fr](https://prism-profiler.univ-lille.fr)), an interactive application dedicated to **multi-omics data analysis**, designed for users who want to run analyses **locally on their own computer**, without uploading data to a remote server.
 
 Profiler Desktop provides:
 - full offline execution
@@ -93,50 +93,6 @@ Profiler Desktop will:
 ✅ No terminal  
 ✅ No Conda commands  
 ✅ No configuration required  
-
----
-
-
-✅ **This is the only file you need to run.**  
-❌ Do **NOT** run `install_profiler.ps1` manually.
-
-The installer will open in a command window and guide you automatically.
-
-⏳ Installation may take several minutes — this is normal.
-
----
-
-### 🔧 What the Automatic Installer Does
-
-The installer automatically:
-- Detects whether **Conda** is already installed
-- Installs **Miniconda (user-only)** if Conda is missing
-- Creates a Conda environment named **`profiler`**
-- Installs all required Python dependencies
-- Downloads and installs **ProteoWizard (msconvert)** locally
-- Adds ProteoWizard to the **user PATH**
-- Creates a **Desktop shortcut** named **Profiler Desktop**
-
-💡 **Administrator rights are NOT required.**
-
----
-
-### 🚀 Launch Profiler Desktop
-
-Once installation is complete:
-
-👉 **Double-click the “Profiler Desktop” shortcut on your Desktop**
-
-Profiler Desktop will:
-- start automatically
-- open in your default web browser
-- run fully locally on your machine
-
-✅ No terminal  
-✅ No Conda commands  
-✅ No configuration required  
-
----
 
 ## ❌ If the Automatic Installation Fails
 
