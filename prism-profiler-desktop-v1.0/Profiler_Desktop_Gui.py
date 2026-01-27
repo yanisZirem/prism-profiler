@@ -4212,21 +4212,18 @@ def main():
         if "show_boxplots" not in st.session_state:
             st.session_state["show_boxplots"] = False
 
-        with st.expander("📊 **Statistical Visualization of Selected Features**",
-                        expanded=st.session_state["show_boxplots"]):
-
+        with st.expander(
+            "📊 **Statistical Visualization of Selected Features**",
+            expanded=st.session_state["show_boxplots"]
+        ):
             st.markdown(
                 '<p style="color: gray; font-size: 14px;">Visualize and statistically compare the distribution '
                 'of selected features across sample classes. Includes p-value correction and filtering.</p>',
                 unsafe_allow_html=True
             )
 
-            # -------------------------------------
-            # Full form in st.form()
-            # -------------------------------------
             with st.form("boxplot_stat_form", clear_on_submit=False):
-
-                # Dataset selection
+                # Sélection du dataset
                 data_source = st.selectbox(
                     "Select Data Source",
                     ['Raw data', 'Preprocessed', 'Oversampled', 'Undersampled'],
@@ -4234,13 +4231,13 @@ def main():
                     help="Choose the dataset used for visualization and statistical comparison."
                 )
 
-                # Feature input
+                # Saisie des features
                 mz_values_input = st.text_input(
                     "Enter Feature Names",
-                    help="Enter one or more feature names (m/z, prot, transcrit, gene...), separated by commas, space, tab.. or mix of theme"
+                    help="Enter one or more feature names (m/z, prot, transcrit, gene...), separated by commas, space, tab.. or mix of them."
                 )
 
-                # Statistical test
+                # Test statistique
                 test = st.selectbox(
                     "Select Statistical Test",
                     ['Kruskal', 'Mann-Whitney', 't-test_ind', 'ANOVA'],
@@ -4255,7 +4252,7 @@ def main():
                     )
                 )
 
-                # P-value correction
+                # Correction des p-values
                 pval_correction = st.selectbox(
                     "Multiple Testing Correction",
                     ['None', 'Bonferroni', 'FDR (Benjamini-Hochberg)'],
@@ -4268,7 +4265,7 @@ def main():
                     )
                 )
 
-                # Plot type
+                # Type de plot
                 plot_type = st.selectbox(
                     "Choose Plot Type",
                     ['Box Plot', 'Violin Plot', 'Bar Plot'],
@@ -4282,14 +4279,12 @@ def main():
                 )
 
                 col1, col2 = st.columns(2)
-
                 with col1:
                     show_scatter = st.checkbox(
                         "🔹 Show Individual Points",
                         key="show_scatter",
                         help="Overlay individual sample points on the plot."
                     )
-
                 with col2:
                     use_log2 = st.checkbox(
                         "🔹 Apply log2 Transformation",
@@ -4297,59 +4292,74 @@ def main():
                         help="Apply a log2 transformation to reduce skew and stabilize variance."
                     )
 
-                # Submit
-                submitted = st.form_submit_button(
-                    "Run",
-                    help="Run statistical analysis and generate visualizations."
-                )
-
-            # --------------------------------------------------------
-            # PROCESSING (EXECUTES ONLY ON SUBMIT)
-            # --------------------------------------------------------
-            if submitted:
-
+                # Sélection des classes à comparer (NOUVEAU)
                 data_sig_key = {
                     'Raw data': 'data',
                     'Preprocessed': 'preprocessed_data',
                     'Oversampled': 'oversampled_data',
                     'Undersampled': 'undersampled_data'
                 }.get(data_source)
-
                 data_sig = st.session_state.get(data_sig_key, None)
 
-                if data_sig is None:
-                    st.error("❌ Dataset not loaded.")
+                if data_sig is not None:
+                    class_col = st.session_state.get("label_column", "Class")
+                    all_classes = data_sig[class_col].unique().tolist()
+
+                    # Option pour comparer toutes les classes ou sélectionner
+                    compare_all = st.checkbox(
+                        "Compare all classes",
+                        value=True,  # Par défaut, comparer toutes les classes
+                        key="compare_all_classes",
+                        help="Uncheck to select specific classes for comparison."
+                    )
+
+                    if compare_all:
+                        selected_classes = all_classes
+                    else:
+                        selected_classes = st.multiselect(
+                            "Select Classes to Compare",
+                            options=all_classes,
+                            default=all_classes[:2] if len(all_classes) >= 2 else all_classes,
+                            key="selected_classes",
+                            help="Select exactly 2 classes for Mann-Whitney or t-test, or more for Kruskal/ANOVA."
+                        )
+
+                    # Validation dynamique
+                    if not compare_all and test in ['Mann-Whitney', 't-test_ind'] and len(selected_classes) != 2:
+                        st.warning("⚠️ This test requires exactly 2 classes.")
+                        submitted = False  # Désactive le bouton si la condition n'est pas remplie
+                    else:
+                        submitted = st.form_submit_button("Run")
 
                 else:
-                    import pandas as pd
-                    import scipy.stats as stats
-                    from statsmodels.stats.multitest import multipletests
+                    st.error("❌ Dataset not loaded.")
+                    submitted = False
 
+            # Traitement après soumission
+            if submitted:
+                data_sig = st.session_state.get(data_sig_key, None)
+                if data_sig is None:
+                    st.error("❌ Dataset not loaded.")
+                else:
                     data_sig = data_sig.copy()
                     class_col = st.session_state.get("label_column", "Class")
 
-                    # Parsing features
-                    # mz_values = [
-                    #     mz.strip() for mz in mz_values_input.split(',')
-                    #     if mz.strip() in data_sig.columns
-                    # ]
+                    # Filtrer les données pour les classes sélectionnées
+                    data_filtered = data_sig[data_sig[class_col].isin(selected_classes)]
 
+                    # Parsing des features
                     raw_features = re.split(r"[,\s;]+", mz_values_input.strip())
-
-                    mz_values = [
-                        mz.strip() for mz in raw_features
-                        if mz.strip() in data_sig.columns
-                    ]
+                    mz_values = [mz.strip() for mz in raw_features if mz.strip() in data_filtered.columns]
 
                     if not mz_values:
                         st.warning("⚠️ None of the entered features were found in the dataset.")
                     else:
-                        # Compute stats
+                        # Calcul des statistiques
                         results = []
                         for mz in mz_values:
                             groups = [
-                                data_sig[data_sig[class_col] == g][mz].dropna()
-                                for g in data_sig[class_col].unique()
+                                data_filtered[data_filtered[class_col] == g][mz].dropna()
+                                for g in selected_classes
                             ]
                             p = None
                             try:
@@ -4363,12 +4373,10 @@ def main():
                                     p = stats.f_oneway(*groups).pvalue
                             except Exception:
                                 p = None
-
                             results.append({"feature": mz, "pvalue": p})
 
+                        # Correction des p-values
                         result_df = pd.DataFrame(results).dropna()
-
-                        # P-value correction
                         if pval_correction == 'Bonferroni':
                             result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="bonferroni")[1]
                         elif pval_correction == 'FDR (Benjamini-Hochberg)':
@@ -4376,37 +4384,24 @@ def main():
                         else:
                             result_df["adj_pvalue"] = result_df["pvalue"]
 
+                        # Affichage des résultats
                         sig_df = result_df[result_df["adj_pvalue"] < 0.05]
                         nonsig_df = result_df[result_df["adj_pvalue"] >= 0.05]
+                        st.info(f"**Significant features (p < 0.05)**: {len(sig_df)} / {len(mz_values)}")
+                        st.info(f"**Non-significant features**: {len(nonsig_df)} / {len(mz_values)}")
 
-                        sig_features = sig_df["feature"].tolist()
-                        nonsig_features = nonsig_df["feature"].tolist()
-
-                        st.info(f"**Significant features (p < 0.05)**: {len(sig_features)} / {len(mz_values)}")
-                        st.info(f"**Non-significant features**: {len(nonsig_features)} / {len(mz_values)}")
-                        st.write("✔️ All features will be displayed (significant + non-significant).")
-
-                        # Features to plot
-                        features_to_plot = sig_features + nonsig_features
-
-                        # Mapping feature → adjusted p-value
-                        significance_dict = dict(zip(result_df.feature, result_df.adj_pvalue))
-
-                        class_colors = st.session_state.get("class_colors", None)
-
-                        # Call plotting function
+                        # Appel à la fonction de plot
                         plot_significant_features(
-                            data=data_sig,
-                            mz_values=features_to_plot,
-                            class_colors=class_colors,
+                            data=data_filtered,
+                            mz_values=mz_values,
+                            class_colors=st.session_state.get("class_colors", None),
                             test=test,
                             plot_type=plot_type.lower().split()[0],
                             show_scatter=show_scatter,
                             use_log2=use_log2,
                             pval_correction=pval_correction,
-                            significance_dict=significance_dict
+                            significance_dict=dict(zip(result_df.feature, result_df.adj_pvalue))
                         )
-
 
         st.markdown(
             """
@@ -5361,5 +5356,6 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
 
 
