@@ -62,6 +62,15 @@ The installer will open in a command window and guide you automatically.
 
 ⏳ Installation may take several minutes — this is normal.
 
+⚠️ **Conda Terms of Service**
+
+Profiler Desktop uses Conda for environment management.
+Since 2024, Conda requires acceptance of its Terms of Service.
+
+The automatic installer will accept these terms on behalf of the user
+to ensure a smooth installation.
+No action is required from the user.
+
 ---
 
 ### 🔧 What the Automatic Installer Does
