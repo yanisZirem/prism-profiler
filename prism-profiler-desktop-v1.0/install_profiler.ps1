@@ -1,7 +1,7 @@
 <#
 ===============================================================================
 Profiler Desktop v1 - Automated Installer
-Developed by PRISM U1192 Laboratory, Universit� de Lille
+Developed by PRISM U1192 Laboratory, Université de Lille
 Author: Yanis Zirem (PhD Candidate, 2025)
 ===============================================================================
 #>
@@ -9,88 +9,130 @@ Author: Yanis Zirem (PhD Candidate, 2025)
 Write-Host "Starting Profiler Desktop installation..." -ForegroundColor Cyan
 Start-Sleep -Seconds 1
 
-# Step 1: Check Anaconda installation
-Write-Host "`nChecking for Anaconda installation..."
+# ----------------------------------------------------------------------
+# Step 1: Check Conda installation
+# ----------------------------------------------------------------------
+Write-Host "`nChecking for Anaconda / Miniconda installation..."
+
 if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    Write-Host "Anaconda not found. Please install it first:" -ForegroundColor Red
-    Write-Host "?? https://www.anaconda.com/download"
+    Write-Host "❌ Conda not found. Please install Anaconda or Miniconda first:" -ForegroundColor Red
+    Write-Host "https://www.anaconda.com/download"
     exit 1
 }
+Write-Host "✔ Conda detected." -ForegroundColor Green
+
+# ----------------------------------------------------------------------
+# Step 2: Accept Conda Terms of Service automatically (required since 2024)
+# ----------------------------------------------------------------------
+Write-Host "`nChecking Conda Terms of Service acceptance..."
+
+Write-Host "Conda Terms of Service must be accepted to continue." -ForegroundColor Yellow
+Write-Host "Automatically accepting Conda Terms of Service..." -ForegroundColor Yellow
+
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main | Out-Null
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r | Out-Null
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2 | Out-Null
+
+Write-Host "✔ Conda Terms of Service accepted." -ForegroundColor Green
+
+# ----------------------------------------------------------------------
+# Step 3: Create Conda environment
+# ----------------------------------------------------------------------
+Write-Host "`nCreating Conda environment 'profiler' (Python 3.8.20)..."
+
+$envExists = conda env list | Select-String "^profiler\s"
+if ($envExists) {
+    Write-Host "✔ Conda environment 'profiler' already exists." -ForegroundColor Yellow
+}
 else {
-    Write-Host "? Anaconda detected." -ForegroundColor Green
+    conda create -y -n profiler python=3.8.20
 }
 
-# Step 2: Create Conda environment
-Write-Host "`n?? Creating Conda environment 'profiler' (Python 3.8.20)..."
-conda create -y -n profiler python=3.8.20
-
-# Step 3: Activate environment using conda run for script compatibility
-Write-Host "`n?? Installing Python dependencies into 'profiler' environment..."
-if (Test-Path ".\requirements.txt") {
-    conda run -n profiler pip install -r requirements.txt
-    Write-Host "? Dependencies installed successfully." -ForegroundColor Green
-}
-else {
-    Write-Host "? requirements.txt not found in current directory." -ForegroundColor Red
+# Verify environment creation
+$envExists = conda env list | Select-String "^profiler\s"
+if (-not $envExists) {
+    Write-Host "❌ Failed to create Conda environment 'profiler'." -ForegroundColor Red
     exit 1
 }
 
-# Step 4: Install ProteoWizard
+# ----------------------------------------------------------------------
+# Step 4: Install Python dependencies
+# ----------------------------------------------------------------------
+Write-Host "`nInstalling Python dependencies into 'profiler' environment..."
+
+if (Test-Path "$PSScriptRoot\requirements.txt") {
+    conda run -n profiler pip install -r "$PSScriptRoot\requirements.txt"
+    Write-Host "✔ Dependencies installed successfully." -ForegroundColor Green
+}
+else {
+    Write-Host "❌ requirements.txt not found in script directory." -ForegroundColor Red
+    exit 1
+}
+
+# ----------------------------------------------------------------------
+# Step 5: Install ProteoWizard (user-only)
+# ----------------------------------------------------------------------
 Write-Host "`nInstalling ProteoWizard (msconvert)..."
-$pwizVersion = "3.0.24143"
-$pwizUrl = "https://github.com/ProteoWizard/pwiz/releases/download/$pwizVersion/ProteoWizard-$pwizVersion-x86_64.msi"
+
+$pwizVersion   = "3.0.24143"
+$pwizUrl       = "https://github.com/ProteoWizard/pwiz/releases/download/$pwizVersion/ProteoWizard-$pwizVersion-x86_64.msi"
 $pwizInstaller = "$env:TEMP\ProteoWizard.msi"
-$pwizPath = "$env:LOCALAPPDATA\ProteoWizard\ProteoWizard $pwizVersion"
+$pwizPath      = "$env:LOCALAPPDATA\ProteoWizard\ProteoWizard $pwizVersion"
 
 if (Test-Path $pwizPath) {
-    Write-Host "? ProteoWizard already installed." -ForegroundColor Green
+    Write-Host "✔ ProteoWizard already installed." -ForegroundColor Green
 }
 else {
-    Write-Host "?? Downloading ProteoWizard installer..."
+    Write-Host "Downloading ProteoWizard installer..."
     Invoke-WebRequest -Uri $pwizUrl -OutFile $pwizInstaller
-    Write-Host "?? Installing ProteoWizard silently..."
-    Start-Process msiexec.exe -Wait -ArgumentList "/i `"$pwizInstaller`" /quiet TARGETDIR=`"$pwizPath`" /norestart"
 
+    Write-Host "Installing ProteoWizard (no admin required)..."
+    Start-Process msiexec.exe -Wait -ArgumentList `
+        "/i `"$pwizInstaller`" /quiet /norestart TARGETDIR=`"$pwizPath`""
 }
 
-# Step 5: Add ProteoWizard to PATH
+# ----------------------------------------------------------------------
+# Step 6: Add ProteoWizard to USER PATH
+# ----------------------------------------------------------------------
 if (Test-Path $pwizPath) {
-    Write-Host "`n?? Adding ProteoWizard to PATH..."
-    [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$pwizPath", [EnvironmentVariableTarget]::User)
-    Write-Host "? ProteoWizard added to system PATH." -ForegroundColor Green
+    Write-Host "`nAdding ProteoWizard to USER PATH..."
+
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$pwizPath*") {
+        [Environment]::SetEnvironmentVariable(
+            "Path",
+            "$userPath;$pwizPath",
+            [EnvironmentVariableTarget]::User
+        )
+        Write-Host "✔ ProteoWizard added to user PATH." -ForegroundColor Green
+        Write-Host "⚠ Restart your terminal to apply PATH changes." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "✔ ProteoWizard already in PATH." -ForegroundColor Green
+    }
 }
 else {
-    Write-Host "?? ProteoWizard path not found. Please check installation manually." -ForegroundColor Yellow
+    Write-Host "⚠ ProteoWizard not detected. You can install it manually if needed." -ForegroundColor Yellow
 }
 
-# Step 6: Final verification
-Write-Host "`n?? Verifying msconvert installation..."
-if (Get-Command msconvert -ErrorAction SilentlyContinue) {
-    Write-Host "? msconvert is accessible from PATH." -ForegroundColor Green
-}
-else {
-    Write-Host "?? msconvert not found in PATH. Please restart your terminal or add manually:" -ForegroundColor Yellow
-    Write-Host "   $pwizPath"
-}
-
-# Step 7: Completion message
-Write-Host "`n?? Installation complete!"
-Write-Host "To start Profiler Desktop:"
-Write-Host "1?? Open Anaconda Prompt"
-Write-Host "2?? Run: conda activate profiler"
-Write-Host "3?? Navigate to the Profiler Desktop folder"
-Write-Host "4?? Launch with: python profiler_desktop.py"
-Write-Host "`nProfiler Desktop is now ready to use!" -ForegroundColor Cyan
-
-Write-Host "Creating desktop shortcut..."
+# ----------------------------------------------------------------------
+# Step 7: Desktop shortcut
+# ----------------------------------------------------------------------
+Write-Host "`nCreating desktop shortcut..."
 
 $WshShell = New-Object -ComObject WScript.Shell
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $Shortcut = $WshShell.CreateShortcut("$DesktopPath\Profiler Desktop.lnk")
 
-$Shortcut.TargetPath = "$PSScriptRoot\run_profiler.bat"
+$Shortcut.TargetPath       = "$PSScriptRoot\run_profiler.bat"
 $Shortcut.WorkingDirectory = $PSScriptRoot
-$Shortcut.IconLocation = "$PSScriptRoot\profiler.ico"
+$Shortcut.IconLocation     = "$PSScriptRoot\profiler.ico"
 $Shortcut.Save()
 
-Write-Host "Profiler Desktop shortcut created on Desktop."
+Write-Host "✔ Desktop shortcut created." -ForegroundColor Green
+
+# ----------------------------------------------------------------------
+# Completion
+# ----------------------------------------------------------------------
+Write-Host "`n✔ Installation complete!" -ForegroundColor Cyan
+Write-Host "You can now launch Profiler Desktop using the desktop shortcut."
