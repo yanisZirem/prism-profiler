@@ -3723,7 +3723,8 @@ def main():
 
         
 
-        # ---------------- Volcano Plot Expander ----------------
+
+# ---------------- Volcano Plot Expander ----------------
         with st.expander("**🌋 Volcano Plot**", expanded=st.session_state.get("show_volcano", False)):
             st.markdown(
                 '<p style="color: gray; font-size: 14px;">'
@@ -3802,15 +3803,7 @@ def main():
                     key="highlight_features",
                     help="Check this box to highlight feature names in the Volcano Plot."
                 )
-                # custom_highlight_input = st.text_area(
-                #     "Features to highlight (optional)",
-                #     placeholder="mz_123.456, ProtX, Feature_X...",
-                #     help=(
-                #         "Enter specific feature names (comma-separated) that you want to highlight on the Volcano plot. "
-                #         "Only their names will be displayed, regardless of statistical significance."
-                #     )
-                # )
-                # Submit button
+
                 submitted = st.form_submit_button("Display Volcano Plot")
 
             # ---------------- ACTION ----------------
@@ -3828,6 +3821,9 @@ def main():
 
                 # Stocker la source choisie pour l'utiliser dans RESULTS
                 st.session_state["volcano_data_source_df"] = data_vol
+                # Stocker les paramètres pour le nom du fichier
+                st.session_state["volcano_p_threshold"] = p_value_threshold
+                st.session_state["volcano_fc_threshold"] = fold_change_threshold
 
                 class_column = st.session_state.get('class_column', 'Class')
 
@@ -3929,16 +3925,33 @@ def main():
 
                         if class_column in data_vol.columns:
                             significant_data = data_vol[[class_column] + significant_features]
+                            
                             st.write("**DataFrame with Significant Features from Selected Source:**")
-                            # st.dataframe(significant_data, hide_index=True)
-                            st.dataframe(significant_data)
+                            
+                            # Layout avec bouton de téléchargement
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.dataframe(significant_data)
+                            with col2:
+                                # Récupérer les paramètres pour le nom de fichier
+                                p_thresh = st.session_state.get("volcano_p_threshold", 0.05)
+                                fc_thresh = st.session_state.get("volcano_fc_threshold", 0.0)
+                                
+                                csv_volcano = significant_data.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download CSV",
+                                    data=csv_volcano,
+                                    file_name=f"volcano_significant_features_p{p_thresh}_fc{fc_thresh}.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                    help="Download the significant features table as CSV file"
+                                )
                         else:
                             st.error("Class column missing from the selected data source.")
                     elif not significant_features:
                         st.warning("No significant features found.")
                 except Exception as e:
                     st.error(f"Unexpected error: {e}")
-
 
 
         # Expander Heatmap
@@ -4140,9 +4153,21 @@ def main():
                         significant_df = data_source_df[['Class'] + valid_significant_features].copy()
 
                         st.markdown("**Significant Features**")
-                        # st.subheader("Significant Features")
-                        # st.dataframe(significant_df, hide_index=True)
-                        st.dataframe(significant_df)
+                        
+                        # Bouton de téléchargement pour la table des features significatives
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.dataframe(significant_df)
+                        with col2:
+                            csv_significant = significant_df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Download CSV",
+                                data=csv_significant,
+                                file_name=f"significant_features_p{p_value_threshold}.csv",
+                                mime="text/csv",
+                                use_container_width=True,
+                                help="Download the significant features table as CSV file"
+                            )
 
                         over_df = []
 
@@ -4165,8 +4190,21 @@ def main():
                             over_df = pd.DataFrame(over_df)
 
                             st.markdown("**Over-expressed Features by Class**")
-                            # st.dataframe(over_df, hide_index=True)
-                            st.dataframe(over_df)
+                            
+                            # Bouton de téléchargement pour la table des over-expressed features
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.dataframe(over_df)
+                            with col2:
+                                csv_overexpressed = over_df.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download CSV",
+                                    data=csv_overexpressed,
+                                    file_name=f"overexpressed_features_p{p_value_threshold}.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                    help="Download the overexpressed features table as CSV file"
+                                )
                         else:
                             st.info("No overexpressed features detected for selected classes.")
 
@@ -4178,7 +4216,7 @@ def main():
                         if len(valid_over) < 2:
                             st.info("Not enough classes with overexpressed features to compute intersections.")
                         else:
- 
+
                             common_all = set.intersection(*map(set, valid_over.values()))
                             
                             if common_all:
@@ -4629,7 +4667,6 @@ def main():
 
 
 
-
     with tabs[4]:
         st.markdown("""
             <h3 style="font-size: 1.2rem; border-bottom: 2px solid #318CE7; text-align: center;
@@ -4679,9 +4716,7 @@ def main():
                     gmt_file_path = uploaded_gmt
 
                 if gmt_file_path:
-                    # st.session_state.gene_set_categories = load_gene_sets_offline(gmt_file_path)
                     st.session_state.gene_set_categories = load_gene_sets_offline()
-
                     st.session_state.categories_loaded = True
                     st.success(f"GMT loaded: {Path(gmt_file_path).name}")
                 else:
@@ -4720,6 +4755,25 @@ def main():
             )
 
             # ============================================================== #
+            #           NOMBRE DE CLASSES (EN DEHORS DU FORM!)              #
+            # ============================================================== #
+            st.markdown("---")
+            st.markdown("**Classes (conditions)**")
+            
+            if 'num_classes_enrich' not in st.session_state:
+                st.session_state.num_classes_enrich = 1
+
+            # Sélecteur du nombre de classes EN DEHORS du form
+            st.session_state.num_classes_enrich = st.number_input(
+                "Number classes to compare",
+                min_value=1,
+                max_value=1000,
+                value=st.session_state.num_classes_enrich,
+                step=1,
+                help="Set how many gene/protein classes you want to analyze"
+            )
+
+            # ============================================================== #
             #                        MAIN FORM                               #
             # ============================================================== #
             with st.form("enrichment_form", clear_on_submit=False):
@@ -4742,55 +4796,58 @@ def main():
                 num_pathways = st.slider("Number of pathways to display", 1, 100, 10)
 
                 st.markdown("---")
-                st.markdown("**Gene/protein Classes**")
 
                 # MULTI-CLASS INPUTS
-                if 'num_classes_enrich' not in st.session_state:
-                    st.session_state.num_classes_enrich = 1
-
                 gene_lists = []
                 class_names = []
 
                 for i in range(st.session_state.num_classes_enrich):
                     with st.container():
+                        st.markdown(f"**Class {i+1}**")
                         col1, col2 = st.columns([1, 3])
                         with col1:
-                            class_name = st.text_input(f"Class name {i+1}", key=f"class_name_{i}", value=f"Class_{i+1}")
+                            class_name = st.text_input(
+                                "Class name",
+                                key=f"class_name_{i}",
+                                value=f"Class_{i+1}",
+                                placeholder=f"e.g., Upregulated, Control..."
+                            )
                         with col2:
-                            raw = st.text_area(f"Genes list {i+1}", key=f"class_genes_{i}")
+                            raw = st.text_area(
+                                "Genes/Proteins",
+                                key=f"class_genes_{i}",
+                                placeholder="Enter gene symbols separated by commas, spaces, or new lines",
+                                height=100
+                            )
                             genes = [g.strip() for g in re.split(r"[,\s]+", raw) if g.strip()]
 
                         class_names.append(class_name)
                         gene_lists.append(genes)
 
-                col_add, col_remove = st.columns(2)
-                with col_add:
-                    if st.form_submit_button("➕ Add Class"):
-                        st.session_state.num_classes_enrich += 1
-                        # st.rerun()
-                        st.experimental_rerun()
-
-                with col_remove:
-                    if st.form_submit_button("➖ Remove Class"):
-                        st.session_state.num_classes_enrich = max(1, st.session_state.num_classes_enrich - 1)
-                        # st.rerun()
-                        st.experimental_rerun()
+                        # Afficher le nombre de gènes saisis
+                        if genes:
+                            st.caption(f"✓ {len(genes)} genes entered")
+                        else:
+                            st.caption("⚠️ No genes entered yet")
+                        
+                        if i < st.session_state.num_classes_enrich - 1:
+                            st.markdown("---")
 
                 st.markdown("---")
-                run_enrichment = st.form_submit_button("✅ Perform Enrichment")
+                run_enrichment = st.form_submit_button("✅ Perform Enrichment", use_container_width=True)
 
             # ============================================================== #
             #                   RUNNING ENRICHMENT                           #
             # ============================================================== #
             if run_enrichment:
                 if analysis_mode == "Online (Enrichr API)" and selected_gene_set == "None":
-                    st.error("Select a database for Online mode.")
+                    st.error("❌ Please select a database for Online mode.")
                 elif analysis_mode == "Offline (local .gmt)" and not gmt_file_path:
-                    st.error("Select or upload a GMT file for Offline mode.")
+                    st.error("❌ Please select or upload a GMT file for Offline mode.")
                 elif any(len(lst) == 0 for lst in gene_lists):
-                    st.error("Each class must contain at least one gene.")
+                    st.error("❌ Each class must contain at least one gene.")
                 else:
-                    with st.spinner("Running enrichment..."):
+                    with st.spinner("Running enrichment analysis..."):
                         if analysis_mode == "Online (Enrichr API)":
                             perform_gsea(
                                 gene_lists=gene_lists,
@@ -4808,7 +4865,6 @@ def main():
                                 num_pathways=num_pathways
                             )
                     st.success("✅ Enrichment analysis completed!")
-
 
     with tabs[5]:
 
