@@ -203,8 +203,287 @@ def plot_shap_values(model, X, class_colors, class_names):
 
 
 
+from scipy.stats import f_oneway
+from itertools import combinations
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statannotations.Annotator import Annotator
+import streamlit as st
+
+# def boxplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+#     """
+#     Create box plots for significant features with improved size handling.
+#     """
+#     data.columns = data.columns.astype(str)
+#     label = 'Class'
+#     order = sorted(data[label].unique())
+#     box_pairs = list(combinations(order, 2))
+
+#     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
+
+#     num_mz_values = len(mz_values)
+    
+#     # LIMITE: Si trop de features, on les affiche par batch
+#     MAX_FEATURES_PER_PLOT = 50
+#     if num_mz_values > MAX_FEATURES_PER_PLOT:
+#         st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+#         # Diviser en batches
+#         for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+#             batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+#             st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+#             _plot_batch_boxplot(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+#     else:
+#         _plot_batch_boxplot(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+
+
+# def _plot_batch_boxplot(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+#     """Helper function to plot a batch of features."""
+#     num_mz_values = len(mz_values)
+    
+#     # Calculer une grille optimale
+#     num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))  # Max 4 colonnes
+#     num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+#     # Limiter la taille de la figure pour éviter les erreurs
+#     max_width = 20  # largeur max en inches
+#     max_height = 30  # hauteur max en inches
+#     fig_width = min(5 * num_cols, max_width)
+#     fig_height = min(4 * num_rows, max_height)
+    
+#     # Utiliser un DPI raisonnable
+#     fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
+
+#     progress_bar = st.progress(0)
+#     progress_step = 1.0 / num_mz_values
+
+#     for i, mz in enumerate(mz_values):
+#         row, col = divmod(i, num_cols)
+#         ax = axes[row, col]
+
+#         y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
+#         y_label = f'{mz}'
+
+#         sns.boxplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False)
+#         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
+#         ax.set_ylabel(ylabel, fontsize=10)
+
+#         if show_scatter:
+#             sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
+
+#         unique_values = y_data.dropna().unique()
+#         if len(unique_values) > 1:
+#             # Post-hoc tests pairwise
+#             if len(box_pairs) > 0:
+#                 try:
+#                     pairwise_test = 't-test_ind' if test == 'ANOVA' else test
+#                     annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+#                     annotator.configure(test=pairwise_test, text_format='star', loc=loc, verbose=0)
+#                     results = annotator.apply_and_annotate()
+
+#                     if results and isinstance(results, list):
+#                         for box_pair, stat_result in results:
+#                             if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+#                                 if "ns" in stat_result['pvalue_text'].lower():
+#                                     stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+#                 except Exception as e:
+#                     pass  # Silently ignore annotation errors
+#         else:
+#             ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+#                    transform=ax.transAxes, fontsize=10, color='gray')
+
+#         ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+#         ax.set_title(y_label, fontsize=12, fontweight='bold')
+
+#         progress_bar.progress(min((i + 1) * progress_step, 1.0))
+
+#     # Supprimer les sous-plots vides
+#     for i in range(num_mz_values, num_rows * num_cols):
+#         fig.delaxes(axes.flatten()[i])
+
+#     plt.tight_layout()
+#     st.pyplot(fig, dpi=100)  # Utiliser un DPI fixe et raisonnable
+#     plt.close(fig)  # Libérer la mémoire
+
+
+# def violinplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+#     """Create violin plots for significant features with improved size handling."""
+#     data.columns = data.columns.astype(str)
+#     label = 'Class'
+#     order = sorted(data[label].unique())
+#     box_pairs = list(combinations(order, 2))
+
+#     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
+
+#     num_mz_values = len(mz_values)
+    
+#     MAX_FEATURES_PER_PLOT = 50
+#     if num_mz_values > MAX_FEATURES_PER_PLOT:
+#         st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+#         for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+#             batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+#             st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+#             _plot_batch_violin(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+#     else:
+#         _plot_batch_violin(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+
+
+# def _plot_batch_violin(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+#     """Helper function to plot a batch of violin plots."""
+#     num_mz_values = len(mz_values)
+    
+#     num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))
+#     num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+#     max_width = 20
+#     max_height = 30
+#     fig_width = min(5 * num_cols, max_width)
+#     fig_height = min(4 * num_rows, max_height)
+    
+#     fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
+
+#     progress_bar = st.progress(0)
+#     progress_step = 1.0 / num_mz_values
+
+#     for i, mz in enumerate(mz_values):
+#         row, col = divmod(i, num_cols)
+#         ax = axes[row, col]
+
+#         y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
+#         y_label = f'{mz}'
+
+#         sns.violinplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False)
+#         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
+#         ax.set_ylabel(ylabel, fontsize=10)
+        
+#         if show_scatter:
+#             sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
+
+#         unique_values = y_data.dropna().unique()
+#         if len(unique_values) > 1 and len(box_pairs) > 0:
+#             try:
+#                 annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+#                 annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
+#                 results = annotator.apply_and_annotate()
+                
+#                 if results and isinstance(results, list):
+#                     for box_pair, stat_result in results:
+#                         if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+#                             if "ns" in stat_result['pvalue_text'].lower():
+#                                 stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+#             except Exception:
+#                 pass
+#         else:
+#             if len(unique_values) <= 1:
+#                 ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+#                        transform=ax.transAxes, fontsize=10, color='gray')
+
+#         ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+#         ax.set_title(y_label, fontsize=12, fontweight='bold')
+
+#         progress_bar.progress(min((i + 1) * progress_step, 1.0))
+
+#     for i in range(num_mz_values, num_rows * num_cols):
+#         fig.delaxes(axes.flatten()[i])
+
+#     plt.tight_layout()
+#     st.pyplot(fig, dpi=100)
+#     plt.close(fig)
+
+
+# def barplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+#     """Create bar plots for significant features with improved size handling."""
+#     data.columns = data.columns.astype(str)
+#     label = 'Class'
+#     order = sorted(data[label].unique())
+#     box_pairs = list(combinations(order, 2))
+
+#     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
+
+#     num_mz_values = len(mz_values)
+    
+#     MAX_FEATURES_PER_PLOT = 50
+#     if num_mz_values > MAX_FEATURES_PER_PLOT:
+#         st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+#         for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+#             batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+#             st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+#             _plot_batch_bar(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+#     else:
+#         _plot_batch_bar(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+
+
+# def _plot_batch_bar(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+#     """Helper function to plot a batch of bar plots."""
+#     num_mz_values = len(mz_values)
+    
+#     num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))
+#     num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+#     max_width = 20
+#     max_height = 30
+#     fig_width = min(5 * num_cols, max_width)
+#     fig_height = min(4 * num_rows, max_height)
+    
+#     fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
+
+#     progress_bar = st.progress(0)
+#     progress_step = 1.0 / num_mz_values
+
+#     for i, mz in enumerate(mz_values):
+#         row, col = divmod(i, num_cols)
+#         ax = axes[row, col]
+
+#         y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
+#         y_label = f'{mz}'
+
+#         sns.barplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False, errorbar='se')
+#         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
+#         ax.set_ylabel(ylabel, fontsize=10)
+        
+#         if show_scatter:
+#             sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
+
+#         unique_values = y_data.dropna().unique()
+#         if len(unique_values) > 1 and len(box_pairs) > 0:
+#             try:
+#                 annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+#                 annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
+#                 results = annotator.apply_and_annotate()
+                
+#                 if results and isinstance(results, list):
+#                     for box_pair, stat_result in results:
+#                         if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+#                             if "ns" in stat_result['pvalue_text'].lower():
+#                                 stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+#             except Exception:
+#                 pass
+#         else:
+#             if len(unique_values) <= 1:
+#                 ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+#                        transform=ax.transAxes, fontsize=10, color='gray')
+
+#         ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+#         ax.set_title(y_label, fontsize=12, fontweight='bold')
+
+#         progress_bar.progress(min((i + 1) * progress_step, 1.0))
+
+#     for i in range(num_mz_values, num_rows * num_cols):
+#         fig.delaxes(axes.flatten()[i])
+
+#     plt.tight_layout()
+#     st.pyplot(fig, dpi=100)
+#     plt.close(fig)
+
 
 def boxplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+    """
+    Create box plots for significant features with improved size handling.
+    """
     data.columns = data.columns.astype(str)
     label = 'Class'
     order = sorted(data[label].unique())
@@ -213,10 +492,37 @@ def boxplot_significant_features(data, mz_values, class_colors=None, test='Krusk
     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
 
     num_mz_values = len(mz_values)
-    num_cols = int(np.ceil(np.sqrt(num_mz_values)))
-    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    # LIMITE: Si trop de features, on les affiche par batch
+    MAX_FEATURES_PER_PLOT = 50
+    if num_mz_values > MAX_FEATURES_PER_PLOT:
+        st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+        # Diviser en batches
+        for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+            batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+            st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+            _plot_batch_boxplot(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+    else:
+        _plot_batch_boxplot(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
+
+def _plot_batch_boxplot(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+    """Helper function to plot a batch of features."""
+    num_mz_values = len(mz_values)
+    
+    # Calculer une grille optimale
+    num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))  # Max 4 colonnes
+    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    # Limiter la taille de la figure pour éviter les erreurs
+    max_width = 20  # largeur max en inches
+    max_height = 30  # hauteur max en inches
+    fig_width = min(5 * num_cols, max_width)
+    fig_height = min(4 * num_rows, max_height)
+    
+    # Utiliser un DPI raisonnable
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
 
     progress_bar = st.progress(0)
     progress_step = 1.0 / num_mz_values
@@ -225,59 +531,57 @@ def boxplot_significant_features(data, mz_values, class_colors=None, test='Krusk
         row, col = divmod(i, num_cols)
         ax = axes[row, col]
 
-        y_data = np.log2(data[mz]) if use_log2 else data[mz]
+        y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
         y_label = f'{mz}'
 
-        sns.boxplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False)
+        sns.boxplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label)
+        # Supprimer la légende si elle existe
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel(ylabel, fontsize=10)
 
         if show_scatter:
-            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25")
+            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
 
-        unique_values = y_data.unique()
+        unique_values = y_data.dropna().unique()
         if len(unique_values) > 1:
-            groups = [y_data[data[label] == cls] for cls in order]
-            try:
-                stat, pvalue = f_oneway(*groups)
-            except Exception as e:
-                st.warning(f"ANOVA failed for feature {mz}: {e}")
-                stat, pvalue = None, None
+            # Post-hoc tests pairwise
+            if len(box_pairs) > 0:
+                try:
+                    pairwise_test = 't-test_ind' if test == 'ANOVA' else test
+                    annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+                    annotator.configure(test=pairwise_test, text_format='star', loc=loc, verbose=0)
+                    results = annotator.apply_and_annotate()
 
-            if pvalue is not None:
-                annotation = f"ANOVA p={pvalue:.3e}"
-                ymax = y_data.max()
-                y_offset = (y_data.max() - y_data.min()) * 0.1
-                ax.text(0.5, ymax + y_offset, annotation, ha='center', va='bottom', fontsize=12, color='red', transform=ax.get_xaxis_transform())
-
-            pairwise_test = 't-test_ind' if test == 'ANOVA' else test
-
-            annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
-            annotator.configure(test=pairwise_test, text_format='star', loc=loc, verbose=0)
-            results = annotator.apply_and_annotate()
-
-            if results and isinstance(results, list):
-                for box_pair, stat_result in results:
-                    if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
-                        if "ns" in stat_result['pvalue_text'].lower():
-                            stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+                    if results and isinstance(results, list):
+                        for box_pair, stat_result in results:
+                            if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+                                if "ns" in stat_result['pvalue_text'].lower():
+                                    stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+                except Exception as e:
+                    pass  # Silently ignore annotation errors
         else:
-            st.warning(f"All values for feature {mz} are identical. Skipping statistical test.")
+            ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+                   transform=ax.transAxes, fontsize=10, color='gray')
 
-        ax.set_xticklabels(order, fontsize=12)
-        ax.set_title(y_label, fontsize=20)
+        ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+        ax.set_title(y_label, fontsize=12, fontweight='bold')
 
-        progress_bar.progress((i + 1) * progress_step)
+        progress_bar.progress(min((i + 1) * progress_step, 1.0))
 
+    # Supprimer les sous-plots vides
     for i in range(num_mz_values, num_rows * num_cols):
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig,dpi=300)
-
+    st.pyplot(fig, dpi=100)  # Utiliser un DPI fixe et raisonnable
+    plt.close(fig)  # Libérer la mémoire
 
 
 def violinplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+    """Create violin plots for significant features with improved size handling."""
     data.columns = data.columns.astype(str)
     label = 'Class'
     order = sorted(data[label].unique())
@@ -286,10 +590,32 @@ def violinplot_significant_features(data, mz_values, class_colors=None, test='Kr
     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
 
     num_mz_values = len(mz_values)
-    num_cols = int(np.ceil(np.sqrt(num_mz_values)))
-    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    MAX_FEATURES_PER_PLOT = 50
+    if num_mz_values > MAX_FEATURES_PER_PLOT:
+        st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+        for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+            batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+            st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+            _plot_batch_violin(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+    else:
+        _plot_batch_violin(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
+
+def _plot_batch_violin(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+    """Helper function to plot a batch of violin plots."""
+    num_mz_values = len(mz_values)
+    
+    num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))
+    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    max_width = 20
+    max_height = 30
+    fig_width = min(5 * num_cols, max_width)
+    fig_height = min(4 * num_rows, max_height)
+    
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
 
     progress_bar = st.progress(0)
     progress_step = 1.0 / num_mz_values
@@ -298,41 +624,54 @@ def violinplot_significant_features(data, mz_values, class_colors=None, test='Kr
         row, col = divmod(i, num_cols)
         ax = axes[row, col]
 
-        y_data = np.log2(data[mz]) if use_log2 else data[mz]
+        y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
         y_label = f'{mz}'
 
-        sns.violinplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False)
+        sns.violinplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label)
+        # Supprimer la légende si elle existe
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel(ylabel, fontsize=10)
+        
         if show_scatter:
-            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25")
+            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
 
-        unique_values = y_data.unique()
-        if len(unique_values) > 1:
-            annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
-            annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
-            results = annotator.apply_and_annotate()
-            if results and isinstance(results, list):
-                for box_pair, stat_result in results:
-                    st.text(stat_result)  #  Affiche ce qui est retourné
-                    if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
-                        if "ns" in stat_result['pvalue_text'].lower():  # Vérifie si "ns" est dedans
-                            stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+        unique_values = y_data.dropna().unique()
+        if len(unique_values) > 1 and len(box_pairs) > 0:
+            try:
+                annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+                annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
+                results = annotator.apply_and_annotate()
+                
+                if results and isinstance(results, list):
+                    for box_pair, stat_result in results:
+                        if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+                            if "ns" in stat_result['pvalue_text'].lower():
+                                stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+            except Exception:
+                pass
         else:
-            st.warning(f"All values for feature {mz} are identical. Skipping statistical test.")
+            if len(unique_values) <= 1:
+                ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+                       transform=ax.transAxes, fontsize=10, color='gray')
 
-        ax.set_xticklabels(order, fontsize=12)
-        ax.set_title(y_label, fontsize=20)
+        ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+        ax.set_title(y_label, fontsize=12, fontweight='bold')
 
-        progress_bar.progress((i + 1) * progress_step)
+        progress_bar.progress(min((i + 1) * progress_step, 1.0))
 
     for i in range(num_mz_values, num_rows * num_cols):
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig,dpi=300)
+    st.pyplot(fig, dpi=100)
+    plt.close(fig)
+
 
 def barplot_significant_features(data, mz_values, class_colors=None, test='Kruskal', loc='inside', show_scatter=False, use_log2=False):
+    """Create bar plots for significant features with improved size handling."""
     data.columns = data.columns.astype(str)
     label = 'Class'
     order = sorted(data[label].unique())
@@ -341,10 +680,32 @@ def barplot_significant_features(data, mz_values, class_colors=None, test='Krusk
     custom_palette = {class_label: class_colors.get(class_label, 'blue') for class_label in order}
 
     num_mz_values = len(mz_values)
-    num_cols = int(np.ceil(np.sqrt(num_mz_values)))
-    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    MAX_FEATURES_PER_PLOT = 50
+    if num_mz_values > MAX_FEATURES_PER_PLOT:
+        st.warning(f"⚠️ You have {num_mz_values} features. They will be displayed in batches of {MAX_FEATURES_PER_PLOT}.")
+        
+        for batch_idx in range(0, num_mz_values, MAX_FEATURES_PER_PLOT):
+            batch_mz = mz_values[batch_idx:batch_idx + MAX_FEATURES_PER_PLOT]
+            st.subheader(f"Features {batch_idx + 1} to {min(batch_idx + MAX_FEATURES_PER_PLOT, num_mz_values)}")
+            _plot_batch_bar(data, batch_mz, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
+    else:
+        _plot_batch_bar(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label)
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
+
+def _plot_batch_bar(data, mz_values, custom_palette, order, box_pairs, test, loc, show_scatter, use_log2, label):
+    """Helper function to plot a batch of bar plots."""
+    num_mz_values = len(mz_values)
+    
+    num_cols = min(4, int(np.ceil(np.sqrt(num_mz_values))))
+    num_rows = int(np.ceil(num_mz_values / num_cols))
+    
+    max_width = 20
+    max_height = 30
+    fig_width = min(5 * num_cols, max_width)
+    fig_height = min(4 * num_rows, max_height)
+    
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(fig_width, fig_height), dpi=100, squeeze=False)
 
     progress_bar = st.progress(0)
     progress_step = 1.0 / num_mz_values
@@ -353,43 +714,57 @@ def barplot_significant_features(data, mz_values, class_colors=None, test='Krusk
         row, col = divmod(i, num_cols)
         ax = axes[row, col]
 
-        y_data = np.log2(data[mz]) if use_log2 else data[mz]
+        y_data = np.log2(data[mz].replace([np.inf, -np.inf], np.nan)) if use_log2 else data[mz]
         y_label = f'{mz}'
 
-        sns.barplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, legend=False)
+        # Compatible avec anciennes et nouvelles versions de seaborn
+        try:
+            # Seaborn >= 0.12 utilise errorbar
+            sns.barplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, errorbar='se')
+        except TypeError:
+            # Seaborn < 0.12 utilise ci
+            sns.barplot(data=data, x=label, y=y_data, order=order, ax=ax, palette=custom_palette, hue=label, ci=68)
+        
+        # Supprimer la légende si elle existe
+        legend = ax.get_legend()
+        if legend is not None:
+            legend.remove()
         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel(ylabel, fontsize=10)
+        
         if show_scatter:
-            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25")
+            sns.swarmplot(data=data, x=label, y=y_data, order=order, ax=ax, color=".25", size=2)
 
-        unique_values = y_data.unique()
-        if len(unique_values) > 1:
-            annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
-            annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
-            results = annotator.apply_and_annotate()
-            if results and isinstance(results, list):
-                for box_pair, stat_result in results:
-                    st.text(stat_result)  # DEBUG: Affiche ce qui est retourné
-                    if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
-                        if "ns" in stat_result['pvalue_text'].lower():  # Vérifie si "ns" est dedans
-                            stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+        unique_values = y_data.dropna().unique()
+        if len(unique_values) > 1 and len(box_pairs) > 0:
+            try:
+                annotator = Annotator(ax, box_pairs, data=data, x=label, y=y_data, order=order)
+                annotator.configure(test=test, text_format='star', loc=loc, verbose=0)
+                results = annotator.apply_and_annotate()
+                
+                if results and isinstance(results, list):
+                    for box_pair, stat_result in results:
+                        if isinstance(stat_result, dict) and 'pvalue_text' in stat_result:
+                            if "ns" in stat_result['pvalue_text'].lower():
+                                stat_result['pvalue_text'] = f'ns ({stat_result["pvalue"]:.3f})'
+            except Exception:
+                pass
         else:
-            st.warning(f"All values for feature {mz} are identical. Skipping statistical test.")
+            if len(unique_values) <= 1:
+                ax.text(0.5, 0.5, 'Identical values', ha='center', va='center', 
+                       transform=ax.transAxes, fontsize=10, color='gray')
 
-        ax.set_xticklabels(order, fontsize=12)
-        ax.set_title(y_label, fontsize=20)
+        ax.set_xticklabels(order, fontsize=9, rotation=45 if len(order) > 3 else 0)
+        ax.set_title(y_label, fontsize=12, fontweight='bold')
 
-        progress_bar.progress((i + 1) * progress_step)
+        progress_bar.progress(min((i + 1) * progress_step, 1.0))
 
     for i in range(num_mz_values, num_rows * num_cols):
         fig.delaxes(axes.flatten()[i])
 
     plt.tight_layout()
-    st.pyplot(fig,dpi=300)
-
-
-
-
+    st.pyplot(fig, dpi=100)
+    plt.close(fig)
 
 def eli5_format_to_dataframe(eli5_html):
     """
@@ -711,85 +1086,125 @@ def plot_heatmap_samples(data, class_colors, selected_features, custom_colors, s
 
 
 
-def plot_significant_features(
-    data, 
-    mz_values, 
-    class_colors=None, 
-    test='Kruskal', 
-    loc='inside',
-    show_scatter=False, 
-    use_log2=False, 
-    plot_type='box', 
-    pval_correction=None,
-    significance_dict=None   
-):
+# def plot_significant_features(
+#     data, 
+#     mz_values, 
+#     class_colors=None, 
+#     test='Kruskal', 
+#     loc='inside',
+#     show_scatter=False, 
+#     use_log2=False, 
+#     plot_type='box', 
+#     pval_correction=None,
+#     significance_dict=None   
+# ):
 
-    data = data.copy()
-    significance_dict = significance_dict or {} 
+#     data = data.copy()
+#     significance_dict = significance_dict or {} 
 
-    data.columns = data.columns.astype(str)
-    label = 'Class'
-    order = sorted(data[label].unique())
-    box_pairs = list(combinations(order, 2))
+#     data.columns = data.columns.astype(str)
+#     label = 'Class'
+#     order = sorted(data[label].unique())
+#     box_pairs = list(combinations(order, 2))
 
-    palette = {cls: class_colors.get(cls, 'blue') for cls in order} if class_colors else None
+#     palette = {cls: class_colors.get(cls, 'blue') for cls in order} if class_colors else None
 
-    num_mz = len(mz_values)
-    num_cols = int(np.ceil(np.sqrt(num_mz)))
-    num_rows = int(np.ceil(num_mz / num_cols))
+#     num_mz = len(mz_values)
+#     num_cols = int(np.ceil(np.sqrt(num_mz)))
+#     num_rows = int(np.ceil(num_mz / num_cols))
 
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
-    progress_bar = st.progress(0)
-    step = 1.0 / num_mz
+#     fig, axes = plt.subplots(num_rows, num_cols, figsize=(6 * num_cols, 5 * num_rows), dpi=200, squeeze=False)
+#     progress_bar = st.progress(0)
+#     step = 1.0 / num_mz
 
-    for i, mz in enumerate(mz_values):
-        row, col = divmod(i, num_cols)
-        ax = axes[row, col]
+#     for i, mz in enumerate(mz_values):
+#         row, col = divmod(i, num_cols)
+#         ax = axes[row, col]
 
-        try:
-            data["__ydata__"] = np.log2(data[mz]) if use_log2 else data[mz]
-        except Exception as e:
-            st.warning(f"⚠️ Could not apply log2 to feature {mz}: {e}")
-            data["__ydata__"] = data[mz]
+#         try:
+#             data["__ydata__"] = np.log2(data[mz]) if use_log2 else data[mz]
+#         except Exception as e:
+#             st.warning(f"⚠️ Could not apply log2 to feature {mz}: {e}")
+#             data["__ydata__"] = data[mz]
 
-        ylabel = "log2(Intensity)" if use_log2 else "Intensity"
-
-
-        if plot_type == 'box':
-            sns.boxplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
-        elif plot_type == 'violin':
-            sns.violinplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
-        elif plot_type == 'bar':
-            sns.barplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
+#         ylabel = "log2(Intensity)" if use_log2 else "Intensity"
 
 
-        if show_scatter:
-            sns.swarmplot(data=data, x=label, y="__ydata__", order=order, ax=ax, color=".25")
-
-        ax.set_ylabel(ylabel)
-
-        pval = significance_dict.get(mz, 1.0)
-        suffix = "(S)" if pval < 0.05 else "(NS)"
-        ax.set_title(f"{mz} {suffix}", fontsize=18)
-
-        ax.set_xticklabels(order, fontsize=16)
+#         if plot_type == 'box':
+#             sns.boxplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
+#         elif plot_type == 'violin':
+#             sns.violinplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
+#         elif plot_type == 'bar':
+#             sns.barplot(data=data, x=label, y="__ydata__", order=order, ax=ax, palette=palette)
 
 
-        if len(np.unique(data["__ydata__"])) > 1:
-            try:
-                annotator = Annotator(ax, box_pairs, data=data, x=label, y="__ydata__", order=order)
-                annotator.configure(test=test, text_format='star', loc=loc, verbose=0, pvalue_format_string="p = {:.3e}")
-                annotator.apply_and_annotate()
-            except Exception as e:
-                st.warning(f"❌ Statistical annotation failed for {mz}: {e}")
-        else:
-            st.warning(f"⚠️ All values for {mz} are identical. Skipping annotation.")
+#         if show_scatter:
+#             sns.swarmplot(data=data, x=label, y="__ydata__", order=order, ax=ax, color=".25")
 
-        progress_bar.progress((i + 1) * step)
+#         ax.set_ylabel(ylabel)
+
+#         pval = significance_dict.get(mz, 1.0)
+#         suffix = "(S)" if pval < 0.05 else "(NS)"
+#         ax.set_title(f"{mz} {suffix}", fontsize=18)
+
+#         ax.set_xticklabels(order, fontsize=16)
 
 
-    for i in range(num_mz, num_rows * num_cols):
-        fig.delaxes(axes.flatten()[i])
+#         if len(np.unique(data["__ydata__"])) > 1:
+#             try:
+#                 annotator = Annotator(ax, box_pairs, data=data, x=label, y="__ydata__", order=order)
+#                 annotator.configure(test=test, text_format='star', loc=loc, verbose=0, pvalue_format_string="p = {:.3e}")
+#                 annotator.apply_and_annotate()
+#             except Exception as e:
+#                 st.warning(f"❌ Statistical annotation failed for {mz}: {e}")
+#         else:
+#             st.warning(f"⚠️ All values for {mz} are identical. Skipping annotation.")
 
-    plt.tight_layout()
-    st.pyplot(fig)
+#         progress_bar.progress((i + 1) * step)
+
+
+#     for i in range(num_mz, num_rows * num_cols):
+#         fig.delaxes(axes.flatten()[i])
+
+#     plt.tight_layout()
+#     st.pyplot(fig)
+
+
+from scipy import stats
+from scipy.stats import kruskal, mannwhitneyu, ttest_ind, f_oneway
+from statsmodels.stats.multitest import multipletests
+import re
+import pandas as pd
+def plot_significant_features(data, mz_values, class_colors=None, test='Kruskal', 
+                              plot_type='box', show_scatter=False, use_log2=False, 
+                              pval_correction='None', significance_dict=None):
+    """
+    Wrapper function to call the appropriate plotting function based on plot_type.
+    
+    Parameters:
+    - data: DataFrame with the data
+    - mz_values: list of feature names to plot
+    - class_colors: dict mapping class labels to colors
+    - test: statistical test to use
+    - plot_type: 'box', 'violin', or 'bar'
+    - show_scatter: whether to overlay individual points
+    - use_log2: whether to apply log2 transformation
+    - pval_correction: correction method (not directly used in plotting, but passed for context)
+    - significance_dict: dict mapping features to adjusted p-values
+    """
+    
+    # Map plot type to the appropriate function
+    if plot_type == 'box':
+        boxplot_significant_features(data, mz_values, class_colors, test, 
+                                     loc='inside', show_scatter=show_scatter, 
+                                     use_log2=use_log2)
+    elif plot_type == 'violin':
+        violinplot_significant_features(data, mz_values, class_colors, test, 
+                                        loc='inside', show_scatter=show_scatter, 
+                                        use_log2=use_log2)
+    elif plot_type == 'bar':
+        barplot_significant_features(data, mz_values, class_colors, test, 
+                                     loc='inside', show_scatter=show_scatter, 
+                                     use_log2=use_log2)
+    else:
+        raise ValueError(f"Unknown plot_type: {plot_type}")

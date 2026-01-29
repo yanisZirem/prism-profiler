@@ -71,7 +71,8 @@ import plotly.express as px
 from sklearn.metrics import cohen_kappa_score
 from sklearn.metrics.pairwise import cosine_similarity
 import seaborn as sns
-
+from statsmodels.stats.multitest import multipletests
+from scipy import stats
 
 
 def check_stop(message="Analysis stopped by user"):
@@ -4247,6 +4248,9 @@ def main():
                     st.text(traceback.format_exc())
 
 
+
+
+
         if "show_boxplots" not in st.session_state:
             st.session_state["show_boxplots"] = False
 
@@ -4330,7 +4334,7 @@ def main():
                         help="Apply a log2 transformation to reduce skew and stabilize variance."
                     )
 
-                # Sélection des classes à comparer (NOUVEAU)
+                # Sélection des classes à comparer
                 data_sig_key = {
                     'Raw data': 'data',
                     'Preprocessed': 'preprocessed_data',
@@ -4339,6 +4343,10 @@ def main():
                 }.get(data_source)
                 data_sig = st.session_state.get(data_sig_key, None)
 
+                # Initialiser les variables par défaut
+                can_submit = True
+                selected_classes = []
+                
                 if data_sig is not None:
                     class_col = st.session_state.get("label_column", "Class")
                     all_classes = data_sig[class_col].unique().tolist()
@@ -4346,7 +4354,7 @@ def main():
                     # Option pour comparer toutes les classes ou sélectionner
                     compare_all = st.checkbox(
                         "Compare all classes",
-                        value=True,  # Par défaut, comparer toutes les classes
+                        value=True,
                         key="compare_all_classes",
                         help="Uncheck to select specific classes for comparison."
                     )
@@ -4363,27 +4371,33 @@ def main():
                         )
 
                     # Validation dynamique
-                    if not compare_all and test in ['Mann-Whitney', 't-test_ind'] and len(selected_classes) != 2:
-                        st.warning("⚠️ This test requires exactly 2 classes.")
-                        submitted = False  # Désactive le bouton si la condition n'est pas remplie
-                    else:
-                        submitted = st.form_submit_button("Run")
-
+                    if not compare_all:
+                        if test in ['Mann-Whitney', 't-test_ind'] and len(selected_classes) != 2:
+                            st.warning("⚠️ This test requires exactly 2 classes.")
+                            can_submit = False
+                        elif len(selected_classes) < 2:
+                            st.warning("⚠️ Please select at least 2 classes for comparison.")
+                            can_submit = False
                 else:
-                    st.error("❌ Dataset not loaded.")
-                    submitted = False
+                    st.error("❌ Dataset not loaded. Please load your data first.")
+                    can_submit = False
+
+                # Le bouton submit doit TOUJOURS être créé, même si désactivé
+                submitted = st.form_submit_button("Run", disabled=not can_submit)
 
             # Traitement après soumission
             if submitted:
                 data_sig = st.session_state.get(data_sig_key, None)
                 if data_sig is None:
-                    st.error("❌ Dataset not loaded.")
+                    st.error("❌ Dataset not loaded. Cannot proceed with analysis.")
+                elif len(selected_classes) < 2:
+                    st.error("❌ Please select at least 2 classes for comparison.")
                 else:
                     data_sig = data_sig.copy()
                     class_col = st.session_state.get("label_column", "Class")
 
                     # Filtrer les données pour les classes sélectionnées
-                    data_filtered = data_sig[data_sig[class_col].isin(selected_classes)]
+                    data_filtered = data_sig[data_sig[class_col].isin(selected_classes)].copy()
 
                     # Parsing des features
                     raw_features = re.split(r"[,\s;]+", mz_values_input.strip())
@@ -4409,37 +4423,43 @@ def main():
                                     p = stats.ttest_ind(groups[0], groups[1]).pvalue
                                 elif test == 'ANOVA':
                                     p = stats.f_oneway(*groups).pvalue
-                            except Exception:
+                            except Exception as e:
+                                st.warning(f"Statistical test failed for feature {mz}: {str(e)}")
                                 p = None
                             results.append({"feature": mz, "pvalue": p})
 
                         # Correction des p-values
                         result_df = pd.DataFrame(results).dropna()
-                        if pval_correction == 'Bonferroni':
-                            result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="bonferroni")[1]
-                        elif pval_correction == 'FDR (Benjamini-Hochberg)':
-                            result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="fdr_bh")[1]
+                        
+                        if len(result_df) == 0:
+                            st.error("❌ No valid p-values computed. Check your data.")
                         else:
-                            result_df["adj_pvalue"] = result_df["pvalue"]
+                            if pval_correction == 'Bonferroni':
+                                result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="bonferroni")[1]
+                            elif pval_correction == 'FDR (Benjamini-Hochberg)':
+                                result_df["adj_pvalue"] = multipletests(result_df["pvalue"], method="fdr_bh")[1]
+                            else:
+                                result_df["adj_pvalue"] = result_df["pvalue"]
 
-                        # Affichage des résultats
-                        sig_df = result_df[result_df["adj_pvalue"] < 0.05]
-                        nonsig_df = result_df[result_df["adj_pvalue"] >= 0.05]
-                        st.info(f"**Significant features (p < 0.05)**: {len(sig_df)} / {len(mz_values)}")
-                        st.info(f"**Non-significant features**: {len(nonsig_df)} / {len(mz_values)}")
+                            # Affichage des résultats
+                            sig_df = result_df[result_df["adj_pvalue"] < 0.05]
+                            nonsig_df = result_df[result_df["adj_pvalue"] >= 0.05]
+                            st.info(f"**Significant features (p < 0.05)**: {len(sig_df)} / {len(result_df)}")
+                            st.info(f"**Non-significant features**: {len(nonsig_df)} / {len(result_df)}")
 
-                        # Appel à la fonction de plot
-                        plot_significant_features(
-                            data=data_filtered,
-                            mz_values=mz_values,
-                            class_colors=st.session_state.get("class_colors", None),
-                            test=test,
-                            plot_type=plot_type.lower().split()[0],
-                            show_scatter=show_scatter,
-                            use_log2=use_log2,
-                            pval_correction=pval_correction,
-                            significance_dict=dict(zip(result_df.feature, result_df.adj_pvalue))
-                        )
+                            # Appel à la fonction de plot
+                            plot_significant_features(
+                                data=data_filtered,
+                                mz_values=mz_values,
+                                class_colors=st.session_state.get("class_colors", None),
+                                test=test,
+                                plot_type=plot_type.lower().split()[0],
+                                show_scatter=show_scatter,
+                                use_log2=use_log2,
+                                pval_correction=pval_correction,
+                                significance_dict=dict(zip(result_df.feature, result_df.adj_pvalue))
+                            )
+
 
         st.markdown(
             """
