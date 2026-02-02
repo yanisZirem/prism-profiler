@@ -2000,20 +2000,6 @@ def main():
                         else:
                             st.dataframe(df_preview)
 
-                        # # Text input pour nom du fichier
-                        # file_name_input = st.text_input(
-                        #     "Enter a name for your CSV file:",
-                        #     value="preprocessed_data",
-                        #     help="Provide a custom name for the preprocessed dataset CSV file (without extension)."
-                        # )
-
-                        # # Bouton de téléchargement
-                        # st.download_button(
-                        #     label="📥 Download full preprocessed data (CSV)",
-                        #     data=df_preview.to_csv(index=False).encode('utf-8'),
-                        #     file_name=f"{file_name_input}.csv",
-                        #     mime='text/csv'
-                        # )
 
                         import csv
 
@@ -2040,6 +2026,8 @@ def main():
                             data=output.read().encode('utf-8-sig'),  # Encoder en bytes avec BOM
                             file_name=f"{file_name_input}.csv",
                             mime='text/csv'
+                        )
+
 
                     except Exception as e:
                         st.error(f"Preprocessing failed: {e}")
@@ -3075,6 +3063,373 @@ def main():
 
 
 
+        # # Expander pour Machine Learning
+        # with st.expander("**🤖 Train Machine Learning Models**"):
+        #     st.markdown(
+        #         '<p style="color: gray; font-size: 14px">'
+        #         'Over 20 Machine Learning Models Available for Exploration'
+        #         '</p>', unsafe_allow_html=True
+        #     )
+
+        #     # ----- Formulaire ML Training -----
+        #     with st.form("ml_training_form"):
+        #         # --- Inputs communs ---
+        #         data_sources_list = ['None','Raw data','Preprocessed','Preprocessed + Oversampled', 'Preprocessed + Undersampled']
+        #         data_source = st.selectbox(
+        #             "Data Source for Training",
+        #             data_sources_list,
+        #             key="form_train_data_source",
+        #             help="Choose the dataset on which to train the model."
+        #         )
+
+        #         apply_reduction = st.checkbox(
+        #             "Apply Dimensionality Reduction",
+        #             key="form_apply_reduction",
+        #             help="Reduce feature dimensions using PCA, UMAP, or t-SNE."
+        #         )
+
+        #         reduction_choice, n_components = None, None
+        #         if apply_reduction:
+        #             reduction_choice = st.selectbox(
+        #                 "Reduction Technique",
+        #                 ['PCA', 'UMAP', 't-SNE'],
+        #                 key="form_reduction_choice"
+        #             )
+        #             n_components = st.number_input(
+        #                 "Number of Components",
+        #                 min_value=2, max_value=200, value=2, step=1,
+        #                 key="form_n_components"
+        #             )
+
+        #         n_splits = st.number_input(
+        #             "Number of Splits for Cross-Validation",
+        #             min_value=2, max_value=50, value=5, step=1,
+        #             key="form_n_splits",
+        #             help="Number of folds for cross-validation."
+        #         )
+
+        #         train_models_btn = st.form_submit_button("Train Machine Learning Models")
+
+        #     # ----- Préparer les données selon la source -----
+        #     X, y = None, None
+        #     if data_source != 'None':
+        #         source_map = {
+        #             'Raw data': 'data',
+        #             'Preprocessed': 'preprocessed_data',
+        #             'Preprocessed + Oversampled': 'oversampled_data',
+        #             'Preprocessed + Undersampled': 'undersampled_data'
+        #         }
+        #         data_train = st.session_state.get(source_map.get(data_source))
+        #         # Raw data → remplacer par final_data si existant
+        #         if data_source == 'Raw data' and st.session_state.get('final_data') is not None:
+        #             data_train = st.session_state['final_data']
+
+        #         if data_train is not None:
+        #             drop_cols = ['Class', 'File', 'RT', 'Sum']
+        #             X = data_train.drop(columns=[col for col in drop_cols if col in data_train.columns], errors='ignore')
+        #             y = data_train['Class']
+
+        #     # ----- Exécution du training -----
+        #     if train_models_btn:
+        #         if X is None or y is None:
+        #             st.warning("Please select a valid data source.")
+        #         else:
+        #             feature_names = X.columns.tolist()
+        #             # Appliquer la réduction si demandé
+        #             if apply_reduction and reduction_choice:
+        #                 n_samples = X.shape[0]
+        #                 if reduction_choice == 'PCA':
+        #                     reducer = PCA(n_components)
+        #                     X = reducer.fit_transform(X)
+        #                 elif reduction_choice == 'UMAP':
+        #                     reducer = umap.UMAP(n_components=n_components,
+        #                                         n_neighbors=max(2, min(int(np.log2(n_samples)), 100)),
+        #                                         random_state=1)
+        #                     X = reducer.fit_transform(X)
+        #                 elif reduction_choice == 't-SNE':
+        #                     tsne = TSNE(n_components=n_components,
+        #                                 perplexity=max(5, min(int(np.sqrt(n_samples)), 50)),
+        #                                 random_state=1)
+        #                     X = tsne.fit_transform(X)
+        #                 feature_names = [f"Component {i+1}" for i in range(n_components)]
+
+        #             st.session_state['reduced_data'] = pd.DataFrame(X, columns=feature_names)
+        #             X = st.session_state['reduced_data']
+
+        #             try:
+        #                 class_counts = Counter(y)
+        #                 too_few_classes = [cls for cls, count in class_counts.items() if count < n_splits]
+
+        #                 if too_few_classes:
+        #                     st.error(f"The following class(es) have fewer samples than the number of CV splits ({n_splits}): {too_few_classes}")
+        #                 elif len(class_counts) < 2:
+        #                     st.error("At least two classes are required for training.")
+        #                 else:
+        #                     progress_bar = st.progress(0)
+        #                     model_results = train_models(X, y, n_splits=n_splits, progress_bar=progress_bar)
+        #                     st.session_state['models'] = model_results
+        #                     st.success("Models trained successfully!")
+
+        #             except RuntimeError as e:
+        #                 st.error(f"Runtime error: {e}")
+        #             except MemoryError:
+        #                 st.error("MemoryError: Reduce dataset size or number of models.")
+        #             except Exception as e:
+        #                 st.error(f"Unexpected error: {e}")
+        #                 with st.expander("Show full traceback"):
+        #                     st.code(traceback.format_exc(), language="python")
+
+        #     # ----- Formulaire pour analyse des modèles -----
+        #     if 'models' in st.session_state and st.session_state['models']:
+        #         with st.form("ml_report_form"):
+        #             show_comparison_btn = st.form_submit_button("Show Model Comparison")
+        #             model_options = ['None'] + list(st.session_state['models'].keys()) if isinstance(st.session_state['models'], dict) else ['None']
+                    
+        #             selected_model = st.selectbox(
+        #                 "Select ML Model for Report",
+        #                 model_options,
+        #                 key="form_selected_model"
+        #             )
+                    
+        #             # Synchroniser avec la clé utilisée par SHAP/LIME
+        #             st.session_state["selected_model"] = selected_model  
+
+        #             show_report_btn = st.form_submit_button("Show Model Report")
+
+        #     #     if show_report_btn and selected_model != 'None':
+        #     #         model_data = st.session_state['models'][selected_model]
+
+        #     #         # Classification Report
+        #     #         st.write("**Classification Report**")
+        #     #         report_data = model_data['classification_report']
+        #     #         if isinstance(report_data, dict):
+        #     #             st.dataframe(pd.DataFrame(report_data).T)
+        #     #         else:
+        #     #             st.text(report_data)
+
+        #     #         # Confusion Matrix
+        #     #         st.write("**Confusion Matrix**")
+        #     #         fig, ax = plt.subplots()
+        #     #         labels = model_data['label_encoder'].classes_
+        #     #         sns.heatmap(model_data['confusion_matrix'], annot=True, fmt='d',
+        #     #                     cmap='viridis', xticklabels=labels, yticklabels=labels, ax=ax)
+        #     #         st.pyplot(fig)
+
+        #     #         # Learning Curves
+        #     #         try:
+        #     #             learning_curve_fig = plot_learning_curve(model_data['model'], X, y, n_splits=n_splits)
+        #     #             st.plotly_chart(learning_curve_fig)
+        #     #         except Exception as e:
+        #     #             st.error(f"Error plotting learning curve: {e}")
+
+        #     #     # Affichage de la comparaison de modèles
+        #     #     if show_comparison_btn:
+        #     #         fig = compare_models(st.session_state['models'])
+        #     #         st.plotly_chart(fig)
+
+        #     # del X, y
+        #     # gc.collect()
+
+        #         if show_report_btn and selected_model != 'None':
+        #             model_data = st.session_state['models'][selected_model]
+        #             st.write("**Classification Report**")
+        #             report_data = model_data['classification_report']
+
+        #             # Cas 1 : Si report_data est un dictionnaire
+        #             if isinstance(report_data, dict):
+        #                 report_df = pd.DataFrame(report_data).transpose()
+
+        #                 # Extraire les métriques globales
+        #                 global_metrics = report_df.loc[['accuracy', 'macro avg', 'weighted avg']]
+        #                 # Extraire les métriques par classe
+        #                 class_metrics = report_df.drop(['accuracy', 'macro avg', 'weighted avg'])
+
+        #                 # Créer un DataFrame combiné
+        #                 combined_df = pd.concat([class_metrics, pd.DataFrame([[''] * len(class_metrics.columns)], columns=class_metrics.columns), global_metrics])
+
+        #                 # Afficher le tableau combiné
+        #                 # Sélectionner uniquement les colonnes numériques attendues
+        #                 numeric_cols = ['precision', 'recall', 'f1-score', 'support']
+        #                 numeric_cols = [c for c in numeric_cols if c in combined_df.columns]
+
+        #                 # Forcer la conversion en float (les strings deviennent NaN)
+        #                 combined_df[numeric_cols] = combined_df[numeric_cols].apply(
+        #                     pd.to_numeric, errors='coerce'
+        #                 )
+
+
+
+        #                 st.dataframe(
+        #                     combined_df.style
+        #                     .format("{:.4f}", subset=numeric_cols)
+        #                     .highlight_max(subset=numeric_cols, axis=0, color='lightgreen')
+        #                     .set_table_styles([
+        #                         {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
+        #                                                     ('font-size', '18px'),
+        #                                                     ('text-align', 'center'),
+        #                                                     ('font-weight', 'bold')]},
+        #                         {'selector': 'td', 'props': [('font-size', '16px'),
+        #                                                     ('text-align', 'center')]},
+        #                         {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+        #                         {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
+        #                     ])
+        #                     .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
+        #                     use_container_width=True,
+        #                     height=400
+        #                 )
+
+        #             # Cas 2 : Si report_data est une chaîne de caractères
+        #             elif isinstance(report_data, str):
+        #                 lines = report_data.strip().split('\n')
+        #                 data = []
+        #                 for line in lines:
+        #                     if line.strip() and not line.strip().startswith((' ', '\t')):
+        #                         data.append(line.strip().split())
+
+        #                 headers = ['class', 'precision', 'recall', 'f1-score', 'support']
+        #                 df_list = []
+        #                 for line in data:
+        #                     if len(line) == 5:
+        #                         df_list.append(line)
+
+        #                 report_df = pd.DataFrame(df_list, columns=headers)
+        #                 report_df = report_df.set_index('class')
+
+        #                 # Afficher le DataFrame
+        #                 st.dataframe(
+        #                     report_df.style
+        #                     .format("{:.4f}", subset=['precision', 'recall', 'f1-score'])
+        #                     .set_table_styles([
+        #                         {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
+        #                                                     ('font-size', '18px'),
+        #                                                     ('text-align', 'center'),
+        #                                                     ('font-weight', 'bold')]},
+        #                         {'selector': 'td', 'props': [('font-size', '16px'),
+        #                                                     ('text-align', 'center')]},
+        #                         {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+        #                         {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
+        #                     ])
+        #                     .highlight_max(axis=0, color='lightgreen')
+        #                     .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
+        #                     use_container_width=True,
+        #                     height=400
+        #                 )
+
+        #             # Cas 3 : Fallback
+        #             else:
+        #                 st.code(report_data)
+
+
+        #             # ===== Shared layout parameters (uniform article style) =====
+        #             FIG_SIZE = 850
+        #             TITLE_SIZE = 20
+        #             AXIS_TITLE_SIZE = 24
+        #             TICK_SIZE = 20
+        #             FONT_FAMILY = "Arial"
+
+        #             labels = model_data['label_encoder'].classes_
+        #             cm = model_data['confusion_matrix']
+
+        #             fig = go.Figure(data=go.Heatmap(
+        #                 z=cm,
+        #                 x=labels,
+        #                 y=labels,
+        #                 colorscale='Viridis',
+        #                 text=cm,
+        #                 texttemplate="<b>%{text}</b>",
+        #                 textfont=dict(
+        #                     size=26,         
+        #                     family=FONT_FAMILY
+        #                 ),
+                        
+        #                 hoverinfo="z"
+        #             ))
+        #             fig.update_layout(
+        #                 title=dict(
+        #                     text="Confusion Matrix",
+        #                     font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
+        #                 ),
+        #                 width=FIG_SIZE,
+        #                 height=FIG_SIZE,
+        #                 margin=dict(l=50, r=50, b=50, t=80),
+        #                 xaxis=dict(
+        #                     title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+        #                     tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+        #                     scaleanchor="y",
+        #                     constrain="domain"
+        #                 ),
+        #                 yaxis=dict(
+        #                     title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+        #                     tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+        #                     scaleanchor="x",
+        #                     constrain="domain"
+        #                 ),
+        #                 font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
+        #             )
+        #             st.plotly_chart(fig, use_container_width=True)
+
+        #             # Normalized Confusion Matrix (%)
+        #             cm_norm = cm.astype(float) / cm.sum(axis=1)[:, np.newaxis] * 100
+        #             fig_norm = go.Figure(data=go.Heatmap(
+        #                 z=cm_norm,
+        #                 x=labels,
+        #                 y=labels,
+        #                 colorscale='jet',
+        #                 text=np.round(cm_norm, 2),
+        #                 texttemplate="<b>%{text}%</b>",
+        #                 textfont=dict(
+        #                     size=11,         
+        #                     family=FONT_FAMILY
+        #                 ),
+                        
+        #                 hoverinfo="z"
+        #             ))
+
+        #             fig_norm.update_layout(
+        #                 title=dict(
+        #                     text="Normalized Confusion Matrix (%)",
+        #                     font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
+        #                 ),
+        #                 width=FIG_SIZE,
+        #                 height=FIG_SIZE,
+        #                 margin=dict(l=50, r=50, b=50, t=80),  # Réduire les marges
+        #                 xaxis=dict(
+        #                     title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+        #                     tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+        #                     scaleanchor="y",  # Forcer l'aspect carré
+        #                     constrain="domain"  # Aligner les axes
+        #                 ),
+        #                 yaxis=dict(
+        #                     title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+        #                     tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
+        #                     scaleanchor="x",  # Forcer l'aspect carré
+        #                     constrain="domain"  # Aligner les axes
+        #                 ),
+        #                 font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
+        #             )
+
+        #             # Affichage avec adaptation à la largeur du conteneur
+        #             st.plotly_chart(fig_norm, use_container_width=True)
+
+
+
+        #             # Learning Curves
+        #             try:
+        #                 learning_curve_fig = plot_learning_curve(model_data['model'], X, y, n_splits=n_splits)
+        #                 st.plotly_chart(learning_curve_fig)
+        #             except Exception as e:
+        #                 st.error(f"Error plotting learning curve: {e}")
+
+        #         # Affichage de la comparaison de modèles
+        #         if show_comparison_btn:
+        #             fig = compare_models(st.session_state['models'])
+        #             st.plotly_chart(fig)
+
+        #     del X, y
+        #     gc.collect()
+
+
+
         # Expander pour Machine Learning
         with st.expander("**🤖 Train Machine Learning Models**"):
             st.markdown(
@@ -3137,7 +3492,7 @@ def main():
                     data_train = st.session_state['final_data']
 
                 if data_train is not None:
-                    drop_cols = ['Class', 'File', 'RT', 'Sum']
+                    drop_cols = ['Class', 'File', 'RT', 'Sum','Original_index']
                     X = data_train.drop(columns=[col for col in drop_cols if col in data_train.columns], errors='ignore')
                     y = data_train['Class']
 
@@ -3156,7 +3511,7 @@ def main():
                         elif reduction_choice == 'UMAP':
                             reducer = umap.UMAP(n_components=n_components,
                                                 n_neighbors=max(2, min(int(np.log2(n_samples)), 100)),
-                                                random_state=1)
+                                                random_state=1, n_jobs=10)
                             X = reducer.fit_transform(X)
                         elif reduction_choice == 't-SNE':
                             tsne = TSNE(n_components=n_components,
@@ -3177,6 +3532,7 @@ def main():
                         elif len(class_counts) < 2:
                             st.error("At least two classes are required for training.")
                         else:
+                            st.info("⏳ Training models... This may take a few minutes.")
                             progress_bar = st.progress(0)
                             model_results = train_models(X, y, n_splits=n_splits, progress_bar=progress_bar)
                             st.session_state['models'] = model_results
@@ -3190,6 +3546,7 @@ def main():
                         st.error(f"Unexpected error: {e}")
                         with st.expander("Show full traceback"):
                             st.code(traceback.format_exc(), language="python")
+
 
             # ----- Formulaire pour analyse des modèles -----
             if 'models' in st.session_state and st.session_state['models']:
@@ -3208,39 +3565,6 @@ def main():
 
                     show_report_btn = st.form_submit_button("Show Model Report")
 
-            #     if show_report_btn and selected_model != 'None':
-            #         model_data = st.session_state['models'][selected_model]
-
-            #         # Classification Report
-            #         st.write("**Classification Report**")
-            #         report_data = model_data['classification_report']
-            #         if isinstance(report_data, dict):
-            #             st.dataframe(pd.DataFrame(report_data).T)
-            #         else:
-            #             st.text(report_data)
-
-            #         # Confusion Matrix
-            #         st.write("**Confusion Matrix**")
-            #         fig, ax = plt.subplots()
-            #         labels = model_data['label_encoder'].classes_
-            #         sns.heatmap(model_data['confusion_matrix'], annot=True, fmt='d',
-            #                     cmap='viridis', xticklabels=labels, yticklabels=labels, ax=ax)
-            #         st.pyplot(fig)
-
-            #         # Learning Curves
-            #         try:
-            #             learning_curve_fig = plot_learning_curve(model_data['model'], X, y, n_splits=n_splits)
-            #             st.plotly_chart(learning_curve_fig)
-            #         except Exception as e:
-            #             st.error(f"Error plotting learning curve: {e}")
-
-            #     # Affichage de la comparaison de modèles
-            #     if show_comparison_btn:
-            #         fig = compare_models(st.session_state['models'])
-            #         st.plotly_chart(fig)
-
-            # del X, y
-            # gc.collect()
 
                 if show_report_btn and selected_model != 'None':
                     model_data = st.session_state['models'][selected_model]
@@ -3269,6 +3593,25 @@ def main():
                             pd.to_numeric, errors='coerce'
                         )
 
+                        # st.dataframe(
+                        #     combined_df.style
+                        #     .format("{:.4f}")
+                        #     .set_table_styles([
+                        #         {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
+                        #                                     ('font-size', '18px'),
+                        #                                     ('text-align', 'center'),
+                        #                                     ('font-weight', 'bold')]},
+                        #         {'selector': 'td', 'props': [('font-size', '16px'),
+                        #                                     ('text-align', 'center')]},
+                        #         {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
+                        #         {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
+                        #     ])
+                        #     # .highlight_max(axis=0, color='lightgreen')
+                        #     .highlight_max(subset=numeric_cols, axis=0, color='lightgreen')
+                        #     .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
+                        #     use_container_width=True,
+                        #     height=400
+                        # )
 
 
                         st.dataframe(
@@ -3439,7 +3782,6 @@ def main():
 
             del X, y
             gc.collect()
-
 
 
         with st.expander("**🧠 Train Deep Learning Models**"):

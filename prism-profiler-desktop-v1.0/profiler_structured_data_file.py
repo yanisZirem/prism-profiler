@@ -105,6 +105,7 @@ def load_structured_data(uploaded_file):
         st.error(f"Erreur : {e}")
         return None
 
+
 def update_class_names(data, class_renaming):
     data['Class'] = data['Class'].map(class_renaming)
     return data
