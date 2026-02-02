@@ -48,37 +48,19 @@ def load_structured_data(uploaded_file):
 
         if file_name.endswith(('.csv', '.tsv', '.txt')):
             sep = '\t' if file_name.endswith(('.tsv', '.txt')) else ','
-            preview = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, nrows=5)
-            uploaded_file.seek(0)
-
-            if 'Class' in preview.columns:
-                dtypes = {
-                    col: 'str' if col in ['Class', 'File'] else 'float32'
-                    for col in preview.columns
-                }
-                df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, dtype=dtypes, on_bad_lines='skip')
-            else:
-                df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, on_bad_lines='skip')
+            df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, on_bad_lines='skip')
 
         elif file_name.endswith(('.xls', '.xlsx')):
-            preview = pd.read_excel(uploaded_file, engine='openpyxl', nrows=5)
-            uploaded_file.seek(0)
-            if 'Class' in preview.columns:
-                dtypes = {
-                    col: 'str' if col == 'Class' else 'float32'
-                    for col in preview.columns
-                }
-                df = pd.read_excel(uploaded_file, engine='openpyxl', dtype=dtypes)
-            else:
-                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            df = pd.read_excel(uploaded_file, engine='openpyxl')
+
         else:
-            st.error("Unsupported file format.")
+            st.error("format file not suppported.")
             return None
 
         return df if not df.empty else None
 
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Error : {e}")
         return None
 
 def update_class_names(data, class_renaming):
