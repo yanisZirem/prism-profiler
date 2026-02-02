@@ -41,16 +41,55 @@ def infer_dtypes(sample_df):
         dtypes[col] = 'float32' if numeric.notna().mean() > 0.8 else 'str'
     return dtypes
 
+# def load_structured_data(uploaded_file):
+#     try:
+#         file_name = uploaded_file.name.lower()
+
+#         if file_name.endswith(('.csv', '.tsv', '.txt')):
+#             # Forcer le séparateur `;` et l'encodage `utf-8-sig`
+#             df = pd.read_csv(uploaded_file, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
+
+#             # Nettoyer les noms de colonnes (supprimer les caractères invisibles)
+#             df.columns = df.columns.str.replace(r'[^\x00-\x7F]+', '', regex=True).str.strip('"')
+
+#             return df if not df.empty else None
+
+#         elif file_name.endswith(('.xls', '.xlsx')):
+#             df = pd.read_excel(uploaded_file, engine='openpyxl')
+#             return df if not df.empty else None
+
+#         else:
+#             st.error("file fomat not supported.")
+#             return None
+
+#     except Exception as e:
+#         st.error(f"Erreur : {e}")
+#         return None
+
+
 def load_structured_data(uploaded_file):
     try:
         file_name = uploaded_file.name.lower()
 
         if file_name.endswith(('.csv', '.tsv', '.txt')):
-            # Forcer le séparateur `;` et l'encodage `utf-8-sig`
-            df = pd.read_csv(uploaded_file, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
+            # Lire les premières lignes pour détecter le séparateur
+            uploaded_file.seek(0)
+            first_line = uploaded_file.readline().decode('utf-8-sig')
+            uploaded_file.seek(0)
 
-            # Nettoyer les noms de colonnes (supprimer les caractères invisibles)
-            df.columns = df.columns.str.replace(r'[^\x00-\x7F]+', '', regex=True).str.strip('"')
+            # Détecter le séparateur (virgule, point-virgule ou tabulation)
+            if ';' in first_line:
+                sep = ';'
+            elif ',' in first_line:
+                sep = ','
+            else:
+                sep = '\t'
+
+            # Lire le fichier avec le séparateur détecté
+            df = pd.read_csv(uploaded_file, sep=sep, encoding='utf-8-sig', on_bad_lines='skip')
+
+            # Nettoyer les noms de colonnes (supprimer caractères invisibles et guillemets)
+            df.columns = df.columns.str.replace(r'[^\x20-\x7E]+', '', regex=True).str.strip().str.strip('"')
 
             return df if not df.empty else None
 
@@ -59,7 +98,7 @@ def load_structured_data(uploaded_file):
             return df if not df.empty else None
 
         else:
-            st.error("file fomat not supported.")
+            st.error("Format de fichier non supporté.")
             return None
 
     except Exception as e:

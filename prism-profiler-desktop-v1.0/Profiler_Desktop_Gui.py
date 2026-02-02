@@ -2000,6 +2000,23 @@ def main():
                         else:
                             st.dataframe(df_preview)
 
+                        # # Text input pour nom du fichier
+                        # file_name_input = st.text_input(
+                        #     "Enter a name for your CSV file:",
+                        #     value="preprocessed_data",
+                        #     help="Provide a custom name for the preprocessed dataset CSV file (without extension)."
+                        # )
+
+                        # # Bouton de téléchargement
+                        # st.download_button(
+                        #     label="📥 Download full preprocessed data (CSV)",
+                        #     data=df_preview.to_csv(index=False).encode('utf-8'),
+                        #     file_name=f"{file_name_input}.csv",
+                        #     mime='text/csv'
+                        # )
+
+                        import csv
+
                         # Text input pour nom du fichier
                         file_name_input = st.text_input(
                             "Enter a name for your CSV file:",
@@ -2007,14 +2024,22 @@ def main():
                             help="Provide a custom name for the preprocessed dataset CSV file (without extension)."
                         )
 
+                        # Utiliser StringIO pour écrire le CSV avec les bons paramètres
+                        output = io.StringIO()
+                        df_preview.to_csv(
+                            output,
+                            index=False,
+                            sep=';',  # Séparateur point-virgule
+                            quoting=csv.QUOTE_NONNUMERIC,  # Entoure les champs non numériques de guillemets
+                        )
+                        output.seek(0)  # Retourner au début du buffer
+
                         # Bouton de téléchargement
                         st.download_button(
                             label="📥 Download full preprocessed data (CSV)",
-                            data=df_preview.to_csv(index=False).encode('utf-8'),
+                            data=output.read().encode('utf-8-sig'),  # Encoder en bytes avec BOM
                             file_name=f"{file_name_input}.csv",
                             mime='text/csv'
-                        )
-
 
                     except Exception as e:
                         st.error(f"Preprocessing failed: {e}")
