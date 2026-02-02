@@ -44,23 +44,26 @@ def infer_dtypes(sample_df):
 def load_structured_data(uploaded_file):
     try:
         file_name = uploaded_file.name.lower()
-        encoding = detect_encoding(uploaded_file)
 
         if file_name.endswith(('.csv', '.tsv', '.txt')):
-            sep = '\t' if file_name.endswith(('.tsv', '.txt')) else ','
-            df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, on_bad_lines='skip')
+            # Forcer le séparateur `;` et l'encodage `utf-8-sig`
+            df = pd.read_csv(uploaded_file, sep=';', encoding='utf-8-sig', on_bad_lines='skip')
+
+            # Nettoyer les noms de colonnes (supprimer les caractères invisibles)
+            df.columns = df.columns.str.replace(r'[^\x00-\x7F]+', '', regex=True).str.strip('"')
+
+            return df if not df.empty else None
 
         elif file_name.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(uploaded_file, engine='openpyxl')
+            return df if not df.empty else None
 
         else:
-            st.error("format file not suppported.")
+            st.error("file fomat not supported.")
             return None
 
-        return df if not df.empty else None
-
     except Exception as e:
-        st.error(f"Error : {e}")
+        st.error(f"Erreur : {e}")
         return None
 
 def update_class_names(data, class_renaming):
