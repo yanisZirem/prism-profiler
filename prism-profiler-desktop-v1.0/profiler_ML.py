@@ -60,90 +60,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import gc
 
-# def train_models(X, y, n_splits=5, progress_bar=None):
-#     le = LabelEncoder()
-#     y_encoded = le.fit_transform(y)
-#     class_names = le.classes_
 
-#     preprocess_pipeline = Pipeline([
-#         ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
-#         ('scaler', StandardScaler())
-#     ])
-#     X_processed = preprocess_pipeline.fit_transform(X)
-#     feature_names = X.columns.tolist() if hasattr(X, 'columns') else [f'feature_{i}' for i in range(X.shape[1])]
-#     # Adapter n_neighbors selon les données
-#     min_samples_per_class = np.min(np.bincount(y_encoded))
-#     adapted_n_neighbors = min(5, min_samples_per_class)
-#     if adapted_n_neighbors < 1:
-#         adapted_n_neighbors = 1  
-
-
-#     models = {
-#         'RandomForest': RandomForestClassifier(n_estimators=100, max_depth=30, n_jobs=-1),
-#         'AdaBoost': AdaBoostClassifier(n_estimators=100, algorithm="SAMME"),
-#         'SGD': SGDClassifier(),
-#         # 'SVC': SVC(C=1.0, kernel='precomputed'),
-#         'LinearSVC': LinearSVC(),
-#         'NaiveBayes_Gaussian': GaussianNB(),
-#         'NaiveBayes_Bernoulli': BernoulliNB(),
-#         'DecisionTree': DecisionTreeClassifier(),
-#         'LogisticRegression': LogisticRegression(max_iter=500, solver='lbfgs'),
-#         'Perceptron': Perceptron(),
-#         'RidgeClassifier': RidgeClassifier(),
-#         'PassiveAggressive': PassiveAggressiveClassifier(),
-#         'ExtraTree': ExtraTreeClassifier(),
-#         'ExtraTrees': ExtraTreesClassifier(n_jobs=-1),
-#         'Bagging': BaggingClassifier(n_jobs=-1),
-#         'Dummy': DummyClassifier(),
-#         'NearestCentroid': NearestCentroid(),
-#         'KNeighbors': KNeighborsClassifier(n_neighbors=adapted_n_neighbors, n_jobs=-1),
-#         'LinearDiscriminantAnalysis': LinearDiscriminantAnalysis(),
-#         'QuadraticDiscriminantAnalysis': QuadraticDiscriminantAnalysis(),
-#         'GradientBoosting': GradientBoostingClassifier(),
-#         'HistGradientBoosting': HistGradientBoostingClassifier(),
-#         'LGBMClassifier': LGBMClassifier(n_jobs=-1)
-#     }
-
-#     results = {}
-#     total_models = len(models)
-
-#     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
-
-#     for i, (model_name, model) in enumerate(models.items()):
-#         pipeline = Pipeline([
-#             ('preprocessing', preprocess_pipeline),
-#             ('model', model)
-#         ])
-
-#         pipeline.fit(X, y_encoded)
-
-#         y_pred = cross_val_predict(pipeline, X_processed, y_encoded, cv=cv, method='predict')
-#         # y_pred = cross_val_predict(pipeline, X, y_encoded, cv=cv, method='predict', n_jobs=-1)
-
-
-#         report = classification_report(y_encoded, y_pred, target_names=class_names, zero_division=0)
-#         scores = cross_val_score(pipeline, X_processed, y_encoded, cv=cv)
-#         cm = confusion_matrix(y_encoded, y_pred)
-#         f1 = f1_score(y_encoded, y_pred, average='weighted')
-#         accuracy = accuracy_score(y_encoded, y_pred)
-
-#         results[model_name] = {
-#             'classification_report': report,
-#             'mean_score': np.mean(scores),
-#             'std_score': np.std(scores),
-#             'confusion_matrix': cm,
-#             'label_encoder': le,
-#             'model': pipeline,
-#             'f1_score': f1,
-#             'accuracy': accuracy,
-#             'features': feature_names
-#         }
-
-#         if progress_bar is not None:
-#             progress_bar.progress((i + 1) / total_models)
-#     del pipeline, model, y_pred, scores, cm
-#     gc.collect()
-#     return results
+from sklearn.calibration import CalibratedClassifierCV
 
 def train_models(X, y, n_splits=3, progress_bar=None):
     le = LabelEncoder()
@@ -192,15 +110,131 @@ def train_models(X, y, n_splits=3, progress_bar=None):
     total_models = len(models)
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
 
+    models_requiring_calibration = (
+        RidgeClassifier,
+        SGDClassifier,
+        Perceptron,
+        PassiveAggressiveClassifier
+    )
+
+
     for i, (model_name, model) in enumerate(models.items()):
-        pipeline = Pipeline([
-            ('model', model)
-        ])
+        # pipeline = Pipeline([
+        #     ('model', model)
+        # ])
+
+        # --- Calibration uniquement si nécessaire ---
+        if isinstance(model, models_requiring_calibration):
+            calibrated_model = CalibratedClassifierCV(
+                estimator=model,
+                method="sigmoid",   # robuste pour petits datasets omics
+                cv=3
+            )
+            pipeline = Pipeline([
+                ('model', calibrated_model)
+            ])
+        else:
+            pipeline = Pipeline([
+                ('model', model)
+            ])
 
         pipeline.fit(X_processed, y_encoded)
 
-        y_pred = cross_val_predict(pipeline, X_processed, y_encoded, cv=cv, method='predict')
-        scores = cross_val_score(pipeline, X_processed, y_encoded, cv=cv)
+        pipeline.fit(X_processed, y_encoded)
+
+        # # Prédictions et scores
+        # y_pred = cross_val_predict(pipeline, X_processed, y_encoded, cv=cv, method='predict')
+        # scores = cross_val_score(pipeline, X_processed, y_encoded, cv=cv)
+
+
+
+        # confidence_scores = np.full(len(y_encoded), np.nan)
+
+        # try:
+        #     probas = cross_val_predict(
+        #         pipeline,
+        #         X_processed,
+        #         y_encoded,
+        #         cv=cv,
+        #         method='predict_proba',
+        #         n_jobs=-1
+        #     )
+
+        #     if probas.ndim == 2:
+        #         confidence_scores = np.max(probas, axis=1)
+        #     else:
+        #         # cas binaire compressé
+        #         confidence_scores = probas
+
+        # except Exception:
+        #     try:
+        #         decision_scores = cross_val_predict(
+        #             pipeline,
+        #             X_processed,
+        #             y_encoded,
+        #             cv=cv,
+        #             method='decision_function',
+        #             n_jobs=-1
+        #         )
+
+        #         if decision_scores.ndim == 2:
+        #             confidence_scores = np.max(
+        #                 (decision_scores - decision_scores.min(axis=1, keepdims=True)) /
+        #                 (decision_scores.max(axis=1, keepdims=True) - decision_scores.min(axis=1, keepdims=True) + 1e-9),
+        #                 axis=1
+        #             )
+        #         else:
+        #             confidence_scores = decision_scores
+
+        #     except Exception:
+        #         confidence_scores = np.full(len(y_encoded), np.nan)
+
+       # Prédictions et scores
+        y_pred = cross_val_predict(pipeline, X_processed, y_encoded, cv=cv, method='predict', n_jobs=4)
+        scores = cross_val_score(pipeline, X_processed, y_encoded, cv=cv, n_jobs=4)
+
+
+
+        confidence_scores = np.full(len(y_encoded), np.nan)
+
+        try:
+            probas = cross_val_predict(
+                pipeline,
+                X_processed,
+                y_encoded,
+                cv=cv,
+                method='predict_proba',
+                n_jobs=-1
+            )
+
+            if probas.ndim == 2:
+                confidence_scores = np.max(probas, axis=1)
+            else:
+                # cas binaire compressé
+                confidence_scores = probas
+
+        except Exception:
+            try:
+                decision_scores = cross_val_predict(
+                    pipeline,
+                    X_processed,
+                    y_encoded,
+                    cv=cv,
+                    method='decision_function',
+                    n_jobs=-1
+                )
+
+                if decision_scores.ndim == 2:
+                    confidence_scores = np.max(
+                        (decision_scores - decision_scores.min(axis=1, keepdims=True)) /
+                        (decision_scores.max(axis=1, keepdims=True) - decision_scores.min(axis=1, keepdims=True) + 1e-9),
+                        axis=1
+                    )
+                else:
+                    confidence_scores = decision_scores
+
+            except Exception:
+                confidence_scores = np.full(len(y_encoded), np.nan)
 
         report = classification_report(y_encoded, y_pred, target_names=class_names, zero_division=0, output_dict=True)
         cm = confusion_matrix(y_encoded, y_pred)
@@ -216,7 +250,8 @@ def train_models(X, y, n_splits=3, progress_bar=None):
             'model': pipeline,
             'f1_score': f1,
             'accuracy': accuracy,
-            'features': feature_names
+            'features': feature_names,
+            'confidence_scores': confidence_scores  # Ajout des scores de confiance
         }
 
         if progress_bar is not None:
