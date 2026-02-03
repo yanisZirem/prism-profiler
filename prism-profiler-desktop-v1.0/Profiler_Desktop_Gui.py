@@ -776,7 +776,7 @@ def main():
         st.markdown("""
             <hr>
             <p style="text-align:center; font-size:14px; color:#888;">
-                &copy; 2025 Profiler. All rights reserved. | Version 1.0
+                &copy; 2025 Profiler. All rights reserved. | Version 1.1
             </p>
         """, unsafe_allow_html=True)
 
@@ -6984,6 +6984,7 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
 
 
 
