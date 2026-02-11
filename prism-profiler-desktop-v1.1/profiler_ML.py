@@ -276,17 +276,26 @@ def compare_models(model_results):
 
 
 
+from sklearn.model_selection import StratifiedKFold, learning_curve
 
 def plot_learning_curve(model, X, y, n_splits=5):
-    # Prétraitement des données
-    preprocess_pipeline = Pipeline([
-        ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
-        ('scaler', StandardScaler())
-    ])
-    X_processed = preprocess_pipeline.fit_transform(X)
 
-    # Calcul des scores d'apprentissage
-    train_sizes, train_scores, test_scores = learning_curve(model, X_processed, y, cv=n_splits)
+    pipeline = Pipeline([
+        ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
+        ('scaler', StandardScaler()),
+        ('model', model)
+    ])
+
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
+
+    train_sizes, train_scores, test_scores = learning_curve(
+        pipeline,
+        X, y,
+        cv=cv,
+        scoring="f1_weighted",   # très conseillé
+        n_jobs=-1,
+        train_sizes=np.linspace(0.1, 1.0, 8)
+    )
 
     # Création de la figure
     fig = go.Figure()
@@ -450,3 +459,4 @@ def compare_models(model_results):
     fig.update_traces(marker_line_width=1.2)
 
     return fig
+
