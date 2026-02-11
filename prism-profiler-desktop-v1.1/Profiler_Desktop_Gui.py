@@ -813,1225 +813,6 @@ def main():
         if 'overview_source' not in st.session_state:
             st.session_state['overview_source'] = None
 
-        # with st.expander("**📑 Data Overview**", expanded=True):
-        #     st.markdown(
-        #         '<p style="color: gray; font-size: 14px">Comprehensive exploration of dataset structure, missingness, and feature distributions (omics-ready: proteomics, metabolomics, transcriptomics)</p>',
-        #         unsafe_allow_html=True
-        #     )
-        #     with st.form("load_features_form"):
-        #         source_choice = st.selectbox(
-        #             "Select dataset source:",
-        #             ['None', 'Raw', 'Edited/Renamed', 'Preprocessed', 'Oversampled', 'Undersampled'],
-        #             index=0,
-        #             key="overview_source_select"
-        #         )
-        #         load_btn = st.form_submit_button("📥 Load Features")
-        #     if load_btn:
-        #         # Map "Raw" to final_data (renamed classes) instead of data (raw data)
-        #         ds_map = {
-        #             "Raw": st.session_state.get("final_data", st.session_state.get("data")),  # Prioritize final_data
-        #             "Edited/Renamed": st.session_state.get("final_data"),
-        #             "Preprocessed": st.session_state.get("preprocessed_data"),
-        #             "Oversampled": st.session_state.get("oversampled_data"),
-        #             "Undersampled": st.session_state.get("undersampled_data")
-        #         }
-        #         if source_choice == "None":
-        #             st.warning("Select a real source before loading features.")
-        #             st.session_state['overview_df'] = None
-        #             st.session_state['overview_source'] = None
-        #         else:
-        #             sel_df = ds_map.get(source_choice)
-        #             if sel_df is None:
-        #                 st.error(f"Source '{source_choice}' is not available in session_state.")
-        #                 st.session_state['overview_df'] = None
-        #                 st.session_state['overview_source'] = None
-        #             else:
-        #                 st.session_state['overview_df'] = sel_df.copy()
-        #                 st.session_state['overview_source'] = source_choice
-        #                 if 'class_colors' not in st.session_state:
-        #                     st.session_state['class_colors'] = {}
-        #                 if 'Class' in sel_df.columns:
-        #                     for cls in sel_df['Class'].unique():
-        #                         if cls not in st.session_state['class_colors']:
-        #                             st.session_state['class_colors'][cls] = "#000000"
-        #                 st.success(f"Loaded '{source_choice}' — {sel_df.shape[0]:,} samples × {sel_df.shape[1]:,} features")
-
-
-        # # Récupère le DF chargé (ou None)
-        # df = st.session_state.get('overview_df')
-
-        # if df is None:
-
-
-        #     st.info("No dataset loaded. Choose a source above and click ▶️ Load Features to start analysing.")
-        #     # on n'affiche pas la suite si rien n'est chargé
-        # else:
-
-
-        #     with st.expander("**ℹ️ Dataset Info and suggestions**", expanded=st.session_state.show_info["dataset_info"]):
-
-        #         with st.form("dataset_info_form"):
-        #             toggle = st.form_submit_button("Show Info")
-
-        #         if toggle:
-        #             st.session_state.show_info["dataset_info"] = not st.session_state.show_info["dataset_info"]
-
-        #         if st.session_state.show_info["dataset_info"]:
-
-        #             st.markdown(f"""
-        #                 <div style='background-color: #f0f8ff; padding: 10px; border-radius: 10px; font-size: 15px;'>
-        #                     <strong>Dataset source:</strong> {st.session_state.get('overview_source')}
-        #                     <br><strong>Dataset dimensions:</strong> {df.shape[0]:,} samples × {df.shape[1]:,} features
-        #                     <br><strong>Classes:</strong> {df['Class'].nunique() if 'Class' in df.columns else 'N/A'}
-        #                 </div>
-        #             """, unsafe_allow_html=True)
-
-        #             display_class_info(df)
-        #             st.info("Summary: balanced classes → unbiased models.")
-
-
-        #     with st.expander("**🚨 Outliers Control and Suggestions**", expanded=False):
-        #         st.markdown(
-        #             "<p style='color: gray'>Identify and control abnormal samples that may bias model performance. Generates:Features per sample table, Boxplot visualization, Statistical suggestions and Outlier detection (IQR method).</p>",
-        #             unsafe_allow_html=True
-        #         )
-
-        #         df = st.session_state.get("overview_df")
-        #         if df is None:
-        #             st.warning("Please load a dataset first.")
-        #         else:
-        #             # --- 1. ANALYSE COMPLÈTE (TABLE + BOXPLOT + SUGGESTIONS + DÉTECTION) ---
-        #             with st.form("full_analysis_form"):
-
-        #                 run_analysis = st.form_submit_button("Run Analysis")
-
-        #             if run_analysis:
-        #                 with st.spinner("Analyzing data..."):
-        #                     # Préparation des données
-        #                     df_features = df.copy()
-
-                            
-        #                     df_features = df.copy()
-
-        #                     df_features["Features per sample"] = (
-        #                         df.drop(columns=['Class'], errors='ignore')
-        #                         .notna()
-        #                         .sum(axis=1)
-        #                     )
-
-        #                     # --- STATISTIQUES RAPIDES ---
-        #                     mean_val = df_features["Features per sample"].mean()
-        #                     median_val = df_features["Features per sample"].median()
-        #                     std_val = df_features["Features per sample"].std()
-        #                     min_val = df_features["Features per sample"].min()
-        #                     max_val = df_features["Features per sample"].max()
-
-        #                     # --- AFFICHAGE DES RÉSULTATS ---
-        #                     st.markdown("**Features per Sample Analysis**")
-
-        #                     # Tableau des échantillons
-        #                     display_df = df_features.reset_index().rename(columns={"index": "Original index"})
-        #                     display_cols = ["Original index"]
-        #                     if "Class" in display_df.columns:
-        #                         display_cols.append("Class")
-        #                     display_cols.append("Features per sample")
-        #                     display_df = display_df[display_cols]
-        #                     st.dataframe(display_df, height=300, use_container_width=True)
-
-        #                     # Statistiques
-        #                     st.info(f"""
-        #                     **Features per sample statistics**
-        #                     - Min: {min_val}
-        #                     - Max: {max_val}
-        #                     - Mean: {mean_val:.2f}
-        #                     - Median: {median_val:.2f}
-        #                     - Std: {std_val:.2f}
-        #                     """)
-
-        #                     # --- SUGGESTIONS ET DÉTECTION UNIFIÉES ---
-        #                     st.markdown("**ℹ️ Suggestions and Outlier Detection**")
-        #                     heterogeneity_detected = std_val > 0.25 * mean_val or max_val > median_val * 1.5
-
-        #                     # Paramètres fixes pour IQR (cohérents avec les suggestions)
-        #                     q1_percentile = 25  # Fixé à 25%
-        #                     q3_percentile = 75  # Fixé à 75%
-        #                     iqr_factor = 1.5   # Fixé à 1.5
-
-        #                     # Détection des outliers (méthode IQR unifiée)
-        #                     if "Class" in df_features.columns:
-        #                         outlier_indices = []
-        #                         for cls, group in df_features.groupby("Class"):
-        #                             Q1 = group["Features per sample"].quantile(q1_percentile / 100)
-        #                             Q3 = group["Features per sample"].quantile(q3_percentile / 100)
-        #                             IQR = Q3 - Q1
-        #                             lower = Q1 - iqr_factor * IQR
-        #                             upper = Q3 + iqr_factor * IQR
-        #                             outliers = group[
-        #                                 (group["Features per sample"] < lower) |
-        #                                 (group["Features per sample"] > upper)
-        #                             ]
-        #                             outlier_indices.extend(outliers.index.tolist())
-        #                     else:
-        #                         Q1 = df_features["Features per sample"].quantile(q1_percentile / 100)
-        #                         Q3 = df_features["Features per sample"].quantile(q3_percentile / 100)
-        #                         IQR = Q3 - Q1
-        #                         lower = Q1 - iqr_factor * IQR
-        #                         upper = Q3 + iqr_factor * IQR
-        #                         outlier_indices = df_features[
-        #                             (df_features["Features per sample"] < lower) |
-        #                             (df_features["Features per sample"] > upper)
-        #                         ].index.tolist()
-
-        #                     st.session_state["detected_outliers"] = outlier_indices
-
-        #                     # Affichage des suggestions (cohérentes avec la détection)
-        #                     if heterogeneity_detected or outlier_indices:
-        #                         st.warning("""
-        #                         ⚠️ **High heterogeneity or outliers detected**
-        #                         - Some samples may negatively affect model fairness and stability.
-        #                         - **Recommended actions:**
-        #                             - 🔹 Check for incomplete or corrupted samples
-        #                             - 🔹 Consider removing the detected outliers
-        #                             - 🔹 Inspect outliers manually in the table below
-        #                         """)
-        #                     else:
-        #                         st.success("""
-        #                         ✅ **Dataset homogeneity is acceptable.**
-        #                         - No critical imbalance or outliers detected.
-        #                         - Your dataset is suitable for modeling without structural bias.
-        #                         """)
-
-
-        #                     if outlier_indices:
-        #                         # Si des outliers sont détectés : afficher la table + boxplot
-        #                         left_col, right_col = st.columns([1, 1])
-        #                         with left_col:
-        #                             st.markdown(f"**{len(outlier_indices)} outliers found**")
-        #                             st.dataframe(
-        #                                 df.loc[outlier_indices][["Class"]]
-        #                                 .assign(Features=df_features.loc[outlier_indices]["Features per sample"])
-        #                             )
-
-                                    
-        #                         with right_col:
-        #                             import plotly.express as px
-        #                             # Utilisation des couleurs existantes dans st.session_state
-        #                             color_map = None
-        #                             if "Class" in df_features.columns and 'class_colors' in st.session_state:
-        #                                 # Crée une map de couleurs à partir des couleurs existantes
-        #                                 unique_classes = df_features["Class"].unique()
-        #                                 color_map = {
-        #                                     cls: st.session_state['class_colors'].get(cls, f"#{hash(cls) % 0xFFFFFF:06x}")
-        #                                     for cls in unique_classes
-        #                                 }
-        #                             fig = px.box(
-        #                                 df_features,
-        #                                 y="Features per sample",
-        #                                 points="outliers",
-        #                                 color="Class" if "Class" in df_features.columns else None,
-        #                                 color_discrete_map=color_map,
-        #                                 title="Features per Sample Distribution"
-        #                             )
-        #                             st.plotly_chart(fig, use_container_width=True)
-        #                     else:
-        #                         # Si aucun outlier : afficher uniquement le boxplot en plein écran
-        #                         import plotly.express as px
-        #                         color_map = None
-        #                         if "Class" in df_features.columns and 'class_colors' in st.session_state:
-        #                             unique_classes = df_features["Class"].unique()
-        #                             color_map = {
-        #                                 cls: st.session_state['class_colors'].get(cls, f"#{hash(cls) % 0xFFFFFF:06x}")
-        #                                 for cls in unique_classes
-        #                             }
-        #                         fig = px.box(
-        #                             df_features,
-        #                             y="Features per sample",
-        #                             points="outliers",
-        #                             color="Class" if "Class" in df_features.columns else None,
-        #                             color_discrete_map=color_map,
-        #                             title="Features per Sample Distribution (No Outliers Detected)"
-        #                         )
-        #                         st.plotly_chart(fig, use_container_width=True)
-
-        #                     # Nettoyage mémoire
-        #                     del df_features
-        #                     import gc; gc.collect()
-
-
-        #             if "detected_outliers" in st.session_state and st.session_state["detected_outliers"]:
-        #                 with st.form("remove_outliers_form"):
-
-        #                     st.info(f"{len(st.session_state['detected_outliers'])} outliers ready for removal.")
-        #                     remove_outliers_button = st.form_submit_button("🗑 Remove Outliers")
-
-        #                 if remove_outliers_button:
-        #                     with st.spinner("Removing outliers..."):
-        #                         idx = st.session_state["detected_outliers"]
-
-        #                         # Mise à jour de toutes les clés pertinentes dans st.session_state
-        #                         for key in ["data", "final_data", "overview_df"]:
-        #                             if key in st.session_state and st.session_state[key] is not None:
-        #                                 df_tmp = st.session_state[key].copy()
-
-        #                                 # ⚡ Assurer que "Class" reste
-        #                                 if "Class" not in df_tmp.columns:
-        #                                     df_tmp["Class"] = st.session_state["final_data"]["Class"]
-
-        #                                 # Supprimer les outliers
-        #                                 df_tmp = df_tmp.drop(index=idx, errors='ignore').reset_index(drop=True)
-        #                                 st.session_state[key] = df_tmp
-
-        #                         # Conserver une trace des outliers supprimés
-        #                         st.session_state["removed_outliers"] = idx
-        #                         st.session_state["detected_outliers"] = []
-        #                         st.success(f"✅ **{len(idx)} outliers removed** — All datasets updated!")
-
-
-        #     # ---------------- Missing Values ----------------
-
-        #     with st.expander("**❓ Missing Values and suggestions**", expanded=st.session_state.show_info["missing_values"]):
-
-        #         with st.form("missing_values_form"):
-        #             toggle = st.form_submit_button("Show Missing Values Info")
-
-        #         if toggle:
-        #             st.session_state.show_info["missing_values"] = not st.session_state.show_info["missing_values"]
-
-        #         if st.session_state.show_info["missing_values"]:
-
-        #             relevant_cols, missing_df = calculate_missing_values(df)
-
-        #             if missing_df.empty:
-        #                 st.success("No missing values detected.")
-        #             else:            
-        #                 # Global % missingness (sur tout le dataset)
-        #                 total_missing_pct = df.isnull().sum().sum() / (df.shape[0] * df.shape[1]) * 100
-        #                 st.success(f"Overall missingness: **{total_missing_pct:.2f}%** of all values.")
-        #                 st.markdown("**Per-feature summary:**")
-        #                 st.dataframe(missing_df, use_container_width=True)
-
-        #                 # Normality check via skewness
-        #                 skewness = df[relevant_cols].skew().dropna()
-        #                 skew_mean = skewness.abs().mean()
-        #                 is_normal = skew_mean < 0.5
-
-        #                 # 💡 Global omics-aware recommendation
-        #                 st.markdown("**💡 Global Imputation Strategy Suggestion:**")
-        #                 if total_missing_pct < 5:
-        #                     st.info("🔹 Low missingness (<5%) → Delete missing value or fill missing value with 0 if considered as exclusive features, or use simple Mean/Median/Modal imputation.")
-        #                 elif total_missing_pct < 20:
-        #                     if is_normal:
-        #                         st.info("🔹 Moderate missingness (5–20%) & data ≈ normal → Mean or Regression-based imputation.")
-        #                     else:
-        #                         st.info("🔹 Moderate missingness (5–20%) & non-normal (skewed) → Median, Shifted Gaussian, or KNN imputation.")
-        #                 else:
-        #                     st.info("🔹 High missingness (>20%) → KNN or Regression-based imputation. "
-        #                             "Consider removing features with excessive missing values using Minimum features detection rate per class (%) in preprocessing expander.")
-
-        #                 # Summary skewness
-        #                 if is_normal:
-        #                     st.success(f"Features are mostly normal (mean |skew| = {skew_mean:.2f}). Mean imputation valid.")
-        #                 else:
-        #                     st.warning(f"Features are skewed (mean |skew| = {skew_mean:.2f}). Prefer Median/Shifted Gaussian/KNN imputation.")
-
-
-        #                 if 'Class' in df.columns:
-
-        #                     # Count missing values per class (robust method)
-        #                     missing_by_class = df.groupby('Class').apply(lambda g: g.isnull().sum().sum()).astype(float)
-        #                     total_missing = missing_by_class.sum()
-
-        #                     if total_missing > 0:
-
-        #                         missing_pct_class = (missing_by_class / total_missing) * 100
-        #                         import plotly.express as px
-
-        #                         # st.markdown("**Class-specific missingness:**")
-
-        #                         # Ensure class_colors exists
-        #                         if 'class_colors' not in st.session_state:
-        #                             st.session_state['class_colors'] = {}
-
-        #                         # Assign default colors if missing
-        #                         palette = px.colors.qualitative.Plotly
-        #                         for i, cls in enumerate(missing_pct_class.index):
-        #                             if cls not in st.session_state['class_colors']:
-        #                                 st.session_state['class_colors'][cls] = palette[i % len(palette)]
-
-        #                         # Build map
-        #                         color_map = {cls: st.session_state['class_colors'][cls] for cls in missing_pct_class.index}
-
-        #                         # Pie chart
-        #                         fig = px.pie(
-        #                             names=missing_pct_class.index,
-        #                             values=missing_pct_class.values,
-        #                             color=missing_pct_class.index,
-        #                             color_discrete_map=color_map,
-        #                             title="Missing Data by Class"
-        #                         )
-
-        #                         fig.update_traces(
-        #                             textposition='inside',
-        #                             textinfo='percent+label',
-        #                             textfont_size=18
-        #                         )
-
-        #                         fig.update_layout(
-        #                             legend_title_text='Class',
-        #                             legend=dict(font=dict(size=16)),
-        #                             title=dict(font=dict(size=18))
-        #                         )
-
-        #                         st.plotly_chart(fig, use_container_width=True)
-
-
-
-
-        #     # ---------------- Normality & Statistical Overview ----------------
-
-        #     with st.expander("**📊 Normality/Statistical Overview and suggestions**", 
-        #                     expanded=st.session_state.show_info["shapiro_wilk_test"]):
-
-        #         with st.form("normality_form"):
-        #             toggle = st.form_submit_button("Show normality info")
-
-        #         if toggle:
-        #             st.session_state.show_info["shapiro_wilk_test"] = (
-        #                 not st.session_state.show_info["shapiro_wilk_test"]
-        #             )
-
-
-
-        #         if st.session_state.show_info.get("shapiro_wilk_test", False):
-        #             relevant_cols, _ = calculate_missing_values(df)
-
-        #             # Shapiro-Wilk / normality
-        #             p_val, norm_ratio = perform_shapiro_wilk_test(df, relevant_cols)
-        #             normal_count = int(norm_ratio * len(relevant_cols))
-        #             non_normal_count = len(relevant_cols) - normal_count
-
-        #             import plotly.express as px
-        #             fig = px.pie(
-        #                 names=['Normal', 'Non-Normal'],
-        #                 values=[normal_count, non_normal_count],
-        #                 title="Normal vs Non-Normal Features",
-        #                 color_discrete_sequence=['#4CAF50', '#F44336']
-        #             )
-        #             fig.update_traces(textposition='inside', textinfo='percent+label')
-        #             st.plotly_chart(fig, use_container_width=True)
-
-        #             # Skewness plot
-        #             skewness = df[relevant_cols].skew().dropna()
-        #             skew_mean = skewness.abs().mean()
-        #             fig_density = px.histogram(
-        #                 skewness,
-        #                 nbins=30,
-        #                 marginal="violin",
-        #                 title="Density of Feature Skewness",
-        #                 labels={'value': 'Skewness', 'count': 'Count'},
-        #                 color_discrete_sequence=['#FF9800']
-        #             )
-        #             st.plotly_chart(fig_density, use_container_width=True)
-
-        #             # recommendations...
-        #             st.markdown("**⚖️ Normalization Recommendation:**")
-        #             if skew_mean < 0.5:
-        #                 st.info("✅ Low skewness → TIC/RMS/BasePeak normalization suitable (common in omics).")
-        #             elif skew_mean > 1:
-        #                 st.info("❗ High skewness → Log/Log10/Log2 normalization recommended for omics.")
-        #             else:
-        #                 st.info("⚠️ Moderate skewness (0.5–1) →\n"
-        #                         "- Proteomics/Metabolomics: prefer RMS normalization.\n"
-        #                         "- Transcriptomics: Quantile normalization is often more appropriate.")
-
-        #             # statistical test suggestions (identique à ton code)
-        #             n_classes = df['Class'].nunique() if 'Class' in df.columns else 0
-        #             if skew_mean < 0.5:
-        #                 normality_status = "mostly normal"
-        #                 prefer_parametric = True
-        #             elif skew_mean > 1:
-        #                 normality_status = "highly skewed"
-        #                 prefer_parametric = False
-        #             else:
-        #                 normality_status = "moderately skewed"
-        #                 prefer_parametric = False
-
-        #             if n_classes == 2:
-        #                 test_suggestion = "t-test (parametric)" if prefer_parametric else "Mann-Whitney U (non-parametric)"
-        #             elif n_classes > 2:
-        #                 test_suggestion = "ANOVA (parametric)" if prefer_parametric else "Kruskal-Wallis (non-parametric)"
-        #             else:
-        #                 test_suggestion = "N/A (no classes detected)"
-
-        #             st.markdown("**📊 Recommended Statistical Test:**")
-        #             st.info(
-        #                 f"💡 Data appear **{normality_status}** (mean |skew| = {skew_mean:.2f}).\n\n"
-        #                 f"Suggested test: **{test_suggestion}**"
-        #             )
-
-        #             st.info(
-        #                 "⚠️ Note: Central Limit Theorem: For n ≥ 30, sampling distribution of the mean approximates normality."
-        #             )
-
-
-        #             # -------------------- Survival Data --------------------
-        #             if 'Overall survival' in df.columns and 'State' in df.columns:
-        #                 st.subheader("Survival Data Preview")
-        #                 st.dataframe(df[['Overall survival', 'State']])
-        #                 gc.collect()
-
-        #         elif st.session_state.get('survival_data') is not None:
-        #             surv_df = st.session_state['survival_data']
-        #             if 'Overall survival' in surv_df.columns and 'State' in surv_df.columns:
-        #                 st.markdown("*Survival Data*")
-        #                 st.dataframe(surv_df)
-        #                 del surv_df
-        #                 gc.collect()
-
-
-
-        # with st.expander("**📝 Class Renaming Options**", expanded=False):
-        #     st.markdown(
-        #         '<p style="color: gray; font-size: 14px">Standardize class labels: unify replicates, merge groups, or relabel unknowns.</p>',
-        #         unsafe_allow_html=True
-        #     )
-        #     if "data" not in st.session_state or st.session_state["data"] is None:
-        #         st.warning("⚠️ No data available. Please upload or load a dataset first.")
-        #     else:
-        #         if "final_data" not in st.session_state:
-        #             st.session_state["final_data"] = st.session_state["data"].copy()
-                
-        #         class_names = list(st.session_state["final_data"]["Class"].unique())
-        #         st.session_state.setdefault("class_renaming", {cls: cls for cls in class_names})
-        #         st.session_state.setdefault("rename_pending", {cls: cls for cls in class_names})
-                
-        #         mode = st.radio(
-        #             "🔧 Select renaming mode:",
-        #             [
-        #                 "🔁 Apply same name to all classes",
-        #                 "✏️ Rename each class individually",
-        #                 "🧩 Group classes under a common name"
-        #             ],
-        #             key="rename_mode",
-        #             help="Choose whether to apply a global name, rename individually, or group multiple classes."
-        #         )
-                
-        #         # MODE 1 & 2: Avec formulaire (pas de problème de rafraîchissement)
-        #         if not mode.startswith("🧩"):
-        #             with st.form(key="class_renaming_form"):
-        #                 temp_mapping = st.session_state["rename_pending"].copy()
-                        
-        #                 if mode.startswith("🔁"):
-        #                     global_name = st.text_input("🆕 New name for all classes:", "UnifiedClass", key="global_class_name")
-        #                     if global_name:
-        #                         temp_mapping = {cls: global_name for cls in class_names}
-                        
-        #                 elif mode.startswith("✏️"):
-        #                     for cls in class_names:
-        #                         new_name = st.text_input(
-        #                             f"Rename '**{cls}**' to:",
-        #                             st.session_state["rename_pending"].get(cls, cls),
-        #                             key=f"rename_{cls}"
-        #                         )
-        #                         temp_mapping[cls] = new_name
-                        
-        #                 col1, col2 = st.columns(2)
-        #                 with col1:
-        #                     apply_changes = st.form_submit_button("Apply Renaming")
-        #                 with col2:
-        #                     reset_changes = st.form_submit_button("🔄 Reset Changes")
-                    
-        #             if apply_changes:
-        #                 with st.spinner("Applying class name changes..."):
-        #                     st.session_state["rename_pending"] = temp_mapping.copy()
-        #                     st.session_state["class_renaming"] = st.session_state["rename_pending"].copy()
-        #                     st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].replace(
-        #                         st.session_state["class_renaming"]
-        #                     )
-        #                     st.session_state["data"] = st.session_state["final_data"]
-        #                     st.success("Class names updated successfully!")
-                    
-        #             if reset_changes:
-        #                 st.session_state["rename_pending"] = {cls: cls for cls in class_names}
-        #                 st.session_state["class_renaming"] = {cls: cls for cls in class_names}
-        #                 st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].map(
-        #                     lambda x: x if x in class_names else x
-        #                 )
-        #                 st.session_state["data"] = st.session_state["final_data"]
-        #                 st.success("🗑️ All renaming changes have been reset.")
-        #                 gc.collect()
-                
-
-        #         # MODE 3: 
-        #         else:
-
-        #             if "group_temp_mapping" not in st.session_state:
-        #                 st.session_state["group_temp_mapping"] = {}
-
-        #             n_groups = st.number_input("Number of class groups:", 1, 100, 1, key="num_groups")
-
-        #             st.markdown("---")
-
-        #             for i in range(n_groups):
-        #                 st.markdown(f"**📦 Group** {i+1}")
-
-        #                 gname = st.text_input(
-        #                     f"Group name:",
-        #                     value=st.session_state.get(f"group_name_{i}", ""),
-        #                     key=f"group_name_{i}",
-        #                     placeholder=f"Enter name for group {i+1}"
-        #                 )
-        #                 current_group_classes = [
-        #                     cls for cls, grp_name in st.session_state["group_temp_mapping"].items()
-        #                     if grp_name == gname
-        #                 ] if gname else []
-
-        #                 assigned_classes = set(st.session_state["group_temp_mapping"].keys())
-
-        #                 available_classes = [cls for cls in class_names if cls not in assigned_classes or cls in current_group_classes]
-        #                 available_classes.sort()
-
-        #                 selected = st.multiselect(
-        #                     f"Select classes:",
-        #                     available_classes,
-        #                     default=current_group_classes,
-        #                     key=f"selected_classes_{i}",
-        #                     help=f"Available: {len(available_classes)} classes"
-        #                 )
-
-        #                 if gname and selected:
-
-        #                     for cls in current_group_classes:
-        #                         if cls not in selected and cls in st.session_state["group_temp_mapping"]:
-        #                             del st.session_state["group_temp_mapping"][cls]
-
-
-        #                     for cls in selected:
-        #                         st.session_state["group_temp_mapping"][cls] = gname
-        #                 elif not selected:
-
-        #                     for cls in current_group_classes:
-        #                         if cls in st.session_state["group_temp_mapping"]:
-        #                             del st.session_state["group_temp_mapping"][cls]
-
-        #                 st.markdown("---")
-
-        #             # Résumé
-        #             assigned_count = len(st.session_state["group_temp_mapping"])
-        #             remaining_classes = set(class_names) - set(st.session_state["group_temp_mapping"].keys())
-
-        #             if assigned_count > 0:
-        #                 if remaining_classes:
-        #                     st.info(f"📊 **Summary:** {assigned_count} classes assigned to groups, {len(remaining_classes)} remaining: {', '.join(sorted(remaining_classes))}")
-        #                 else:
-        #                     st.success(f"✅ **Summary:** All {len(class_names)} classes have been assigned to groups!")
-
-
-        #             # Boutons d'action
-        #             col1, col2 = st.columns(2)
-                    
-        #             with col1:
-        #                 if st.button("✅ Apply Grouping", type="primary", use_container_width=True):
-        #                     if st.session_state["group_temp_mapping"]:
-        #                         with st.spinner("Applying class grouping..."):
-        #                             # Appliquer le mapping
-        #                             st.session_state["rename_pending"] = st.session_state["group_temp_mapping"].copy()
-        #                             st.session_state["class_renaming"] = st.session_state["rename_pending"].copy()
-        #                             st.session_state["final_data"]["Class"] = st.session_state["final_data"]["Class"].replace(
-        #                                 st.session_state["class_renaming"]
-        #                             )
-        #                             st.session_state["data"] = st.session_state["final_data"]
-                                    
-        #                             # Nettoyer les états temporaires
-        #                             st.session_state["group_temp_mapping"] = {}
-        #                             for i in range(n_groups):
-        #                                 if f"selected_classes_{i}" in st.session_state:
-        #                                     del st.session_state[f"selected_classes_{i}"]
-        #                                 if f"group_name_{i}" in st.session_state:
-        #                                     del st.session_state[f"group_name_{i}"]
-                                    
-        #                             st.success("✅ Class grouping applied successfully!")
-        #                             # st.rerun()
-        #                             st.experimental_rerun()
-        #                     else:
-        #                         st.warning("⚠️ No classes have been assigned to groups yet.")
-                    
-        #             with col2:
-        #                 if st.button("🔄 Reset Changes", use_container_width=True):
-        #                     # Reset complet vers les classes originales
-        #                     original_classes = list(st.session_state["data"]["Class"].unique())
-        #                     st.session_state["rename_pending"] = {cls: cls for cls in original_classes}
-        #                     st.session_state["class_renaming"] = {cls: cls for cls in original_classes}
-        #                     st.session_state["final_data"] = st.session_state["data"].copy()
-        #                     st.session_state["group_temp_mapping"] = {}
-                            
-        #                     # Nettoyer tous les états de groupes
-        #                     for i in range(n_groups):
-        #                         if f"selected_classes_{i}" in st.session_state:
-        #                             del st.session_state[f"selected_classes_{i}"]
-        #                         if f"group_name_{i}" in st.session_state:
-        #                             del st.session_state[f"group_name_{i}"]
-                            
-        #                     st.success("🗑️ All changes have been reset to original classes.")
-        #                     gc.collect()
-        #                     # st.rerun()
-        #                     st.experimental_rerun()
-
-
-        # with st.expander("🧹 **Edit Dataset Options and Save Renamed Matrix**", expanded=True):
-        #     st.markdown(
-        #         '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
-        #         unsafe_allow_html=True
-        #     )
-            
-        #     if "final_data" in st.session_state:
-        #         df = st.session_state["final_data"].copy()
-                
-        #         # ✅ Créer un index temporaire UNIQUEMENT pour l'affichage
-        #         display_df = df.reset_index(drop=False)
-        #         display_df.rename(columns={'index': 'Display_Index'}, inplace=True)
-                
-        #         # Pour l'affichage dans les multiselect
-        #         label_df = display_df[["Display_Index", "Class"]]
-        #         row_options = list(label_df.apply(lambda row: f"Index {row['Display_Index']} → {row['Class']}", axis=1))
-                
-        #         with st.form(key="edit_dataset_form"):
-        #             # --- Sélection des rows à supprimer ---
-        #             selected_rows = st.multiselect("Rows to remove:", row_options, key="selected_rows_to_remove")
-        #             selected_indexes = [int(row.split()[1]) for row in selected_rows] if selected_rows else []
-                    
-        #             # --- Colonnes disponibles à supprimer (protéger Class uniquement) ---
-        #             columns_available_to_remove = [col for col in df.columns if col != "Class"]
-        #             selected_columns = st.multiselect(
-        #                 "Columns to remove:", columns_available_to_remove, key="selected_columns_to_remove"
-        #             )
-                    
-        #             # --- Classes à supprimer ---
-        #             unique_classes = sorted(df["Class"].dropna().unique().tolist())
-        #             selected_classes_to_remove = st.multiselect(
-        #                 "Remove all samples belonging to the following Class(es):", unique_classes, key="classes_to_remove"
-        #             )
-                    
-        #             # --- Rows à garder ---
-        #             rows_to_keep = st.multiselect("Rows to keep:", row_options, key="rows_to_keep")
-        #             rows_keep_indexes = [int(row.split()[1]) for row in rows_to_keep] if rows_to_keep else []
-                    
-        #             # --- Colonnes à garder ---
-        #             columns_to_keep = st.multiselect(
-        #                 "Columns to keep:", list(df.columns), key="columns_to_keep"
-        #             )
-                    
-        #             col1, col2 = st.columns(2)
-        #             with col1:
-        #                 apply_changes = st.form_submit_button("Apply Changes")
-        #             with col2:
-        #                 reset_changes = st.form_submit_button("🔄 Reset All Changes")
-                
-        #         # ------------------------- APPLY CHANGES -------------------------
-        #         if apply_changes:
-        #             with st.spinner("Applying modifications..."):
-        #                 modified_df = df.copy()
-                        
-        #                 # Keep rows first (utiliser l'index actuel du DataFrame)
-        #                 if rows_keep_indexes:
-        #                     modified_df = modified_df.iloc[rows_keep_indexes]
-                        
-        #                 # Keep columns (force Class retention)
-        #                 if columns_to_keep:
-        #                     if "Class" not in columns_to_keep:
-        #                         columns_to_keep.append("Class")
-        #                     modified_df = modified_df[columns_to_keep]
-                        
-        #                 # Remove selected rows (utiliser l'index actuel)
-        #                 if selected_indexes:
-        #                     # Convertir les index d'affichage en index réels
-        #                     indexes_to_drop = [i for i in selected_indexes if i < len(modified_df)]
-        #                     modified_df = modified_df.drop(modified_df.index[indexes_to_drop], errors='ignore')
-                        
-        #                 # Remove selected columns (Class protected)
-        #                 if selected_columns:
-        #                     columns_to_drop = [col for col in selected_columns if col != "Class"]
-        #                     modified_df = modified_df.drop(columns=columns_to_drop, errors='ignore')
-                        
-        #                 # Remove selected class samples
-        #                 if selected_classes_to_remove:
-        #                     modified_df = modified_df[~modified_df["Class"].isin(selected_classes_to_remove)]
-                        
-        #                 # ✅ Reset index pour nettoyer (pas de colonne Original_Index créée)
-        #                 modified_df.reset_index(drop=True, inplace=True)
-                        
-        #                 st.session_state["final_data"] = modified_df
-        #                 st.session_state["data"] = modified_df.copy()
-        #                 st.success("✅ Modifications applied successfully.")
-                
-        #         # ------------------------- RESET -------------------------
-        #         if reset_changes:
-        #             st.session_state["final_data"] = st.session_state["data"].copy()
-        #             st.success("🔁 Dataset has been restored to its original state.")
-                
-        #         # ------------------------- PREVIEW -------------------------
-        #         st.markdown("**Preview Updated Dataset**")
-        #         preview_df = st.session_state["final_data"]
-                
-        #         # ✅ Vérifier qu'il n'y a pas de colonnes index parasites
-        #         preview_display = preview_df.copy()
-                
-        #         if preview_display.shape[1] > 100:
-        #             st.dataframe(pd.concat([preview_display.iloc[:, :50], preview_display.iloc[:, -50:]], axis=1))
-        #         else:
-        #             st.dataframe(preview_display)
-                
-        #         # ------------------------- DOWNLOAD CSV -------------------------
-        #         custom_filename = st.text_input(
-        #             "📄 Filename for the cleaned dataset:",
-        #             value="Cleaned_Data.csv",
-        #             help="Enter a filename (must end with .csv)."
-        #         )
-        #         if not custom_filename.lower().endswith(".csv"):
-        #             custom_filename = custom_filename + ".csv"
-                
-        #         # ✅ S'assurer qu'on n'exporte pas l'index
-        #         csv = preview_df.to_csv(index=False).encode('utf-8')
-        #         st.download_button(
-        #             label="📥 Download Cleaned Dataset (CSV)",
-        #             data=csv,
-        #             file_name=custom_filename,
-        #             mime='text/csv'
-        #         )
-
-
-
-        # st.markdown(
-        #     """
-        #     <h3 style="
-        #         font-size: 1.2rem;
-        #         border-bottom: 2px solid #318CE7;
-        #         text-align: center;
-        #         background-color: #f0f8ff;
-        #         padding: 10px;
-        #         border-radius: 5px;">
-        #         Data Wrangling
-        #     </h3>
-        #     """,
-        #     unsafe_allow_html=True
-        # )
-
-        # with st.expander("**⚙️ Preprocessing**", expanded=False):
-        #     st.markdown(
-        #         '<p style="color: gray; font-size: 14px">Filtering, Imputation, Binning, Normalization, Batch Effect Correction and sparse matrix handling</p>',
-        #         unsafe_allow_html=True
-        #     )
-
-        #     df_overview = st.session_state.get('overview_df')
-        #     submitted = False
-        #     if df_overview is None or df_overview.empty:
-        #         st.warning("⚠️ You must load a dataset in **Data Overview** before running preprocessing steps.")
-        #     else:
-        #         # base copy
-        #         data_to_preprocess = df_overview.copy()
-
-        #         apply_binning_option = st.checkbox(
-        #             "Shrink mass range or apply Binning?",
-        #             key="apply_binning_option",
-        #             help="Only relevant for ion spectra (MS1 data)."
-        #         )
-
-        #         # helper utilities local to this block
-        #         cols_exclude = ['Class', 'File', 'RT', 'Sum']
-
-        #         def get_numeric_features(df):
-        #             return [c for c in df.columns if c not in cols_exclude and pd.api.types.is_numeric_dtype(df[c])]
-
-        #         def shifted_gaussian_fill(series, shift=1.8, width=0.3, rng=None):
-        #             vals = series.dropna()
-        #             if vals.empty:
-        #                 return series
-        #             mu, sigma = vals.mean(), vals.std(ddof=0)
-        #             n_missing = series.isna().sum()
-        #             if n_missing == 0:
-        #                 return series
-        #             if rng is None:
-        #                 rng = np.random.default_rng()
-        #             filled = rng.normal(loc=mu - shift * sigma, scale=width * sigma, size=n_missing)
-        #             out = series.copy()
-        #             out.loc[out.isna()] = filled
-        #             return out
-
-        #         with st.form("preprocessing_form"):
-
-        #             # ------------------ Filters ------------------
-        #             min_detection_threshold = st.number_input(
-        #                 "Minimum features detection rate per class (%)",
-        #                 min_value=0,
-        #                 max_value=100,
-        #                 value=0,
-        #                 step=1,
-        #                 help="Keep features detected in at least X% of samples per class. "
-        #                     "If zero-inflated filter is applied, zeros are considered as missing values."
-        #             )
-
-        #             apply_zero_inflated_filter = st.checkbox(
-        #                 "Apply zero-inflated feature filter (sparse matrix)?",
-        #                 value=False,
-        #                 help="Treat zeros as missing values for filtering features that are mostly zeros and choose Detele Missing Values method"
-        #                     "(useful for RNA-seq / transcriptomics and MS1 data)."
-        #             )
-
-        #             # ------------------ Imputation ------------------
-        #             imputation_method = st.selectbox(
-        #                 "Select Missing Value Imputation Method",
-        #                 [
-        #                     'None', 'Mean Imputation', 'Median Imputation', 'Mode Imputation',
-        #                     'Delete Missing Values', 'KNN Imputation', 'Fillna with 0', 'Shifted Gaussian'
-        #                 ],
-        #                 key="imputation_method"
-        #             )
-
-        #             impute_by_class = st.checkbox(
-        #                 "🔹 Impute missing values per class?",
-        #                 value=False,
-        #                 help="Perform imputation separately within each Class."
-        #             )
-
-        #             remove_exclusive_missing = st.checkbox(
-        #                 "🔹Remove features that remain entirely missing in any class after class-wise imputation?",
-        #                 value=False,
-        #                 help="Removes features that are still all NaN in at least one class after imputation per Class."
-        #             )
-
-        #             # ------------------ Binning ------------------
-        #             bin_width = mass_range_min = mass_range_max = None
-        #             if apply_binning_option:
-        #                 mz_cols = [col for col in data_to_preprocess.columns if col not in cols_exclude]
-        #                 mz_values = []
-        #                 for col in mz_cols:
-        #                     try:
-        #                         mz_values.append(float(str(col).replace("mz_", "").strip()))
-        #                     except:
-        #                         continue
-        #                 if mz_values:
-        #                     min_detected, max_detected = min(mz_values), max(mz_values)
-        #                     st.info(f"Detected m/z range: {min_detected:.4f} - {max_detected:.4f} Da")
-        #                     bin_width = st.number_input("Bin Width (Da)", 0.0001, 100.0, 0.1, 0.1)
-        #                     mass_range_min = st.number_input("Min Mass Range", value=min_detected, format="%.4f")
-        #                     mass_range_max = st.number_input("Max Mass Range", value=max_detected, format="%.4f")
-        #                 else:
-        #                     st.warning("No valid m/z columns found for binning.")
-        #                     bin_width, mass_range_min, mass_range_max = 0.1, 0.0, 0.0
-
-        #             # ------------------ Normalization ------------------
-        #             normalization_type = st.selectbox(
-        #                 "Normalization Type",
-        #                 ['None', 'TIC', 'RMS', 'BasePeak', 'QNorm', 'Log Normalization', 'Log10', 'Log2'],
-        #                 key="normalization_type"
-        #             )
-
-        #             apply_combat = st.checkbox(
-        #                 "Apply batch effect correction (Combat)?",
-        #                 help=(
-        #                     "Apply Combat batch effect correction using the column 'Class' as batch labels.\n"
-        #                     "⚠️ If you want to correct for other factors (e.g., time points, tissue type, biological conditions), "
-        #                     "rename the relevant column to 'Class' before running this step.\n"
-        #                     "After correction, download the dataset and optionally rename columns according to your experimental design."
-        #                 )
-        #             )
-
-        #             # debug / performance options
-        #             # debug_mode = st.checkbox("Show debug logs?", value=False)
-        #             knn_k = st.number_input("K for KNN (if selected)", min_value=1, max_value=50, value=5, step=1,help="K defines how many nearest neighbours are used to generate each new imputed value. By default, K=5 means the missing value is estimated from the 5 closest samples. Because this method relies on neighbour structure, results may slightly vary and will never be strictly identical. Increase K for a more smoother imputation, or decrease it for more local sensitivity.")
-
-        #             submitted = st.form_submit_button("Preprocess Data")
-
-        #         if submitted:
-        #             try:
-        #                 data = data_to_preprocess.copy()
-        #                 progress = st.progress(0)
-
-        #                 # Stats for summary
-        #                 removed_by_detection = 0
-        #                 removed_by_exclusive_missing = 0
-
-        #                 # ------------------ Detection Filter ------------------
-        #                 try:
-        #                     numeric_cols = get_numeric_features(data)
-        #                     if min_detection_threshold > 0 and 'Class' in data.columns and numeric_cols:
-        #                         keep_features = []
-        #                         for col in numeric_cols:
-        #                             keep_col = True
-        #                             for _, group in data.groupby('Class'):
-        #                                 values = group[col]
-        #                                 # If zero-inflated => zero counts as missing
-        #                                 if apply_zero_inflated_filter:
-        #                                     present = ((values.notna()) & (values != 0)).sum()
-        #                                 else:
-        #                                     present = values.notna().sum()
-        #                                 present_pct = present / len(values) * 100
-        #                                 if present_pct < min_detection_threshold:
-        #                                     keep_col = False
-        #                                     # if debug_mode:
-        #                                     #     st.write(f"Drop {col}: {present_pct:.1f}% < {min_detection_threshold}% in a class")
-        #                                     # break
-        #                             if keep_col:
-        #                                 keep_features.append(col)
-
-        #                         removed_by_detection = len(numeric_cols) - len(keep_features)
-        #                         if removed_by_detection > 0:
-        #                             st.warning(f"{removed_by_detection} features removed due to threshold per class.")
-        #                         # keep at least cols_exclude; if no feature remains, keep only metadata
-        #                         kept_cols = cols_exclude + keep_features
-        #                         kept_cols = [c for c in kept_cols if c in data.columns]
-        #                         if keep_features:
-        #                             data = data[kept_cols].copy()
-        #                         else:
-        #                             # keep only metadata to avoid empty dataframes
-        #                             data = data[[c for c in cols_exclude if c in data.columns]].copy()
-        #                 except Exception as e:
-        #                     st.error(f"Error in detection filter: {e}")
-        #                     st.stop()
-        #                 else:
-        #                     progress.progress(20)
-
-        #                 # ------------------ Imputation ------------------
-        #                 try:
-        #                     numeric_cols = get_numeric_features(data)  # recalc after filtering
-        #                     if imputation_method != 'None' and numeric_cols:
-        #                         st.info(f"Applying {imputation_method}...")
-        #                         rng = np.random.default_rng()
-
-        #                         if imputation_method in ['Mean Imputation', 'Median Imputation']:
-        #                             func = np.mean if imputation_method == 'Mean Imputation' else np.median
-        #                             if impute_by_class and 'Class' in data.columns:
-        #                                 # fill per class using group agg
-        #                                 for cls, grp in data.groupby('Class'):
-        #                                     idx = grp.index
-        #                                     fill_vals = grp[numeric_cols].aggregate(func)
-        #                                     data.loc[idx, numeric_cols] = grp[numeric_cols].fillna(fill_vals).values
-        #                             else:
-        #                                 fill_vals = data[numeric_cols].aggregate(func)
-        #                                 data[numeric_cols] = data[numeric_cols].fillna(fill_vals)
-
-        #                         elif imputation_method == 'Mode Imputation':
-        #                             for col in numeric_cols:
-        #                                 if impute_by_class and 'Class' in data.columns:
-        #                                     for cls, grp in data.groupby('Class'):
-        #                                         mode = grp[col].mode()
-        #                                         if not mode.empty:
-        #                                             data.loc[grp.index, col] = grp[col].fillna(mode.iloc[0])
-        #                                 else:
-        #                                     mode = data[col].mode()
-        #                                     if not mode.empty:
-        #                                         data[col] = data[col].fillna(mode.iloc[0])
-
-        #                         elif imputation_method == 'Delete Missing Values':
-        #                             # delete columns that contain ANY NaN
-        #                             data = data.dropna(axis=1)
-        #                         elif imputation_method == 'KNN Imputation':
-        #                             from sklearn.impute import KNNImputer
-        #                             numeric_cols = get_numeric_features(data)
-        #                             if not numeric_cols:
-        #                                 # nothing to impute
-        #                                 pass
-        #                             else:
-        #                                 if impute_by_class and 'Class' in data.columns:
-        #                                     frames = []
-        #                                     for cls, grp in data.groupby('Class'):
-        #                                         grp_numeric = grp[numeric_cols].copy()
-        #                                         if len(grp_numeric) < max(1, int(knn_k)):
-        #                                             st.error(f"Class '{cls}' has fewer than {knn_k} samples for KNN. Aborting.")
-        #                                             st.stop()
-        #                                         # keep columns that have at least one non-NaN otherwise KNNImputer can't work on a constant-empty column
-        #                                         valid_cols = grp_numeric.columns[grp_numeric.notna().any()]
-        #                                         if len(valid_cols) == 0:
-        #                                             # nothing to impute in this class, keep as-is
-        #                                             frames.append(grp)
-        #                                             continue
-        #                                         imputer = KNNImputer(n_neighbors=min(int(knn_k), len(grp_numeric) - 1))
-        #                                         transformed = imputer.fit_transform(grp_numeric[valid_cols])
-        #                                         grp.loc[:, valid_cols] = pd.DataFrame(transformed, columns=valid_cols, index=grp.index)
-        #                                         frames.append(grp)
-        #                                     data = pd.concat(frames)
-        #                                 else:
-        #                                     if len(data) < max(1, int(knn_k)):
-        #                                         st.error(f"Dataset has fewer than {knn_k} samples for KNN. Aborting.")
-        #                                         st.stop()
-        #                                     grp_numeric = data[numeric_cols].copy()
-        #                                     valid_cols = grp_numeric.columns[grp_numeric.notna().any()]
-        #                                     if len(valid_cols) > 0:
-        #                                         imputer = KNNImputer(n_neighbors=min(int(knn_k), len(data) - 1))
-        #                                         data.loc[:, valid_cols] = pd.DataFrame(imputer.fit_transform(grp_numeric[valid_cols]), columns=valid_cols, index=data.index)
-
-        #                         elif imputation_method == 'Fillna with 0':
-        #                             data[numeric_cols] = data[numeric_cols].fillna(0)
-
-        #                         elif imputation_method == 'Shifted Gaussian':
-        #                             numeric_cols = get_numeric_features(data)
-        #                             if impute_by_class and 'Class' in data.columns:
-        #                                 parts = []
-        #                                 for _, grp in data.groupby('Class'):
-        #                                     grp2 = grp.copy()
-        #                                     for c in numeric_cols:
-        #                                         grp2[c] = shifted_gaussian_fill(grp2[c], rng=rng)
-        #                                     parts.append(grp2)
-        #                                 data = pd.concat(parts)
-        #                             else:
-        #                                 for c in numeric_cols:
-        #                                     data[c] = shifted_gaussian_fill(data[c], rng=rng)
-
-        #                         else:
-        #                             st.error(f"Unknown imputation method: {imputation_method}")
-        #                     # if imputation method is None or no numeric cols, nothing to do
-        #                 except Exception as e:
-        #                     st.error(f"Error during imputation: {e}")
-        #                     st.stop()
-        #                 else:
-        #                     progress.progress(40)
-        #                     st.success("✅ Imputation completed")
-
-        #                 # ------------------ Remove features still entirely missing in some class ------------------
-        #                 try:
-        #                     # recalc numeric columns after imputation / drops
-        #                     numeric_cols = get_numeric_features(data)
-        #                     if remove_exclusive_missing and numeric_cols:
-        #                         to_drop = []
-        #                         if impute_by_class and 'Class' in data.columns:
-        #                             for col in numeric_cols:
-        #                                 # if any class has all NaN for this column -> drop it
-        #                                 if any(group[col].isna().all() for _, group in data.groupby('Class')):
-        #                                     to_drop.append(col)
-        #                         else:
-        #                             to_drop = [col for col in numeric_cols if data[col].isna().all()]
-
-        #                         if to_drop:
-        #                             data.drop(columns=to_drop, inplace=True)
-        #                             removed_by_exclusive_missing = len(to_drop)
-        #                             if debug_mode:
-        #                                 st.write(f"Removed exclusive-missing features: {to_drop}")
-        #                 except Exception as e:
-        #                     st.error(f"Error removing exclusive missing features: {e}")
-        #                     st.stop()
-        #                 else:
-        #                     progress.progress(60)
-
-        #                 # Final strict validation: no NaN allowed in numeric features
-        #                 try:
-        #                     numeric_cols_final = get_numeric_features(data)
-        #                     total_remaining_nans = int(data[numeric_cols_final].isna().sum().sum()) if numeric_cols_final else 0
-        #                     if total_remaining_nans > 0:
-        #                         st.error(f"❌ {total_remaining_nans} missing values remain after preprocessing. Please adjust imputation settings or enable removal of exclusive missing features.")
-        #                         st.stop()
-        #                 except Exception as e:
-        #                     st.error(f"Validation error after imputation: {e}")
-        #                     st.stop()
-
-        #                 # ------------------ Binning ------------------
-        #                 try:
-        #                     if apply_binning_option and bin_width is not None and mass_range_min is not None and mass_range_max is not None:
-        #                         # call domain-specific binning function (must exist in your codebase)
-        #                         data = apply_binning_to_mass_range(data, bin_width, (mass_range_min, mass_range_max))
-        #                 except Exception as e:
-        #                     st.error(f"Binning error: {e}")
-        #                 else:
-        #                     progress.progress(70)
-        #                     if apply_binning_option:
-        #                         st.success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
-
-        #                 # ------------------ Normalization ------------------
-        #                 try:
-        #                     if normalization_type != 'None':
-        #                         data = preprocess_data(data, normalization_type, progress)
-        #                 except Exception as e:
-        #                     st.error(f"Normalization error: {e}")
-        #                 else:
-        #                     progress.progress(85)
-        #                     if normalization_type != 'None':
-        #                         st.success(f"{normalization_type} normalization applied")
-        #                     else:
-        #                         st.info("No normalization applied")
-
-        #                 # ------------------ Combat Batch Correction ------------------
-        #                 try:
-        #                     if apply_combat:
-        #                         if 'Class' not in data.columns or len(data['Class'].unique()) < 2:
-        #                             st.warning("Combat skipped: need at least 2 classes with 'Class' column.")
-        #                         else:
-        #                             from neurocombat_sklearn import CombatModel
-        #                             from sklearn.preprocessing import LabelEncoder
-        #                             le = LabelEncoder()
-        #                             batch_labels = le.fit_transform(data['Class']).reshape(-1, 1)
-        #                             feat_cols = [c for c in data.columns if c not in cols_exclude]
-        #                             # ensure numeric and drop any col that still contains NaN (shouldn't happen)
-        #                             features = data[feat_cols].select_dtypes(include=[np.number]).copy()
-        #                             features = features.dropna(axis=1)
-        #                             if features.shape[1] == 0:
-        #                                 st.warning("No numeric features available for Combat after dropping NaNs.")
-        #                             else:
-        #                                 combat = CombatModel()
-        #                                 corrected = combat.fit_transform(features, batch_labels)
-        #                                 meta = data[[c for c in cols_exclude if c in data.columns]].reset_index(drop=True)
-        #                                 data = pd.concat([meta, pd.DataFrame(corrected, columns=features.columns)], axis=1)
-        #                                 st.success("✅ Combat correction applied")
-        #                 except Exception as e:
-        #                     st.error(f"❌ Combat correction failed: {e}")
-
-        #                 progress.progress(100)
-
-        #                 # ------------------ Save & Summary ------------------
-        #                 st.session_state['preprocessed_data'] = data
-
-        #                 st.markdown("**Preprocessing Summary**")
-        #                 st.write(f"- Detection filter: {min_detection_threshold}% per class → {removed_by_detection} features removed")
-        #                 st.write(f"- Imputation: {imputation_method} {'(per class)' if impute_by_class else ''} → {removed_by_exclusive_missing} exclusive missing features removed")
-        #                 st.write(f"- Binning: {'Yes' if apply_binning_option else 'No'}")
-        #                 st.write(f"- Normalization: {normalization_type}")
-        #                 st.write(f"- Batch correction: {'Yes' if apply_combat else 'No'}")
-        #                 # count features excluding metadata
-        #                 feature_count = len([c for c in data.columns if c not in cols_exclude])
-        #                 st.write(f"- Total features after preprocessing: {feature_count}")
-
-        #                 # ------------------ Preview & Download ------------------
-        #                 df_preview = st.session_state['preprocessed_data']
-        #                 st.markdown("**Preprocessed Data Preview**")
-        #                 total_cols = df_preview.shape[1]
-
-        #                 if total_cols > 100:
-        #                     st.info(f"Too many features ({total_cols}). Showing first 50 & last 50 columns. You can download the full preprocessed dataset below.")
-        #                     preview_df = pd.concat([df_preview.iloc[:, :50], df_preview.iloc[:, -50:]], axis=1)
-        #                     st.dataframe(preview_df)
-        #                 else:
-        #                     st.dataframe(df_preview)
-
-
-        #                 import csv
-
-        #                 # Text input pour nom du fichier
-        #                 file_name_input = st.text_input(
-        #                     "Enter a name for your CSV file:",
-        #                     value="preprocessed_data",
-        #                     help="Provide a custom name for the preprocessed dataset CSV file (without extension)."
-        #                 )
-
-        #                 # Utiliser StringIO pour écrire le CSV avec les bons paramètres
-        #                 output = io.StringIO()
-        #                 df_preview.to_csv(
-        #                     output,
-        #                     index=False,
-        #                     sep=';',  # Séparateur point-virgule
-        #                     quoting=csv.QUOTE_NONNUMERIC,  # Entoure les champs non numériques de guillemets
-        #                 )
-        #                 output.seek(0)  # Retourner au début du buffer
-
-        #                 # Bouton de téléchargement
-        #                 st.download_button(
-        #                     label="📥 Download full preprocessed data (CSV)",
-        #                     data=output.read().encode('utf-8-sig'),  # Encoder en bytes avec BOM
-        #                     file_name=f"{file_name_input}.csv",
-        #                     mime='text/csv'
-        #                 )
-
-
-        #             except Exception as e:
-        #                 st.error(f"Preprocessing failed: {e}")
-
 
         # session keys
         st.session_state.setdefault('overview_df', None)
@@ -4522,6 +3303,7 @@ def main():
 
 
 
+
         # Expander pour Machine Learning
         with st.expander("**🤖 Train Machine Learning Models**"):
             st.markdown(
@@ -4532,8 +3314,15 @@ def main():
 
             # ----- Formulaire ML Training -----
             with st.form("ml_training_form"):
-                # --- Inputs communs ---
-                data_sources_list = ['None','Raw data','Preprocessed','Preprocessed + Oversampled', 'Preprocessed + Undersampled']
+
+                data_sources_list = [
+                    'None',
+                    'Raw data',
+                    'Preprocessed',
+                    'Preprocessed + Oversampled',
+                    'Preprocessed + Undersampled'
+                ]
+
                 data_source = st.selectbox(
                     "Data Source for Training",
                     data_sources_list,
@@ -4560,11 +3349,28 @@ def main():
                         key="form_n_components"
                     )
 
+                # ⚡ Plus rapide par défaut
                 n_splits = st.number_input(
                     "Number of Splits for Cross-Validation",
-                    min_value=2, max_value=50, value=5, step=1,
+                    min_value=2, max_value=50, value=3, step=1,
                     key="form_n_splits",
-                    help="Number of folds for cross-validation."
+                    help="Number of folds for cross-validation. (3 is faster, 5 is more stable)"
+                )
+
+                # ✅ Calibration (optionnelle)
+                calibrate_models = st.checkbox(
+                    "Calibrate models (slower but better probabilities)",
+                    value=False,
+                    key="form_calibrate_models",
+                    help=(
+                        "Calibration improves probability estimates (confidence scores). "
+                        "⚠️ This makes training much slower because it adds an internal cross-validation."
+                    )
+                )
+
+                st.caption(
+                    "💡 Tip: Keep calibration OFF for faster training. "
+                    "Turn it ON only if you really need to extract probabilities for : RidgeClassifier, SGDClassifier, Perceptron,PassiveAggressiveClassifier."
                 )
 
                 train_models_btn = st.form_submit_button("Train Machine Learning Models")
@@ -4578,14 +3384,19 @@ def main():
                     'Preprocessed + Oversampled': 'oversampled_data',
                     'Preprocessed + Undersampled': 'undersampled_data'
                 }
+
                 data_train = st.session_state.get(source_map.get(data_source))
+
                 # Raw data → remplacer par final_data si existant
                 if data_source == 'Raw data' and st.session_state.get('final_data') is not None:
                     data_train = st.session_state['final_data']
 
                 if data_train is not None:
-                    drop_cols = ['Class', 'File', 'RT', 'Sum','Original_index']
-                    X = data_train.drop(columns=[col for col in drop_cols if col in data_train.columns], errors='ignore')
+                    drop_cols = ['Class', 'File', 'RT', 'Sum', 'Original_index']
+                    X = data_train.drop(
+                        columns=[col for col in drop_cols if col in data_train.columns],
+                        errors='ignore'
+                    )
                     y = data_train['Class']
 
             # ----- Exécution du training -----
@@ -4594,22 +3405,32 @@ def main():
                     st.warning("Please select a valid data source.")
                 else:
                     feature_names = X.columns.tolist()
+
                     # Appliquer la réduction si demandé
                     if apply_reduction and reduction_choice:
                         n_samples = X.shape[0]
+
                         if reduction_choice == 'PCA':
                             reducer = PCA(n_components)
                             X = reducer.fit_transform(X)
+
                         elif reduction_choice == 'UMAP':
-                            reducer = umap.UMAP(n_components=n_components,
-                                                n_neighbors=max(2, min(int(np.log2(n_samples)), 100)),
-                                                random_state=1, n_jobs=10)
+                            reducer = umap.UMAP(
+                                n_components=n_components,
+                                n_neighbors=max(2, min(int(np.log2(n_samples)), 100)),
+                                random_state=1,
+                                n_jobs=10  # ✅ full CPU
+                            )
                             X = reducer.fit_transform(X)
+
                         elif reduction_choice == 't-SNE':
-                            tsne = TSNE(n_components=n_components,
-                                        perplexity=max(5, min(int(np.sqrt(n_samples)), 50)),
-                                        random_state=1)
+                            tsne = TSNE(
+                                n_components=n_components,
+                                perplexity=max(5, min(int(np.sqrt(n_samples)), 50)),
+                                random_state=1
+                            )
                             X = tsne.fit_transform(X)
+
                         feature_names = [f"Component {i+1}" for i in range(n_components)]
 
                     st.session_state['reduced_data'] = pd.DataFrame(X, columns=feature_names)
@@ -4620,14 +3441,33 @@ def main():
                         too_few_classes = [cls for cls, count in class_counts.items() if count < n_splits]
 
                         if too_few_classes:
-                            st.error(f"The following class(es) have fewer samples than the number of CV splits ({n_splits}): {too_few_classes}")
+                            st.error(
+                                f"The following class(es) have fewer samples than the number of CV splits ({n_splits}): "
+                                f"{too_few_classes}"
+                            )
+
                         elif len(class_counts) < 2:
                             st.error("At least two classes are required for training.")
+
                         else:
                             st.info("⏳ Training models... This may take a few minutes.")
+
                             progress_bar = st.progress(0)
-                            model_results = train_models(X, y, n_splits=n_splits, progress_bar=progress_bar)
+                            status_text = st.empty()  # ✅ évite l'impression de freeze
+
+                            # --- Training ---
+                            status_text.info("Starting training...")
+
+                            model_results = train_models(
+                                X,
+                                y,
+                                n_splits=n_splits,
+                                progress_bar=progress_bar,             # ✅ 10 CPU
+                                calibrate=calibrate_models    # ✅ checkbox
+                            )
+
                             st.session_state['models'] = model_results
+                            status_text.success("Training complete!")
                             st.success("Models trained successfully!")
 
                     except RuntimeError as e:
@@ -4639,72 +3479,53 @@ def main():
                         with st.expander("Show full traceback"):
                             st.code(traceback.format_exc(), language="python")
 
-
             # ----- Formulaire pour analyse des modèles -----
             if 'models' in st.session_state and st.session_state['models']:
+
                 with st.form("ml_report_form"):
                     show_comparison_btn = st.form_submit_button("Show Model Comparison")
-                    model_options = ['None'] + list(st.session_state['models'].keys()) if isinstance(st.session_state['models'], dict) else ['None']
-                    
+
+                    model_options = ['None'] + list(st.session_state['models'].keys()) \
+                        if isinstance(st.session_state['models'], dict) else ['None']
+
                     selected_model = st.selectbox(
                         "Select ML Model for Report",
                         model_options,
                         key="form_selected_model"
                     )
-                    
+
                     # Synchroniser avec la clé utilisée par SHAP/LIME
-                    st.session_state["selected_model"] = selected_model  
+                    st.session_state["selected_model"] = selected_model
 
                     show_report_btn = st.form_submit_button("Show Model Report")
 
-
+                # ----- Report -----
                 if show_report_btn and selected_model != 'None':
+
                     model_data = st.session_state['models'][selected_model]
+
                     st.write("**Classification Report**")
                     report_data = model_data['classification_report']
 
-                    # Cas 1 : Si report_data est un dictionnaire
+                    # Cas 1 : dict
                     if isinstance(report_data, dict):
                         report_df = pd.DataFrame(report_data).transpose()
 
-                        # Extraire les métriques globales
                         global_metrics = report_df.loc[['accuracy', 'macro avg', 'weighted avg']]
-                        # Extraire les métriques par classe
                         class_metrics = report_df.drop(['accuracy', 'macro avg', 'weighted avg'])
 
-                        # Créer un DataFrame combiné
-                        combined_df = pd.concat([class_metrics, pd.DataFrame([[''] * len(class_metrics.columns)], columns=class_metrics.columns), global_metrics])
+                        combined_df = pd.concat([
+                            class_metrics,
+                            pd.DataFrame([[''] * len(class_metrics.columns)], columns=class_metrics.columns),
+                            global_metrics
+                        ])
 
-                        # Afficher le tableau combiné
-                        # Sélectionner uniquement les colonnes numériques attendues
                         numeric_cols = ['precision', 'recall', 'f1-score', 'support']
                         numeric_cols = [c for c in numeric_cols if c in combined_df.columns]
 
-                        # Forcer la conversion en float (les strings deviennent NaN)
                         combined_df[numeric_cols] = combined_df[numeric_cols].apply(
                             pd.to_numeric, errors='coerce'
                         )
-
-                        # st.dataframe(
-                        #     combined_df.style
-                        #     .format("{:.4f}")
-                        #     .set_table_styles([
-                        #         {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
-                        #                                     ('font-size', '18px'),
-                        #                                     ('text-align', 'center'),
-                        #                                     ('font-weight', 'bold')]},
-                        #         {'selector': 'td', 'props': [('font-size', '16px'),
-                        #                                     ('text-align', 'center')]},
-                        #         {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
-                        #         {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
-                        #     ])
-                        #     # .highlight_max(axis=0, color='lightgreen')
-                        #     .highlight_max(subset=numeric_cols, axis=0, color='lightgreen')
-                        #     .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
-                        #     use_container_width=True,
-                        #     height=400
-                        # )
-
 
                         st.dataframe(
                             combined_df.style
@@ -4725,49 +3546,14 @@ def main():
                             height=400
                         )
 
-                    # Cas 2 : Si report_data est une chaîne de caractères
+                    # Cas 2 : str
                     elif isinstance(report_data, str):
-                        lines = report_data.strip().split('\n')
-                        data = []
-                        for line in lines:
-                            if line.strip() and not line.strip().startswith((' ', '\t')):
-                                data.append(line.strip().split())
+                        st.code(report_data)
 
-                        headers = ['class', 'precision', 'recall', 'f1-score', 'support']
-                        df_list = []
-                        for line in data:
-                            if len(line) == 5:
-                                df_list.append(line)
-
-                        report_df = pd.DataFrame(df_list, columns=headers)
-                        report_df = report_df.set_index('class')
-
-                        # Afficher le DataFrame
-                        st.dataframe(
-                            report_df.style
-                            .format("{:.4f}", subset=['precision', 'recall', 'f1-score'])
-                            .set_table_styles([
-                                {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
-                                                            ('font-size', '18px'),
-                                                            ('text-align', 'center'),
-                                                            ('font-weight', 'bold')]},
-                                {'selector': 'td', 'props': [('font-size', '16px'),
-                                                            ('text-align', 'center')]},
-                                {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
-                                {'selector': 'tr:nth-child(odd)', 'props': [('background-color', 'white')]}
-                            ])
-                            .highlight_max(axis=0, color='lightgreen')
-                            .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
-                            use_container_width=True,
-                            height=400
-                        )
-
-                    # Cas 3 : Fallback
                     else:
                         st.code(report_data)
 
-
-                    # ===== Shared layout parameters (uniform article style) =====
+                    # Confusion Matrix
                     FIG_SIZE = 850
                     TITLE_SIZE = 20
                     AXIS_TITLE_SIZE = 24
@@ -4784,29 +3570,26 @@ def main():
                         colorscale='Viridis',
                         text=cm,
                         texttemplate="<b>%{text}</b>",
-                        textfont=dict(
-                            size=26,         
-                            family=FONT_FAMILY
-                        ),
-                        
+                        textfont=dict(size=26, family=FONT_FAMILY),
                         hoverinfo="z"
                     ))
+
                     fig.update_layout(
-                        title=dict(
-                            text="Confusion Matrix",
-                            font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
-                        ),
+                        title=dict(text="Confusion Matrix",
+                                font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
                         width=FIG_SIZE,
                         height=FIG_SIZE,
                         margin=dict(l=50, r=50, b=50, t=80),
                         xaxis=dict(
-                            title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            title=dict(text="Predicted label",
+                                    font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="y",
                             constrain="domain"
                         ),
                         yaxis=dict(
-                            title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            title=dict(text="True label",
+                                    font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="x",
                             constrain="domain"
@@ -4815,7 +3598,7 @@ def main():
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Normalized Confusion Matrix (%)
+                    # Normalized Confusion Matrix
                     cm_norm = cm.astype(float) / cm.sum(axis=1)[:, np.newaxis] * 100
                     fig_norm = go.Figure(data=go.Heatmap(
                         z=cm_norm,
@@ -4824,50 +3607,73 @@ def main():
                         colorscale='jet',
                         text=np.round(cm_norm, 2),
                         texttemplate="<b>%{text}%</b>",
-                        textfont=dict(
-                            size=11,         
-                            family=FONT_FAMILY
-                        ),
-                        
+                        textfont=dict(size=11, family=FONT_FAMILY),
                         hoverinfo="z"
                     ))
 
                     fig_norm.update_layout(
-                        title=dict(
-                            text="Normalized Confusion Matrix (%)",
-                            font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)
-                        ),
+                        title=dict(text="Normalized Confusion Matrix (%)",
+                                font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
                         width=FIG_SIZE,
                         height=FIG_SIZE,
-                        margin=dict(l=50, r=50, b=50, t=80),  # Réduire les marges
+                        margin=dict(l=50, r=50, b=50, t=80),
                         xaxis=dict(
-                            title=dict(text="Predicted label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            title=dict(text="Predicted label",
+                                    font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
-                            scaleanchor="y",  # Forcer l'aspect carré
-                            constrain="domain"  # Aligner les axes
+                            scaleanchor="y",
+                            constrain="domain"
                         ),
                         yaxis=dict(
-                            title=dict(text="True label", font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                            title=dict(text="True label",
+                                    font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
-                            scaleanchor="x",  # Forcer l'aspect carré
-                            constrain="domain"  # Aligner les axes
+                            scaleanchor="x",
+                            constrain="domain"
                         ),
                         font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
                     )
-
-                    # Affichage avec adaptation à la largeur du conteneur
                     st.plotly_chart(fig_norm, use_container_width=True)
-
-
 
                     # Learning Curves
                     try:
-                        learning_curve_fig = plot_learning_curve(model_data['model'], X, y, n_splits=n_splits)
+                        learning_curve_fig = plot_learning_curve(
+                            model_data['model'],
+                            X,
+                            y,
+                            n_splits=n_splits
+                        )
                         st.plotly_chart(learning_curve_fig)
                     except Exception as e:
                         st.error(f"Error plotting learning curve: {e}")
 
-                # Affichage de la comparaison de modèles
+
+                    # from sklearn.base import clone
+
+                    # X_used = st.session_state.get("ml_X_used")
+                    # y_used = st.session_state.get("ml_y_used")
+
+                    # if X_used is None or y_used is None:
+                    #     st.warning("No training dataset found in session. Please train models again.")
+                    # else:
+                    #     model_clone = clone(model_data["model"])
+
+                    #     # ROC
+                    #     try:
+                    #         roc_fig = plot_roc_curve_cv(model_clone, X_used, y_used, n_splits=n_splits)
+                    #         st.plotly_chart(roc_fig, use_container_width=True)
+                    #     except Exception as e:
+                    #         st.warning(f"ROC curve not available: {e}")
+
+                    #     # PR
+                    #     try:
+                    #         pr_fig = plot_precision_recall_curve_cv(model_clone, X_used, y_used, n_splits=n_splits)
+                    #         st.plotly_chart(pr_fig, use_container_width=True)
+                    #     except Exception as e:
+                    #         st.warning(f"PR curve not available: {e}")
+
+
+                # Comparaison modèles
                 if show_comparison_btn:
                     fig = compare_models(st.session_state['models'])
                     st.plotly_chart(fig)
