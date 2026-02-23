@@ -1054,13 +1054,22 @@ def main():
 
             if st.session_state.show_info["missing_values"]:
 
+                # import plotly.express as px
+                # import plotly.graph_objects as go
+                # from plotly.subplots import make_subplots
+                
+
                 relevant_cols, missing_df = calculate_missing_values(df)
 
                 # ============================================================
-                # MISSING VALUES (GLOBAL + PER CLASS)
+                # MISSING VALUES
                 # ============================================================
+                st.markdown("**Missing Values**")
+
                 if missing_df.empty:
-                    st.success("No missing values detected.")
+                    st.success("✅ No missing values detected.")
+                    total_missing_pct = 0
+                    zero_inflated_features = pd.Series(dtype=float)
                 else:
                     total_missing_pct = (
                         df[relevant_cols].isnull().sum().sum()
@@ -1069,60 +1078,106 @@ def main():
 
                     st.success(f"Overall missingness: **{total_missing_pct:.2f}%**")
 
+                    # ── 1. Pie charts par classe ──────────────────────────────
+                    if "Class" in df.columns:
+                        classes = df["Class"].unique()
+
+
+                        import plotly.express as px
+                        palette = px.colors.qualitative.Plotly
+                        color_map = {cls: palette[i % len(palette)] for i, cls in enumerate(sorted(classes))}
+
+                        # Une subplot de pies : 1 pie par classe
+                        from plotly.subplots import make_subplots
+                        n_cols = min(3, len(classes))
+                        n_rows = -(-len(classes) // n_cols)  # ceiling division
+
+                        fig_pies = make_subplots(
+                            rows=n_rows,
+                            cols=n_cols,
+                            specs=[[{"type": "pie"}] * n_cols for _ in range(n_rows)],
+                            subplot_titles=[str(c) for c in sorted(classes)]
+                        )
+
+                        for i, cls in enumerate(sorted(classes)):
+                            sub = df[df["Class"] == cls][relevant_cols]
+                            n_missing = sub.isnull().sum().sum()
+                            n_total = sub.shape[0] * len(relevant_cols)
+                            n_present = n_total - n_missing
+
+                            row = i // n_cols + 1
+                            col = i % n_cols + 1
+
+                            fig_pies.add_trace(
+                                go.Pie(
+                                    labels=["Present", "Missing"],
+                                    values=[n_present, n_missing],
+                                    marker_colors=[color_map[cls], "#d3d3d3"],
+                                    hole=0.4,
+                                    textinfo="percent",
+                                    showlegend=(i == 0),
+                                    name=str(cls)
+                                ),
+                                row=row, col=col
+                            )
+
+                        fig_pies.update_layout(
+                            title_text="Missing Values (%) per Class",
+                            height=300 * n_rows,
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.15)
+                        )
+                        st.plotly_chart(fig_pies, use_container_width=True)
+
+                    # ── 2. Stacked bar : missing par feature, coloré par classe ──
+                    if "Class" in df.columns:
+                        # st.markdown("**Missing % per Feature — breakdown by Class**")
+
+                        records = []
+                        for cls in sorted(df["Class"].unique()):
+                            sub = df[df["Class"] == cls][relevant_cols]
+                            pct = sub.isnull().mean() * 100
+                            for feat, val in pct.items():
+                                records.append({"Feature": feat, "Class": str(cls), "Missing (%)": val})
+
+                        feat_class_df = pd.DataFrame(records)
+
+                        # Trier les features par missingness globale décroissante
+                        feat_order = (
+                            feat_class_df.groupby("Feature")["Missing (%)"]
+                            .mean()
+                            .sort_values(ascending=False)
+                            .index.tolist()
+                        )
+
+                        fig_stacked = px.bar(
+                            feat_class_df,
+                            x="Feature",
+                            y="Missing (%)",
+                            color="Class",
+                            color_discrete_map={str(k): v for k, v in color_map.items()},
+                            barmode="group",
+                            category_orders={"Feature": feat_order},
+                            title="Missing % per Feature × Class",
+                            labels={"Missing (%)": "Missing (%)"}
+                        )
+                        fig_stacked.update_layout(
+                            xaxis_tickangle=45,
+                            xaxis_showticklabels=len(relevant_cols) < 60,
+                            height=400
+                        )
+                        st.plotly_chart(fig_stacked, use_container_width=True)
+
+
                     st.markdown("**📋 Per-feature missing summary**")
                     st.dataframe(missing_df, use_container_width=True)
 
-                    import plotly.express as px
-
-                    # ---------- Missing per feature (global) ----------
-                    fig_missing_feat = px.bar(
-                        missing_df.reset_index(),
-                        x="index",
-                        y="Percentage (%)",
-                        title="Missing Values per Feature (Global)",
-                        labels={
-                            "index": "Feature",
-                            "Percentage (%)": "Missing (%)"
-                        }
-                    )
-                    fig_missing_feat.update_layout(xaxis_tickangle=45)
-                    st.plotly_chart(fig_missing_feat, use_container_width=True)
-
-                    # ---------- NEW: Missing % per Class ----------
-                    if "Class" in df.columns:
-                        missing_by_class = (
-                            df.groupby("Class")[relevant_cols]
-                            .apply(lambda g: g.isnull().sum().sum() / (g.shape[0] * len(relevant_cols)) * 100)
-                            .reset_index(name="Missing (%)")
-                        )
-
-                        fig_missing_class = px.box(
-                            missing_by_class,
-                            y="Missing (%)",
-                            x="Class",
-                            points="all",
-                            title="Missing Percentage per Class"
-                        )
-                        st.plotly_chart(fig_missing_class, use_container_width=True)
-
-                    # ---------- Missing heatmap ----------
-                    st.markdown("**Missingness pattern (sample × feature)**")
-                    heatmap_data = df[relevant_cols].isnull().astype(int)
-                    fig_heatmap = px.imshow(
-                        heatmap_data.T,
-                        aspect="auto",
-                        color_continuous_scale="Blues",
-                        labels=dict(x="Sample", y="Feature", color="Missing")
-                    )
-                    st.plotly_chart(fig_heatmap, use_container_width=True)
-
                 # ============================================================
-                # ZERO-INFLATION (NaN EXCLUDED)
+                # ZERO-INFLATION
                 # ============================================================
                 st.markdown("---")
-                st.markdown("**🧊 Zero-Inflation Analysis**")
+                st.markdown("**Zero-Inflation Analysis**")
+                st.caption("NaN values are excluded from zero-inflation calculations.")
 
-                # ⚠️ IMPORTANT: NaN are NOT considered as zeros
                 non_nan_df = df[relevant_cols]
 
                 zero_pct_features = (
@@ -1144,35 +1199,117 @@ def main():
                     .sort_values("Zero (%)", ascending=False)
                 )
 
-                st.markdown("**Zero percentage per feature (NaN excluded)**")
-                st.dataframe(zero_feat_df, use_container_width=True)
+                # st.markdown("**QC-style: Zero-inflation per Sample (colored by Class)**")
 
-                # ---------- Improved plot: Zero-inflation per feature ----------
-                fig_zero_feat = px.histogram(
-                    zero_feat_df,
-                    x="Zero (%)",
-                    nbins=40,
-                    title="Zero-Inflation Distribution per Feature (%)",
-                    marginal="box"
+                zero_sample_df = zero_pct_samples.reset_index()
+                zero_sample_df.columns = ["SampleIndex", "Zero (%)"]
+
+                if "Class" in df.columns:
+                    # Récupérer la classe pour chaque index
+                    class_series = df["Class"].reset_index(drop=True).astype(str)
+                    zero_sample_df["Class"] = class_series.values
+
+                    fig_qc = px.box(
+                        zero_sample_df,
+                        x="Class",
+                        y="Zero (%)",
+                        color="Class",
+                        color_discrete_map={str(k): v for k, v in color_map.items()},
+                        points="all",
+                        hover_data=["SampleIndex"],
+                        title="Zero-Inflation per Sample — QC Overview (NaN excluded)",
+                        labels={"Zero (%)": "Zero features (%)"}
+                    )
+                else:
+                    fig_qc = px.box(
+                        zero_sample_df,
+                        y="Zero (%)",
+                        points="all",
+                        title="Zero-Inflation per Sample — QC Overview (NaN excluded)",
+                    )
+
+                fig_qc.update_traces(
+                    jitter=0.3,
+                    marker=dict(size=5, opacity=0.6),
+                    boxmean="sd"  
                 )
-                st.plotly_chart(fig_zero_feat, use_container_width=True)
-
-                # ---------- Improved plot: Zero-inflation per sample ----------
-                zero_sample_df = zero_pct_samples.reset_index(name="Zero (%)")
-
-                fig_zero_sample = px.histogram(
-                    zero_sample_df,
-                    x="Zero (%)",
-                    nbins=40,
-                    title="Zero-Inflation Distribution per Sample (%)",
-                    marginal="violin"
+                fig_qc.update_layout(
+                    showlegend=False,
+                    height=420,
+                    yaxis_title="Zero features (%)",
+                    plot_bgcolor="white",
+                    yaxis=dict(gridcolor="#eeeeee")
                 )
-                st.plotly_chart(fig_zero_sample, use_container_width=True)
+                st.plotly_chart(fig_qc, use_container_width=True)
 
-                # ============================================================
-                # ZERO-INFLATED FEATURES DETECTION
-                # ============================================================
-                zero_threshold = 50  # %
+                # ── Cumulative detection plot (style protéomique) ─────────────
+                st.markdown("**Cumulative Feature Detection Rate**")
+                st.caption(
+                    "Each point = % of features detected (non-zero, non-NaN) in at least X% of samples. "
+                    "Inspired by standard proteomics QC figures."
+                )
+
+                thresholds = range(0, 101, 5)
+                cum_records = []
+
+                if "Class" in df.columns:
+                    for cls in sorted(df["Class"].unique()):
+                        sub = df[df["Class"] == cls][relevant_cols]
+                        for thr in thresholds:
+                            detected_frac = (sub != 0).sum() / sub.notna().sum()
+                            n_feat_detected = (detected_frac * 100 >= thr).sum()
+                            cum_records.append({
+                                "Detection threshold (% samples)": thr,
+                                "Features retained (%)": n_feat_detected / len(relevant_cols) * 100,
+                                "Class": str(cls)
+                            })
+                    cum_df = pd.DataFrame(cum_records)
+                    fig_cum = px.line(
+                        cum_df,
+                        x="Detection threshold (% samples)",
+                        y="Features retained (%)",
+                        color="Class",
+                        color_discrete_map={str(k): v for k, v in color_map.items()},
+                        markers=True,
+                        title="Cumulative Feature Detection Curve per Class"
+                    )
+                else:
+                    for thr in thresholds:
+                        detected_frac = (non_nan_df != 0).sum() / non_nan_df.notna().sum()
+                        n_feat_detected = (detected_frac * 100 >= thr).sum()
+                        cum_records.append({
+                            "Detection threshold (% samples)": thr,
+                            "Features retained (%)": n_feat_detected / len(relevant_cols) * 100,
+                        })
+                    cum_df = pd.DataFrame(cum_records)
+                    fig_cum = px.line(
+                        cum_df,
+                        x="Detection threshold (% samples)",
+                        y="Features retained (%)",
+                        markers=True,
+                        title="Cumulative Feature Detection Curve"
+                    )
+
+                # Ligne de référence 50% et 70%
+                for xref in [50, 70]:
+                    fig_cum.add_vline(
+                        x=xref,
+                        line_dash="dash",
+                        line_color="gray",
+                        annotation_text=f"{xref}% threshold",
+                        annotation_position="top right"
+                    )
+
+                fig_cum.update_layout(
+                    plot_bgcolor="white",
+                    yaxis=dict(gridcolor="#eeeeee", range=[0, 105]),
+                    xaxis=dict(gridcolor="#eeeeee"),
+                    height=420
+                )
+                st.plotly_chart(fig_cum, use_container_width=True)
+
+                # ── Détection features zero-inflated ─────────────────────────
+                zero_threshold = 50
                 zero_inflated_features = zero_pct_features[zero_pct_features > zero_threshold]
 
                 if len(zero_inflated_features) > 0:
@@ -1180,7 +1317,6 @@ def main():
                         f"⚠️ {len(zero_inflated_features)} features show >{zero_threshold}% zeros "
                         "(zero-inflated, NaN excluded)."
                     )
-
                     st.dataframe(
                         zero_inflated_features
                         .reset_index()
@@ -1190,25 +1326,22 @@ def main():
                 else:
                     st.success("✅ No strongly zero-inflated features detected.")
 
-
+                st.markdown("**📋 Zero % per feature (NaN excluded)**")
+                st.dataframe(zero_feat_df, use_container_width=True)
 
                 # ============================================================
-                # OMICS-AWARE IMPUTATION RECOMMENDATIONS (LC-MS/MS oriented)
+                # IMPUTATION RECOMMENDATIONS
                 # ============================================================
+                st.markdown("---")
                 st.markdown("**💡 Imputation & Filtering Recommendations**")
 
-                # ---- Cas faible missingness / faible sparsité
-                if total_missing_pct < 5 and zero_inflated_features.empty:
+                if total_missing_pct < 5 and len(zero_inflated_features) == 0:
                     st.success(
                         "✅ **Low missingness & low sparsity detected**\n\n"
                         "- Data are globally well-covered across samples\n"
-                        "- **Recommended imputation:**\n"
-                        "  - Mean / Median (robust & fast) or fillna with zero (conisered as not detected)\n"
-                        "  - Mode (if discrete / rounded intensities)\n"
+                        "- **Recommended imputation:** Mean / Median or fillna(0) (not detected)\n"
                         "- Feature filtering not strictly required"
                     )
-
-                # ---- Cas LC-MS/MS après identification (LFQ protéo / métabo)
                 elif total_missing_pct < 20:
                     st.info(
                         "🔬 **LC-MS/MS after identification (LFQ-like data)**\n\n"
@@ -1222,22 +1355,17 @@ def main():
                         "- Keep features detected in **≥50–60% of samples per class**\n"
                         "- Remove features missing in entire classes"
                     )
-
-                # ---- Cas fortement sparse / zero-inflated (RNA-seq, MS spectra)
                 else:
                     st.warning(
                         "⚠️ **High sparsity / strong zero-inflation detected**\n\n"
                         "- Many features are absent in a large fraction of samples\n"
                         "- Typical of **count-like data** or **direct MS spectral matrices**\n\n"
                         "**Recommended strategy:**\n"
-                        "- 🔹 Apply **feature detection filtering first**\n"
-                        "  → keep features detected in **≥70% of samples**\n"
+                        "- 🔹 Apply **feature detection filtering first** → keep features detected in **≥70% of samples**\n"
                         "- 🔹 Then apply **KNN** or **Shifted Gaussian** imputation\n"
                         "- ❌ Avoid Mean/Mode in highly sparse matrices\n\n"
-                        "**Practical rule:**\n"
-                        "- If a feature is zero or missing in >70% of samples → discard it"
+                        "**Practical rule:** if a feature is zero or missing in >70% of samples → discard it"
                     )
-
 
         # -------------------- Normality, Distribution & Normalization Guidance --------------------
         with st.expander("**📊 Distribution & Normalization Guidance**", expanded=st.session_state.show_info["shapiro_wilk_test"]):
@@ -5790,6 +5918,7 @@ if __name__ == "__main__":
     # matplotlib.use('TkAgg')
     matplotlib.use('Agg')
     main()
+
 
 
 
