@@ -391,6 +391,14 @@ def perform_gsea(gene_lists, class_names, gene_set, organism, num_pathways):
 
     st.markdown("**Genes involved in each pathway**")
     st.dataframe(gene_df)
+    csv = gene_df.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        label="📥 Download table as CSV",
+        data=csv,
+        file_name="genes_in_pathways.csv",
+        mime="text/csv"
+    )
 
     st.markdown("**Interactive Gene Interaction Network**")
     G = nx.Graph()
@@ -487,4 +495,5 @@ def perform_gsea(gene_lists, class_names, gene_set, organism, num_pathways):
 
     del results, gene_mapping, combined_results, gene_df, G, pos, edge_trace, node_trace
     gc.collect()
+
 
