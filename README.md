@@ -31,8 +31,9 @@
 - **Regression modeling** — ML and MLP for continuous targets; R², RMSE, residual plots, cross-validation
 - **Longitudinal analysis** — mixed-effects models, trajectory visualisation, repeated-measures statistics (`Subject_ID` + `Time` columns)
 - **HTML report generator** — one-click self-contained export of all session plots, tables, and metrics
-- **SHAP/LIME improved** — beeswarm, bar, force plots; sample-level and global explanations
-- **Raw data conversion** — Bruker `.d`, Waters `.raw`, Thermo Fisher formats → `.mzML` / `.mzXML` directly in the sidebar
+- **Clinical metadata support** — any column ending with `_meta` is treated as clinical metadata; available as alternative classification/regression targets, and used to colour heatmap annotations, PCA/UMAP points, and model training
+- **Extended format support** — auto-detection extended to Spectronaut, FragPipe, DESeq2/edgeR, Salmon, kallisto, MetaboAnalyst, XCMS, MZmine...
+- **Bug fixes & stability**
 
 ---
 
@@ -53,7 +54,7 @@ If you use **Profiler** or **Profiler Desktop** in your research, please cite:
 Example datasets for Profiler Desktop are available at:  
 👉 https://github.com/yanisZirem/Profiler_v1_requests_datatests
 
-Includes: MaxQuant / DIA-NN outputs, raw Bruker & Waters files, multi-omics tabular data (binary & multi-class), survival data, and the peer-review paper datasets.
+Includes: MaxQuant / DIA-NN outputs, raw Bruker & Waters files, multi-omics tabular data (binary & multi-class), survival data, and the peer-review paper datasets and longitudinal data.
 
 ---
 
@@ -183,21 +184,6 @@ In rare cases (corporate firewall, offline machines), the automatic installer ma
 
 ---
 
-## Raw Data Conversion
-
-Profiler Desktop v1.2 includes a built-in **Data Conversion** module in the sidebar — no external tool required.
-
-Supported input formats:
-
-| Vendor | Format | Output |
-|---|---|---|
-| Bruker | `.d` folders | `.mzML` / `.mzXML` |
-| Waters | `.raw` folders | `.mzML` / `.mzXML` |
-| Thermo Fisher | `.raw` files | `.mzML` / `.mzXML` |
-
-Once converted, files can be processed directly with **DIA-NN**, **MaxQuant**, or **Spectronaut** and loaded back into Profiler.
-
----
 
 ## Additional Tool: MSI2Profiler
 
