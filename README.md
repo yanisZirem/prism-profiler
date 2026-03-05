@@ -198,11 +198,10 @@ MSI2Profiler allows you to:
 - Concatenate ROIs
 - Export a Profiler-ready CSV matrix
 
-> Download MSI2Profiler directly from the [Profiler homepage](https://prism-profiler.univ-lille.fr).
+> Download MSI2Profiler directly from the [Profiler homepage](https://prism-profiler.univ-lille.fr) or get the Windows executable [here](https://prism-profiler.univ-lille.fr/desktop/).
 
 ```bash
 python MSI2profiler.py
-```
 
 Dependencies: `pip install pandas numpy plotly pyimzml`
 
