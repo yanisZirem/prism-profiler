@@ -1,20 +1,20 @@
 # MSI2Profiler
 
-**MSI2Profiler** is an additional desktop tool for **Profiler**, designed to extract and preprocess **MSI (Mass Spectrometry Imaging)** data from `.imzML` files.  
+**MSI2Profiler** is an additional desktop tool for **Profiler**, designed to extract and preprocess **MSI (Mass Spectrometry Imaging)** data from `.imzML` files.
 
 It allows users to **bin**, **normalize**, **visualize**, and **export** MSI spectra for direct import into **Profiler** for downstream analysis.
 
 ---
 
-## 📥 Download
+## Download
 
-The MSI2Profiler executable is now **available directly from the Profiler web page** for easy installation.  
+The MSI2Profiler executable is now **available directly for Windows** [here](https://prism-profiler.univ-lille.fr/desktop/).
 
 **🔗 Collaboration:** The source code (`MSI2profiler.py`) remains available for developers and bioinformaticians to explore, customize, or contribute to the tool.
 
 ---
 
-## 🛠️ Features
+##  Features
 
 | Feature | Description |
 |---------|-------------|
@@ -28,16 +28,15 @@ The MSI2Profiler executable is now **available directly from the Profiler web pa
 
 ---
 
-## 🖥️ Open-Source Usage (for collaboration)
+## Open-Source Usage (for collaboration)
 
 For developers or bioinformaticians who want to run the source code:
 
-1. Open a terminal (CMD, PowerShell, or macOS/Linux terminal).  
-2. Navigate to the folder containing `MSI2profiler.py`.  
+1. Open a terminal (CMD, PowerShell, or macOS/Linux terminal).
+2. Navigate to the folder containing `MSI2profiler.py`.
 3. Run the following command:
 ```bash
 python MSI2profiler.py
-
 
 ## Requirements
 
