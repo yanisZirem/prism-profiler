@@ -184,35 +184,51 @@ In rare cases (corporate firewall, offline machines), the automatic installer ma
 
 ---
 
-
 ## Additional Tool: MSI2Profiler
 
-Profiler Desktop includes **MSI2Profiler**, a companion tool for **Mass Spectrometry Imaging** preprocessing.
+Profiler Desktop includes **MSI2Profiler**, a companion tool for **Mass Spectrometry Imaging (MSI) preprocessing**.
 
 Located in: `Additional_tools/MSI2Profiler/`
 
-MSI2Profiler allows you to:
-- Load `.imzML` files from MALDI-MSI and DESI-MSI experiments
-- Normalise spectra (TIC, Median, RMS)
-- Bin m/z features
-- Concatenate ROIs
-- Export a Profiler-ready CSV matrix
+### Features
 
-> Download MSI2Profiler directly from the [Profiler homepage](https://prism-profiler.univ-lille.fr) or get the Windows executable [here](https://prism-profiler.univ-lille.fr/desktop/).
+MSI2Profiler allows you to:
+
+- Load `.imzML` files from **MALDI-MSI** and **DESI-MSI** experiments
+- Normalise spectra (**TIC**, **Median**, **RMS**)
+- Bin **m/z** features
+- Concatenate **ROIs (Regions of Interest)**
+- Export a **Profiler-ready CSV matrix**
+
+> Download **MSI2Profiler** directly from the  
+> [Profiler homepage](https://prism-profiler.univ-lille.fr)  
+> or get the Windows executable here:  
+> https://prism-profiler.univ-lille.fr/desktop/
+
+### Run MSI2Profiler
 
 ```bash
 python MSI2profiler.py
+```
 
-Dependencies: `pip install pandas numpy plotly pyimzml`
+### Dependencies
 
-For full instructions: [MSI2Profiler README](https://github.com/yanisZirem/prism-profiler/blob/main/Additional_tools/MSI2Profiler/MSI2Profiler%20README.md)
+```bash
+pip install pandas numpy plotly pyimzml
+```
+
+### Documentation
+
+For full instructions:
+
+https://github.com/yanisZirem/prism-profiler/blob/main/Additional_tools/MSI2Profiler/MSI2Profiler%20README.md
 
 ---
 
 ## System Requirements
 
-| | Minimum | Recommended |
-|---|---|---|
+| Component | Minimum | Recommended |
+|-----------|--------|-------------|
 | OS | Windows 10 / macOS 11 / Ubuntu 20.04 | Windows 11 / macOS 13 / Ubuntu 22.04 |
 | RAM | 16 GB | 32 GB |
 | CPU | 4 cores | 8 cores |
@@ -222,11 +238,7 @@ For full instructions: [MSI2Profiler README](https://github.com/yanisZirem/prism
 
 ## Authors & Contact
 
-Developed by **Yanis Zirem**
-📧 yanis.zirem@univ-lille.fr
+Developed by **Yanis Zirem**  
+📧 yanis.zirem@univ-lille.fr  
 
-Supervised by **Prof. Michel Salzet** and **Prof. Isabelle Fournier**  
-**PRISM U1192 Laboratory** — Protéomique, Réponse Inflammatoire, Spectrométrie de Masse  
-INSERM — Université de Lille
-
-Protected by **INSERM Transfert** — APP/IDDN.FR2.0013.0300044.0005.S6.C7.20258.0009.312301
+Supervised by **Prof. Michel Salzet** and **Prof. Isabelle Fournier**
