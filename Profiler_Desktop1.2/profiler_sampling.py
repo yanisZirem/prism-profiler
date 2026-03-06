@@ -27,6 +27,22 @@ def apply_sampling(df, technique='none', _progress_bar=None):
         sampler = ADASYN(n_neighbors=2, sampling_strategy='minority', n_jobs=-1)
 
     if sampler:
+        # ── NaN guard ────────────────────────────────────────────────────────
+        nan_cols = X.columns[X.isna().any()].tolist()
+        if nan_cols:
+            st.error(
+                "⚠️ **Missing values detected in your dataset.**\n\n"
+                "Oversampling algorithms (SMOTE / ADASYN) cannot handle NaN values. "
+                "Please follow these steps before applying oversampling:\n\n"
+                "1. Go to the **Preprocessing** step\n"
+                "2. Apply **Imputation** (e.g. mean, median, or KNN imputer...)\n"
+                "3. Come back here and select the **preprocessed dataset**\n"
+                "4. Then apply oversampling\n\n"
+                f"Columns with missing values: `{', '.join(nan_cols)}`"
+            )
+            _progress_bar.progress(1.0)
+            return df
+        # ─────────────────────────────────────────────────────────────────────
         try:
             X_resampled, y_resampled = sampler.fit_resample(X, y)
             resampled_df = pd.concat([
@@ -42,7 +58,7 @@ def apply_sampling(df, technique='none', _progress_bar=None):
             _progress_bar.progress(1.0)
             return resampled_df
         except ValueError as e:
-            st.error(f"Erreur lors du suréchantillonnage : {str(e)}")
+            st.error(f"❌ Oversampling error: {str(e)}")
             _progress_bar.progress(1.0)
             return df
     else:
