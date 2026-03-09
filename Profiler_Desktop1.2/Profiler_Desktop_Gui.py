@@ -2982,13 +2982,75 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
 
             # ════════════════════════════════════════════════════════════════════════
-            # GROUP 2 — CLEAN & EDIT   (Rename · Edit · Save)
-            # ════════════════════════════════════════════════════════════════════════
+            # GROUP 2 — CLEAN & EDIT   (Dataset Inspector · Rename · Edit)
+            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═
             with _grp_clean:
-                st.markdown(_picon("edit","Rename classes, remove rows/columns, then export your cleaned dataset.", "#10b981"), unsafe_allow_html=True)
-                _t1_rename, _t1_edit, _t1_save = st.tabs([
-                    "  Rename Classes", "  Edit Dataset", "  Save Dataset"
+                st.markdown(_picon("edit","View data, rename classes, edit columns/rows, then export your cleaned dataset.", "#10b981"), unsafe_allow_html=True)
+                _t1_save, _t1_rename, _t1_edit = st.tabs([
+                    "  📊 Dataset Inspector", "  ✏️ Rename Classes", "  🛠️ Edit Dataset"
                 ])
+
+                # ── TAB 1: DATASET INSPECTOR ────────────────────────────────────────
+                with _t1_save:
+                    st.markdown(
+                        '<p style="color: gray; font-size: 14px">Preview your dataset, inspect column metadata, then download.</p>',
+                        unsafe_allow_html=True
+                    )
+                    import csv as _csv_mod
+                    _save_options = {
+                        "Raw / Edited": st.session_state.get("final_data", st.session_state.get("data")),
+                        "Preprocessed": st.session_state.get("preprocessed_data"),
+                        "Oversampled": st.session_state.get("oversampled_data"),
+                        "Undersampled": st.session_state.get("undersampled_data"),
+                    }
+                    _save_options = {k: v for k, v in _save_options.items() if v is not None}
+                    if not _save_options:
+                        st.info("⚠️ No dataset available yet. Load or process data first.")
+                    else:
+                        _save_choice = st.selectbox("📂 Select dataset to inspect:", list(_save_options.keys()), key="save_tab_source")
+                        _save_df = _save_options[_save_choice]
+                        _n_rows, _n_cols = _save_df.shape
+                        _n_classes = _save_df["Class"].nunique() if "Class" in _save_df.columns else "N/A"
+                        _n_missing = int(_save_df.isnull().sum().sum())
+                        _bann1, _bann2, _bann3, _bann4 = st.columns(4)
+                        _bann1.metric("Samples", f"{_n_rows:,}")
+                        _bann2.metric("Features", f"{_n_cols:,}")
+                        _bann3.metric("Classes", _n_classes)
+                        st.markdown("**Data Table**")
+                        if _save_df.shape[1] > 100:
+                            st.dataframe(pd.concat([_save_df.iloc[:, :50], _save_df.iloc[:, -50:]], axis=1), use_container_width=True)
+                        else:
+                            st.dataframe(_save_df, use_container_width=True)
+                        st.markdown("**Column Metadata**")
+                        _meta_rows = []
+                        for _col in _save_df.columns:
+                            _s = _save_df[_col]
+                            _miss = int(_s.isnull().sum())
+                            _miss_pct = round(_miss / _n_rows * 100, 2) if _n_rows > 0 else 0.0
+                            _nuniq = int(_s.nunique())
+                            if pd.api.types.is_numeric_dtype(_s):
+                                _mn = round(float(_s.mean(skipna=True)), 4) if _miss < _n_rows else "N/A"
+                                _std = round(float(_s.std(skipna=True)), 4) if _miss < _n_rows else "N/A"
+                                _min_ = round(float(_s.min(skipna=True)), 4) if _miss < _n_rows else "N/A"
+                                _max_ = round(float(_s.max(skipna=True)), 4) if _miss < _n_rows else "N/A"
+                            else:
+                                _mn = _std = _min_ = _max_ = "—"
+                            _meta_rows.append({"Column": _col, "Type": str(_s.dtype),
+                                "Missing": _miss, "Missing (%)": _miss_pct, "Unique values": _nuniq,
+                                "Mean": _mn, "Std": _std, "Min": _min_, "Max": _max_})
+                        st.dataframe(pd.DataFrame(_meta_rows), use_container_width=True, hide_index=True)
+                        st.markdown("#### 💾 Export")
+                        _save_fname = st.text_input("📄 Filename:", value=f"{_save_choice.replace('/', '_').replace(' ', '_')}.csv", key="save_tab_fname")
+                        if not _save_fname.lower().endswith(".csv"):
+                            _save_fname += ".csv"
+                        _save_csv = _save_df.to_csv(index=False, sep=';', quoting=_csv_mod.QUOTE_NONNUMERIC, encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 Download Dataset (CSV)",
+                            data=_save_csv.encode("utf-8-sig"),
+                            file_name=_save_fname, mime="text/csv", key="save_tab_dl_btn"
+                        )
+
+                # ── TAB 2: RENAME CLASSES ────────────────────────────────────────
                 with _t1_rename:
                     st.markdown(
                         '<p style="color: gray; font-size: 14px">Standardize class labels: unify replicates, merge groups, or relabel unknowns.</p>',
@@ -3202,21 +3264,47 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                 with _t1_edit:
                     st.markdown(
-                        '<p style="color: gray; font-size: 14px">Remove or keep specific rows/columns from the dataset as needed.</p>',
+                        '<p style="color: gray; font-size: 14px">Rename columns, remove or keep specific rows/columns/classes from the dataset.</p>',
                         unsafe_allow_html=True
                     )
-            
+
                     if "final_data" in st.session_state:
                         df = st.session_state["final_data"].copy()
-                
+
+                        # ── Rename Columns ─────────────────────────────────────────────────
+                        st.markdown("##### 📝 Rename Columns")
+                        _renamable_cols = [c for c in df.columns if c != "Class"]
+                        with st.expander("Rename one or more columns", expanded=False):
+                            _col_to_rename = st.selectbox("Select column to rename:", _renamable_cols, key="col_rename_select")
+                            _col_new_name = st.text_input("New column name:", value=_col_to_rename, key="col_rename_new_name")
+                            if st.button("✅ Apply Column Rename", key="apply_col_rename_btn"):
+                                if _col_new_name and _col_new_name != _col_to_rename:
+                                    if _col_new_name in df.columns:
+                                        st.error(f"Column '{_col_new_name}' already exists.")
+                                    else:
+                                        _renamed_df = st.session_state["final_data"].rename(columns={_col_to_rename: _col_new_name})
+                                        st.session_state["final_data"] = _renamed_df
+                                        st.session_state["data"] = _renamed_df.copy()
+                                        for _dk in ("preprocessed_data", "oversampled_data", "undersampled_data"):
+                                            _ddf = st.session_state.get(_dk)
+                                            if _ddf is not None and _col_to_rename in _ddf.columns:
+                                                st.session_state[_dk] = _ddf.rename(columns={_col_to_rename: _col_new_name})
+                                        st.success(f"Column '{_col_to_rename}' renamed to '{_col_new_name}'.")
+                                        st.rerun()
+                                else:
+                                    st.warning("Please enter a different name.")
+
+                        st.markdown("---")
+                        st.markdown("##### ✂️ Remove / Keep Rows & Columns")
+
                         # ✅ Créer un index temporaire UNIQUEMENT pour l'affichage
                         display_df = df.reset_index(drop=False)
-                        display_df.rename(columns={'index': 'Display_Index'}, inplace=True)
-                
+                        display_df.rename(columns={"index": "Display_Index"}, inplace=True)
+
                         # Pour l'affichage dans les multiselect
                         label_df = display_df[["Display_Index", "Class"]]
                         row_options = list(label_df.apply(lambda row: f"Index {row['Display_Index']} → {row['Class']}", axis=1))
-                
+
                         with st.form(key="edit_dataset_form"):
                             # --- Sélection des rows à supprimer ---
                             selected_rows = st.multiselect("Rows to remove:", row_options, key="selected_rows_to_remove")
@@ -3323,43 +3411,6 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 
 
 
-                with _t1_save:
-                    st.markdown(
-                        '<p style="color: gray; font-size: 14px">Snapshot of the current working dataset — always reflects the latest rename, edit, preprocessing or sampling actions.</p>',
-                        unsafe_allow_html=True
-                    )
-                    import csv as _csv_mod
-                    _save_options = {
-                        "Raw / Edited": st.session_state.get("final_data", st.session_state.get("data")),
-                        "Preprocessed": st.session_state.get("preprocessed_data"),
-                        "Oversampled": st.session_state.get("oversampled_data"),
-                        "Undersampled": st.session_state.get("undersampled_data"),
-                    }
-                    _save_options = {k: v for k, v in _save_options.items() if v is not None}
-                    if not _save_options:
-                        st.info("No dataset available yet. Load or process data first.")
-                    else:
-                        _save_choice = st.selectbox("Dataset to save:", list(_save_options.keys()), key="save_tab_source")
-                        _save_df = _save_options[_save_choice]
-                        st.markdown(f"**{_save_df.shape[0]:,} samples × {_save_df.shape[1]:,} columns**")
-                        if _save_df.shape[1] > 100:
-                            st.dataframe(pd.concat([_save_df.iloc[:, :50], _save_df.iloc[:, -50:]], axis=1), use_container_width=True)
-                        else:
-                            st.dataframe(_save_df, use_container_width=True)
-                        _save_fname = st.text_input("📄 Filename:", value=f"{_save_choice.replace('/', '_').replace(' ', '_')}.csv", key="save_tab_fname")
-                        if not _save_fname.lower().endswith(".csv"):
-                            _save_fname += ".csv"
-                        _save_csv = _save_df.to_csv(index=False, sep=';', quoting=_csv_mod.QUOTE_NONNUMERIC, encoding='utf-8-sig')
-                        st.download_button(
-                            label="📥 Download Dataset (CSV)",
-                            data=_save_csv.encode("utf-8-sig"),
-                            file_name=_save_fname,
-                            mime="text/csv",
-                            key="save_tab_dl_btn"
-                        )
-
-
-            # ════════════════════════════════════════════════════════════════════════
             # GROUP 3 — PROCESS   (Preprocessing · Post-QC)
             # ════════════════════════════════════════════════════════════════════════
             with _grp_process:
@@ -3388,10 +3439,21 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         )
 
                         # helper utilities local to this block
-                        cols_exclude = ['Class', 'File', 'RT', 'Sum', 'Original_Index']
+                        # cols_exclude built dynamically — preserves _meta + ALL non-numeric columns
+                        _BASE_EXCLUDE = {'Class', 'File', 'RT', 'Sum', 'Original_Index', 'ID', 'Original_index'}
+
+                        def get_cols_exclude(df):
+                            """Return all columns that are NOT numeric features (metadata + categoricals)."""
+                            exclude = set(_BASE_EXCLUDE)
+                            exclude.update(c for c in df.columns if str(c).endswith('_meta'))
+                            exclude.update(c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c]))
+                            return [c for c in df.columns if c in exclude]
+
+                        cols_exclude = get_cols_exclude(data_to_preprocess)
 
                         def get_numeric_features(df):
-                            return [c for c in df.columns if c not in cols_exclude and pd.api.types.is_numeric_dtype(df[c])]
+                            _exc = set(get_cols_exclude(df))
+                            return [c for c in df.columns if c not in _exc and pd.api.types.is_numeric_dtype(df[c])]
 
                         def shifted_gaussian_fill(series, shift=1.8, width=0.3, rng=None):
                             vals = series.dropna()
@@ -3553,6 +3615,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         if removed_by_detection > 0:
                                             st.warning(f"{removed_by_detection} features removed due to threshold per class.")
                                         # keep at least cols_exclude; if no feature remains, keep only metadata
+                                        cols_exclude = get_cols_exclude(data)  # recompute: captures _meta + categoricals
                                         kept_cols = cols_exclude + keep_features
                                         kept_cols = [c for c in kept_cols if c in data.columns]
                                         if keep_features:

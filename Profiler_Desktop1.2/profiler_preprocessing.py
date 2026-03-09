@@ -1,26 +1,3 @@
-"""
-Software Name: Profiler
-Author: Yanis Zirem
-Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
-Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
-
-Context:
-This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
-It is designed for archiving on Zenodo and integration into GitHub releases.
-
-License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
-Citation:
-If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
-
-Links:
-- GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
-"""
-
-
-
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -31,7 +8,8 @@ import numexpr as ne
 from pandarallel import pandarallel
 import gc
 # Initialiser pandarallel
-pandarallel.initialize(progress_bar=False, nb_workers=10)
+# ── pandarallel: 3 workers max — 10 workers × N users = CPU saturation ───────
+pandarallel.initialize(progress_bar=False, nb_workers=3)
 
 
 def preprocess_data(all_data, normalization_type=None, _progress_bar=None):
@@ -44,10 +22,16 @@ def preprocess_data(all_data, normalization_type=None, _progress_bar=None):
     if _progress_bar:
         _progress_bar.progress(0.1)
 
-    # Colonnes fixes à garder
-    fixed_columns = ['Class', 'File', 'RT', 'Sum']
-    if not all(col in all_data.columns for col in fixed_columns):
-        st.error("Missing one or more required columns.")
+    # ── Preserve ALL non-numeric columns: hard metadata + _meta cols + any categorical ──
+    _NON_FEAT_BASE = {'Class', 'File', 'RT', 'Sum', 'ID', 'Original_index'}
+    fixed_columns = [
+        c for c in all_data.columns
+        if c in _NON_FEAT_BASE
+        or str(c).endswith('_meta')
+        or not pd.api.types.is_numeric_dtype(all_data[c])
+    ]
+    if not {'Class'}.issubset(all_data.columns):
+        st.error("Missing required column: 'Class'.")
         return pd.DataFrame()
 
     fixed_data = all_data[fixed_columns].reset_index(drop=True)
@@ -278,8 +262,10 @@ def total_intensity_norm(X):
 
 
 ########Paralellization dask ########
+import numexpr as ne
+import dask.dataframe as dd
 
-ne.set_num_threads(10)
+ne.set_num_threads(4)  # aligned with BLAS thread limit in Profiler.py
 
 def preprocess_data_dask(ddf, normalization_type=None, _progress_bar=None):
     if _progress_bar:
