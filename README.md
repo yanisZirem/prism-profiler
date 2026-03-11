@@ -1,7 +1,22 @@
-# Profiler Desktop — v1.2
+<div align="center">
 
-> **Offline multi-omics analysis. No upload. No limits.**  
-> Developed by [PRISM U1192 Laboratory](https://www.inserm.fr/en/research-inserm/prism-u1192/), Université de Lille — Protected by INSERM Transfert
+<img src="Profiler_Desktop1.2/app/assets/profiler_logo.png" alt="Profiler Logo" width="180"/>
+
+# Profiler Desktop v1.2 & MSI2Profiler — Offline Multi-Omics Analysis
+
+**No upload. No limits. 100% local.**
+
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](License%20%26%20Intellectual%20Property.txt)
+[![Python](https://img.shields.io/badge/Python-3.8.20-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey.svg)](https://github.com/yanisZirem/prism-profiler/releases/latest)
+[![DOI](https://img.shields.io/badge/DOI-10.1093%2Fbioinformatics%2Fbtaf644-green.svg)](https://doi.org/10.1093/bioinformatics/btaf644)
+[![Release](https://img.shields.io/github/v/release/yanisZirem/prism-profiler?color=orange)](https://github.com/yanisZirem/prism-profiler/releases/latest)
+
+Developed by [PRISM U1192 Laboratory](https://www.inserm.fr/en/research-inserm/prism-u1192/) — INSERM / CHU de Lille / Université de Lille
+
+[⬇️ Download Latest Release](https://github.com/yanisZirem/prism-profiler/releases/latest) · [🌐 Web Version](https://prism-profiler.univ-lille.fr) · [📦 Test Datasets](https://github.com/yanisZirem/Profiler_v1_requests_datatests) · [📄 Paper](https://doi.org/10.1093/bioinformatics/btaf644)
+
+</div>
 
 ---
 
@@ -9,236 +24,223 @@
 
 **Profiler Desktop v1.2** is the standalone, fully offline version of [Profiler](https://prism-profiler.univ-lille.fr) — an interactive platform for multi-omics data analysis. It runs entirely on your local machine: no internet connection, no data upload, no account required.
 
-**v1.2 adds:** GSEA enrichment, continuous regression (ML + MLP), longitudinal analysis module, one-click HTML report generation, and improved SHAP/LIME visualisations.
-
-### Why Desktop?
-
 | | Web version | Desktop v1.2 |
 |---|---|---|
-| Installation | None | Required (automated) |
+| Installation | None | Automated (one double-click) |
 | Internet required | Yes | **No** |
 | Upload size limit | Restricted | **Unlimited** |
 | Data privacy | In-session | **100% local** |
 | All features | ✓ | ✓ |
 | HTML report export | ✓ | ✓ |
-| Raw data conversion | ✓ (sidebar) | ✓ (sidebar) |
+| Raw data conversion | ✓ | ✓ (optional) |
 
 ---
 
 ## What's New in v1.2
 
-- **GSEA** — Gene Set Enrichment Analysis from any analysis output (volcano, heatmap, Venn/UpSet), joining ORA across 100+ databases
+- **GSEA** — Gene Set Enrichment Analysis from any output (volcano, heatmap, Venn/UpSet), joining ORA across 100+ databases
 - **Regression modeling** — ML and MLP for continuous targets; R², RMSE, residual plots, cross-validation
-- **Longitudinal analysis** — mixed-effects models, trajectory visualisation, repeated-measures statistics (`Subject_ID` + `Time` columns)
+- **Longitudinal analysis** — mixed-effects models, trajectory visualisation, repeated-measures statistics
 - **HTML report generator** — one-click self-contained export of all session plots, tables, and metrics
-- **Clinical metadata support** — any column ending with `_meta` is treated as clinical metadata; available as alternative classification/regression targets, and used to colour heatmap annotations, PCA/UMAP points, and model training
-- **Extended format support** — auto-detection extended to Spectronaut, FragPipe, DESeq2/edgeR, Salmon, kallisto, MetaboAnalyst, XCMS, MZmine...
-- **Bug fixes & stability**
+- **Clinical metadata support** — any column ending with `_meta` used as clinical covariate or classification target
+- **Extended format support** — Spectronaut, FragPipe, DESeq2/edgeR, Salmon, kallisto, MetaboAnalyst, XCMS, MZmine and more
+- **Refactored architecture** — clean `app/` package structure, robust installer, `protobuf` conflict resolved
 
 ---
 
-## Citation
+## Installation — Windows 10 / 11
 
-If you use **Profiler** or **Profiler Desktop** in your research, please cite:
+### Requirements
 
-> **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**  
-> *Profiler: an open web platform for multi-omics analysis.*  
-> **Bioinformatics**, Oxford University Press, 2025.  
-> DOI: [10.1093/bioinformatics/btaf644](https://doi.org/10.1093/bioinformatics/btaf644)  
-> PMID: [41324558](https://pubmed.ncbi.nlm.nih.gov/41324558/)
-
----
-
-## Test Data
-
-Example datasets for Profiler Desktop are available at:  
-👉 https://github.com/yanisZirem/Profiler_v1_requests_datatests
-
-Includes: MaxQuant / DIA-NN outputs, raw Bruker & Waters files, multi-omics tabular data (binary & multi-class), survival data, and the peer-review paper datasets and longitudinal data.
-
----
-
-## Installation Guide
-
-Profiler Desktop v1.2 is designed primarily for **Windows** with a fully automated installer.  
-Manual installation is also available for Linux and macOS.
-
----
-
-### ✅ Recommended — Windows 10 / 11 (Automatic Installer)
-
-#### Step 1 — Download
-
-- Go to the Profiler Desktop GitHub repository
-- Click **Code → Download ZIP**
-- **Extract the ZIP** anywhere on your computer (e.g. `C:\Users\YourName\Downloads\prism-profiler-desktop-v1.2`)
-
-> ⚠️ Do not run anything before extracting the ZIP.
-
-#### Step 2 — Run the Installer
-
-1. Open the extracted folder
-2. **Double-click:** `install_profiler.cmd`
-
-> ✅ This is the only file you need to run.  
-> ❌ Do **not** run `install_profiler.ps1` manually.
-
-The installer opens a command window and runs automatically. Installation may take a few minutes.
-
-> **Conda Terms of Service:** Since 2024, Conda requires acceptance of its Terms of Service. The installer handles this automatically — no action required from the user.
-
-#### What the Installer Does
-
-The installer automatically:
-
-- Detects whether **Conda** is already installed
-- Installs **Miniconda (user-only)** if missing
-- Creates a Conda environment named **`profiler`**
-- Installs all Python dependencies
-- Sets up the **raw data conversion** module (Bruker / Waters / Thermo Fisher → mzML)
-- Creates a **Desktop shortcut** named *Profiler Desktop*
+- Windows 10 or 11 (64-bit)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/download) — **must be installed first**
+- ~3 GB disk space
 
 > 💡 Administrator rights are **not** required.
 
-#### Step 3 — Launch
+---
 
-Double-click the **"Profiler Desktop"** shortcut on your Desktop.
+### Step 1 — Download
 
-Profiler Desktop will start automatically and open in your default web browser. Fully local — no terminal, no Conda commands, no configuration.
+Go to [**Releases**](https://github.com/yanisZirem/prism-profiler/releases/latest) and download the latest ZIP.
+
+Extract it anywhere on your machine (e.g. `C:\Users\YourName\Desktop\Profiler_Desktop1.2`).
+
+> ⚠️ Do not run anything before extracting the ZIP.
 
 ---
 
-### 🛠️ Manual Installation (All Platforms)
+### Step 2 — Run the Installer
 
-#### 1. Install Conda
+Open the extracted folder and **double-click `install_profiler.bat`**.
 
-Download **Miniconda** (recommended) or Anaconda:
-- https://docs.conda.io/en/latest/miniconda.html
-- https://www.anaconda.com/download
+A terminal window will open and run automatically. Installation takes a few minutes.
 
-Restart your terminal after installation.
+**What the installer does:**
 
-#### 2. Create the Environment
+1. Verifies Conda is available
+2. Accepts Conda Terms of Service automatically (conda ≥ 24.x)
+3. Creates a `profiler` conda environment (Python 3.8.20)
+4. Installs all Python dependencies from `requirements.txt`
+5. Attempts to install **ProteoWizard / msconvert** (optional — for RAW file conversion only)
+6. Creates a **"Profiler Desktop"** shortcut on your Desktop
+
+> If ProteoWizard cannot be downloaded automatically, Profiler still works fully — only RAW file conversion is affected. Manual install instructions are displayed.
+
+---
+
+### Step 3 — Launch
+
+Double-click the **"Profiler Desktop"** shortcut on your Desktop, or run `run_profiler.bat` directly.
+
+Profiler will open in your default browser. No terminal, no commands, fully local.
+
+> ⏱️ First launch may take 30–60 seconds while Streamlit initialises.
+
+---
+
+### Manual Installation (Linux / macOS / advanced)
 
 ```bash
+# 1. Create environment
 conda create -n profiler python=3.8.20
-```
-
-When prompted **Proceed ([y]/n)?** → type `y` and press Enter.
-
-```bash
 conda activate profiler
-```
 
-#### 3. Install Dependencies
-
-Navigate to the Profiler Desktop folder and run:
-
-```bash
-cd /path/to/prism-profiler-desktop-v1.2
+# 2. Install dependencies
+cd /path/to/Profiler_Desktop1.2
 pip install -r requirements.txt
-```
+pip install tensorflow==2.10.1 --no-deps
 
-#### 4. Launch Profiler Desktop
+# 3. Set protobuf compatibility flag (required for tensorflow 2.10.1)
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python   # Linux/macOS
+# or on Windows:
+# set PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
-Each time you want to use Profiler Desktop:
-
-```bash
-conda activate profiler
-cd /path/to/prism-profiler-desktop-v1.2
-python profiler_desktop.py
-```
-
-Profiler Desktop will open automatically in your browser.
-
-#### 5. (Optional) Automate Launch
-
-**Windows — `run_profiler.bat`**
-
-```batch
-@echo off
-call conda activate profiler
-python profiler_desktop.py
-pause
-```
-
-**Linux / macOS — `run_profiler.sh`**
-
-```bash
-#!/bin/bash
-conda activate profiler
-python profiler_desktop.py
-```
-
-```bash
-chmod +x run_profiler.sh
-./run_profiler.sh
+# 4. Launch
+python app/main.py
 ```
 
 ---
 
-### ❌ If the Automatic Installer Fails
+## Project Structure
 
-In rare cases (corporate firewall, offline machines), the automatic installer may not complete.  
-→ Follow the **Manual Installation** steps above.
+```
+Profiler_Desktop1.2/
+│
+├── install_profiler.bat       ← Windows installer (double-click to install)
+├── setup_environment.ps1      ← PowerShell setup script (called by installer)
+├── run_profiler.bat           ← Windows launcher (double-click to run)
+├── requirements.txt           ← Python dependencies
+│
+└── app/
+    ├── main.py                ← Entry point
+    ├── gui/
+    │   └── Profiler_Desktop_Gui.py   ← Main Streamlit interface
+    ├── core/
+    │   ├── profiler_preprocessing.py ← Normalisation & binning
+    │   ├── profiler_DL.py            ← MLP / CNN / RNN
+    │   └── profiler_training.py      ← Classical ML
+    ├── analysis/
+    │   ├── profiler_features_importance.py
+    │   ├── profiler_genes_enrichment.py
+    │   ├── profiler_survival.py
+    │   ├── profiler_unsupervised.py
+    │   ├── profiler_visualization.py
+    │   ├── profiler_normality.py
+    │   ├── profiler_longitudinal.py
+    │   ├── profiler_rt.py
+    │   └── profiler_sampling.py
+    ├── data/
+    │   ├── profiler_data_loading.py
+    │   ├── profiler_data_exploration.py
+    │   ├── profiler_conversion.py
+    │   └── profiler_structured_data_file.py
+    ├── utils/
+    │   ├── profiler_imports.py
+    │   ├── session_store.py
+    │   └── reset_data_session.py
+    └── assets/
+        ├── profiler_logo.png
+        └── profiler_icons.ttf
+```
 
 ---
 
 ## Additional Tool: MSI2Profiler
 
-Profiler Desktop includes **MSI2Profiler**, a companion tool for **Mass Spectrometry Imaging (MSI) preprocessing**.
+Located in `Additional_tools/MSI2Profiler/` — a companion tool for **Mass Spectrometry Imaging (MSI) preprocessing**.
 
-Located in: `Additional_tools/MSI2Profiler/`
+Supports `.imzML` files from MALDI-MSI and DESI-MSI. Outputs a Profiler-ready CSV matrix.
 
-### Features
+### ⬇️ Download for Windows (standalone executable)
 
-MSI2Profiler allows you to:
+**MSI2Profiler is available as a Windows executable — no installation, no Python required.**
 
-- Load `.imzML` files from **MALDI-MSI** and **DESI-MSI** experiments
-- Normalise spectra (**TIC**, **Median**, **RMS**)
-- Bin **m/z** features
-- Concatenate **ROIs (Regions of Interest)**
-- Export a **Profiler-ready CSV matrix**
+👉 [**Download MSI2Profiler for Windows (.exe)**](https://github.com/yanisZirem/prism-profiler/releases/latest)
 
-> Download **MSI2Profiler** directly from the  
-> [Profiler homepage](https://prism-profiler.univ-lille.fr)  
-> or get the Windows executable here:  
-> https://prism-profiler.univ-lille.fr/desktop/
+Just double-click and run. No Conda, no terminal, no setup.
 
-### Run MSI2Profiler
+> Also available on the [Profiler homepage](https://prism-profiler.univ-lille.fr/desktop/).
 
-```bash
-python MSI2profiler.py
-```
-
-### Dependencies
+### Run from source (all platforms)
 
 ```bash
 pip install pandas numpy plotly pyimzml
+python MSI2profiler.py
 ```
 
-### Documentation
-
-For full instructions:
-
-https://github.com/yanisZirem/prism-profiler/blob/main/Additional_tools/MSI2Profiler/MSI2Profiler%20README.md
+Full documentation: [`Additional_tools/MSI2Profiler/`](Additional_tools/MSI2Profiler/)
 
 ---
 
 ## System Requirements
 
 | Component | Minimum | Recommended |
-|-----------|--------|-------------|
-| OS | Windows 10 / macOS 11 / Ubuntu 20.04 | Windows 11 / macOS 13 / Ubuntu 22.04 |
+|---|---|---|
+| OS | Windows 10 64-bit | Windows 11 |
 | RAM | 16 GB | 32 GB |
 | CPU | 4 cores | 8 cores |
-| Storage | 2 GB (app) + data | 10 GB+ |
+| Storage | 3 GB | 10 GB+ |
 
 ---
 
-## Authors & Contact
+## Citation
 
-Developed by **Yanis Zirem**  
-📧 yanis.zirem@univ-lille.fr  
+If you use Profiler or Profiler Desktop in your research, please cite:
+
+> **Zirem, Y., Ledoux, L., Fournier, I., & Salzet, M.**
+> *Profiler: an open web platform for multi-omics analysis.*
+> **Bioinformatics**, Oxford University Press, 2025.
+> DOI: [10.1093/bioinformatics/btaf644](https://doi.org/10.1093/bioinformatics/btaf644)
+> PMID: [41324558](https://pubmed.ncbi.nlm.nih.gov/41324558/)
+
+---
+
+## Test Data
+
+Example datasets available at:
+👉 https://github.com/yanisZirem/Profiler_v1_requests_datatests
+
+Includes: MaxQuant / DIA-NN outputs, Bruker & Waters RAW files, multi-omics tabular data, survival data, longitudinal data, and peer-review paper datasets.
+
+---
+
+## License & Intellectual Property
+
+Profiler Desktop is proprietary software registered with the **Agence pour la Protection des Programmes (APP)**.
+
+**IDDN Certificate:** `IDDN.FR.001.300044.000.S6.C7.2025.0009.3123010`
+
+All rights reserved. See [`License & Intellectual Property.txt`](License%20%26%20Intellectual%20Property.txt) for full terms.
+
+For licensing or collaboration: **yanis.zirem@univ-lille.fr**
+
+---
+
+## Authors
+
+**Yanis Zirem**  PRISM U1192
+📧 yanis.zirem@univ-lille.fr
 
 Supervised by **Prof. Michel Salzet** and **Prof. Isabelle Fournier**
+PRISM U1192 — INSERM / CHU de Lille / Université de Lille
