@@ -14,7 +14,7 @@
 
 Developed by [PRISM U1192 Laboratory](https://www.inserm.fr/en/research-inserm/prism-u1192/) — INSERM / CHU de Lille / Université de Lille
 
-[⬇️ Download Latest Release](https://github.com/yanisZirem/prism-profiler/releases/latest) · [🌐 Web Version](https://prism-profiler.univ-lille.fr) · [📦 Test Datasets](https://github.com/yanisZirem/Profiler_v1_requests_datatests) · [📄 Paper](https://doi.org/10.1093/bioinformatics/btaf644)
+[⬇️ Download Latest Release](https://github.com/yanisZirem/prism-profiler/releases/latest) · [🏠 Profiler Homepage](https://prism-profiler.univ-lille.fr/desktop/) · [🌐 Web Version](https://prism-profiler.univ-lille.fr) · [📦 Test Datasets](https://github.com/yanisZirem/Profiler_v1_requests_datatests) · [📄 Paper](https://doi.org/10.1093/bioinformatics/btaf644)
 
 </div>
 
@@ -62,7 +62,10 @@ Developed by [PRISM U1192 Laboratory](https://www.inserm.fr/en/research-inserm/p
 
 ### Step 1 — Download
 
-Go to [**Releases**](https://github.com/yanisZirem/prism-profiler/releases/latest) and download the latest ZIP.
+Download the latest ZIP from either:
+
+- 👉 [**GitHub Releases**](https://github.com/yanisZirem/prism-profiler/releases/latest)
+- 👉 [**Profiler Homepage**](https://prism-profiler.univ-lille.fr/desktop/)
 
 Extract it anywhere on your machine (e.g. `C:\Users\YourName\Desktop\Profiler_Desktop1.2`).
 
@@ -239,7 +242,7 @@ For licensing or collaboration: **yanis.zirem@univ-lille.fr**
 
 ## Authors
 
-**Yanis Zirem**  PRISM U1192
+**Yanis Zirem** — PhD Candidate, PRISM U1192
 📧 yanis.zirem@univ-lille.fr
 
 Supervised by **Prof. Michel Salzet** and **Prof. Isabelle Fournier**
