@@ -4,8 +4,8 @@ Module Name: Features importance
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
+Last Updated: 11/03/2026
+Version: 1.3.0
 
 Context:
 This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
@@ -25,6 +25,54 @@ Links:
 import io
 import gc
 from itertools import combinations
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  UTILITY: résoudre les noms de features (str ou float) vers les vraies colonnes
+#  Nécessaire quand les colonnes sont des floats m/z (ex: 590.30254) issus de mzML
+# ─────────────────────────────────────────────────────────────────────────────
+def _resolve_features(df, features):
+    """
+    Résout une liste de features (str ou float) vers les colonnes réelles du df.
+
+    Cas d'usage : les colonnes du df sont des floats m/z (590.30254) mais les
+    features passées sont des strings ('590.30254') ou inversement.
+
+    Stratégie (par ordre de priorité) :
+      1. Correspondance directe (colonne déjà présente telle quelle).
+      2. Correspondance après conversion str→float (tolérance exacte numpy).
+      3. Correspondance par round à 5 décimales pour absorber les micro-diffs
+         de représentation flottante.
+
+    Retourne la liste des colonnes réelles (dans l'ordre des features demandées).
+    """
+    col_index = {c: c for c in df.columns}           # exact match dict
+    str_to_col = {str(c): c for c in df.columns}     # str(float) → col
+    # round-5 index pour absorber les diffs de précision
+    round5_to_col = {}
+    for c in df.columns:
+        try:
+            round5_to_col[round(float(c), 5)] = c
+        except (ValueError, TypeError):
+            pass
+
+    resolved = []
+    seen = set()
+    for f in features:
+        if f in col_index and f not in seen:
+            resolved.append(f); seen.add(f); continue
+        sf = str(f)
+        if sf in str_to_col and str_to_col[sf] not in seen:
+            resolved.append(str_to_col[sf]); seen.add(str_to_col[sf]); continue
+        try:
+            fv = round(float(f), 5)
+            if fv in round5_to_col and round5_to_col[fv] not in seen:
+                resolved.append(round5_to_col[fv]); seen.add(round5_to_col[fv]); continue
+        except (ValueError, TypeError):
+            pass
+        # Pas trouvé → on l'ignore silencieusement (évite KeyError)
+    return resolved
+
 
 # --- Scientific computing ---
 import numpy as np
@@ -486,6 +534,9 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
     MAX_PER_PAGE = 20
     data = data.copy()
     data.columns = data.columns.astype(str)
+    # Résoudre les mz_values : str ou float → colonnes réelles (maintenant str)
+    mz_values = [str(m) for m in mz_values]
+    mz_values = _resolve_features(data, mz_values)
     label     = "Class"
     classes   = sorted(data[label].dropna().unique())
     pairs     = list(combinations(classes, 2))
@@ -853,9 +904,15 @@ def eli5_format_to_dataframe(eli5_html):
 
 
 def calculate_volcano_data(
-    data, class_column, features, 
+    data, class_column, features,
     p_value_threshold=0.05, correction_method="fdr_bh"
 ):
+    # ── Résoudre les features (str vs float columns) ──────────────────────────
+    data = data.copy()
+    data.columns = [str(c) for c in data.columns]      # normalise TOUT en str
+    features = [str(f) for f in features]               # idem pour les features
+    features = _resolve_features(data, features)        # filtre les manquantes
+
     classes = data[class_column].unique()
     results = []
 
@@ -1068,6 +1125,8 @@ def plot_heatmap_samples(data, class_colors, selected_features, custom_colors,
     # ── Validate ───────────────────────────────────────────────────────────
     data = data.copy()
     data.columns = data.columns.astype(str)
+    selected_features = [str(f) for f in selected_features]
+    selected_features = _resolve_features(data, selected_features)
     missing = [f for f in selected_features if f not in data.columns]
     if missing:
         st.error(f"Invalid features: {', '.join(missing[:8])}")
@@ -1354,6 +1413,8 @@ def plot_heatmap_samples(
     # ── 1. Data prep ──────────────────────────────────────────────────────────
     data = data.copy()
     data.columns = data.columns.astype(str)
+    selected_features = [str(f) for f in selected_features]
+    selected_features = _resolve_features(data, selected_features)
 
     missing = [f for f in selected_features if f not in data.columns]
     if missing:
