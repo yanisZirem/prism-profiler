@@ -106,6 +106,7 @@ from app.analysis.profiler_features_importance import (
     violinplot_significant_features, plot_heatmap_samples, eli5_format_to_dataframe,
     calculate_volcano_data, plot_volcano, detect_peaks,
     barplot_significant_features, plot_significant_features,
+    _resolve_features,
 )
 from app.analysis.profiler_genes_enrichment import (
     perform_gsea, perform_gsea_offline,
