@@ -3,8 +3,8 @@ Software Name: Profiler
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
+Last Updated: 11/03/2026
+Version: 1.3.0
 
 Context:
 This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
@@ -234,6 +234,36 @@ def _integrate_peak(spectra_slice, tol_ppm=_MZ_TOLERANCE_PPM, tol_da=0.0,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  HELPER: integrer un peak sur une grille m/z fixe (uniforme)
+# ─────────────────────────────────────────────────────────────────────────────
+def _integrate_peak_fixed_grid(spectra_slice, grid_edges, apex_rt=None):
+    """
+    Meme logique que _integrate_peak() mais projette les intensites sur une
+    grille uniforme via np.histogram. Garantit un vecteur de taille fixe.
+    """
+    all_mz    = []
+    all_inten = []
+    if apex_rt is not None:
+        rt_apex = apex_rt
+    else:
+        rt_apex = spectra_slice[len(spectra_slice) // 2].getRT()
+    for spec in spectra_slice:
+        if spec.getMSLevel() not in (0, 1):
+            continue
+        mzs, ints = spec.get_peaks()
+        if len(mzs) == 0:
+            continue
+        all_mz.append(mzs)
+        all_inten.append(ints)
+    if not all_mz:
+        return np.zeros(len(grid_edges) - 1, dtype=np.float32), rt_apex
+    all_mz_cat    = np.concatenate(all_mz).astype(np.float64)
+    all_inten_cat = np.concatenate(all_inten).astype(np.float64)
+    intensities, _ = np.histogram(all_mz_cat, bins=grid_edges, weights=all_inten_cat)
+    return intensities.astype(np.float32), rt_apex
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  HELPER: build global consensus m/z axis from all per-file m/z sets
 # ─────────────────────────────────────────────────────────────────────────────
 def _align_mz_columns(all_mz_sets, tol_ppm=_MZ_TOLERANCE_PPM, tol_da=0.0):
@@ -448,7 +478,8 @@ def _process_single_file(uploaded_file, class_name,
 def load_uploaded_files(grouped_files, progress_bar,
                         min_apex_intensity_pct=1.0,
                         tol_ppm=_MZ_TOLERANCE_PPM, tol_da=0.0,
-                        min_peak_width=2, min_distance=0, min_prominence_pct=5.0):
+                        min_peak_width=2, min_distance=0, min_prominence_pct=5.0,
+                        use_fixed_grid=False, mz_min=None, mz_max=None):
     """
     Load and integrate mzML/mzXML MS1 files grouped by biological class.
 
@@ -524,30 +555,84 @@ def load_uploaded_files(grouped_files, progress_bar,
     # Store chromatogram data for sidebar display
     st.session_state["mzml_chrom_data"] = all_chrom_data
 
-    # Pass 2 – consensus m/z axis
-    consensus_mz  = _align_mz_columns(all_mz_sets, tol_ppm=tol_ppm, tol_da=tol_da)
-    consensus_arr = np.array(consensus_mz, dtype=np.float64)
-    n_rows, n_cols = len(all_rows), len(consensus_mz)
+    n_rows = len(all_rows)
 
-    tol_str = f"{tol_ppm:.0f} ppm" + (f" / {tol_da:.4f} Da" if tol_da > 0 else "")
-    st.info(
-        f"Consensus m/z features: **{n_cols:,}**  |  "
-        f"Integrated peaks: **{n_rows}**  |  "
-        f"Files: **{current_file}**  |  Tolerance: **{tol_str}**"
-    )
+    # ═══════════════════════════════════════════════════════════════════════
+    #  FIXED-GRID MODE
+    #  Each chromatographic peak is projected onto a uniform m/z grid.
+    #  N features = round((mz_max - mz_min) / tol_da)  — computed automatically.
+    #  Guarantees identical feature vectors across all samples → required for ML.
+    # ═══════════════════════════════════════════════════════════════════════
+    if use_fixed_grid and tol_da > 0:
+        # Auto-detect mz_min / mz_max from the data if not provided
+        if mz_min is None or mz_max is None:
+            all_mz_flat = np.array(
+                [mz for row in all_rows for mz in row.keys()], dtype=np.float64
+            )
+            if len(all_mz_flat) == 0:
+                st.error("No m/z data found in the loaded files.")
+                return pd.DataFrame()
+            if mz_min is None:
+                mz_min = float(np.floor(all_mz_flat.min() * 10) / 10)
+            if mz_max is None:
+                mz_max = float(np.ceil(all_mz_flat.max()  * 10) / 10)
 
-    # Pass 3 – float32 matrix
-    matrix = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
+        n_bins     = max(1, round((mz_max - mz_min) / tol_da))
+        grid_edges = np.linspace(mz_min, mz_max, n_bins + 1, dtype=np.float64)
+        centres    = np.round(0.5 * (grid_edges[:-1] + grid_edges[1:]), 5)
+        n_cols     = n_bins
 
-    for i, row_dict in enumerate(all_rows):
-        mapped = _map_to_consensus(row_dict, consensus_arr, tol_ppm=tol_ppm, tol_da=tol_da)
-        for mz, inten in mapped.items():
-            idx = np.searchsorted(consensus_arr, mz)
-            if idx < n_cols and consensus_arr[idx] == mz:
-                matrix[i, idx] = np.float32(inten)
+        st.info(
+            f"Fixed grid: **{n_cols:,}** features  |  "
+            f"m/z [{mz_min:.2f}, {mz_max:.2f}]  |  "
+            f"step = {tol_da:.4f} Da  |  "
+            f"Integrated peaks: **{n_rows}**  |  Files: **{current_file}**"
+        )
 
+        # Project each peak (row_dict) onto the fixed grid via histogram binning
+        matrix = np.zeros((n_rows, n_cols), dtype=np.float32)
+        for i, row_dict in enumerate(all_rows):
+            if not row_dict:
+                continue
+            mz_arr    = np.array(list(row_dict.keys()),   dtype=np.float64)
+            inten_arr = np.array(list(row_dict.values()), dtype=np.float64)
+            # Keep only m/z values within the grid range
+            mask = (mz_arr >= mz_min) & (mz_arr <= mz_max)
+            if mask.any():
+                binned, _ = np.histogram(mz_arr[mask], bins=grid_edges,
+                                          weights=inten_arr[mask])
+                matrix[i] = binned.astype(np.float32)
+
+        col_names = [round(float(c), 5) for c in centres]
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  MODE ADAPTATIF CLASSIQUE (inchangé)
+    # ═══════════════════════════════════════════════════════════════════════
+    else:
+        consensus_mz  = _align_mz_columns(all_mz_sets, tol_ppm=tol_ppm, tol_da=tol_da)
+        consensus_arr = np.array(consensus_mz, dtype=np.float64)
+        n_cols        = len(consensus_mz)
+
+        tol_str = f"{tol_ppm:.0f} ppm" + (f" / {tol_da:.4f} Da" if tol_da > 0 else "")
+        st.info(
+            f"Consensus m/z features: **{n_cols:,}**  |  "
+            f"Integrated peaks: **{n_rows}**  |  "
+            f"Files: **{current_file}**  |  Tolerance: **{tol_str}**"
+        )
+
+        matrix = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
+        for i, row_dict in enumerate(all_rows):
+            mapped = _map_to_consensus(row_dict, consensus_arr, tol_ppm=tol_ppm, tol_da=tol_da)
+            for mz, inten in mapped.items():
+                idx = np.searchsorted(consensus_arr, mz)
+                if idx < n_cols and consensus_arr[idx] == mz:
+                    matrix[i, idx] = np.float32(inten)
+
+        col_names = consensus_mz
+
+    # ── Assemblage final (commun aux deux modes) ──────────────────────────
     meta_df  = pd.DataFrame(all_meta)
-    feat_df  = pd.DataFrame(matrix, columns=consensus_mz)
+    feat_df  = pd.DataFrame(matrix, columns=col_names)
     final_df = pd.concat(
         [meta_df.reset_index(drop=True), feat_df.reset_index(drop=True)], axis=1
     )
