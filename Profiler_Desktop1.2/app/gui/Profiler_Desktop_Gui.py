@@ -3,8 +3,8 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
+Last Updated: 11/03/2026
+Version: 1.3.0
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
 Start with: streamlit run profiler_gui_desktop.py
@@ -65,8 +65,7 @@ from statsmodels.stats.multitest import multipletests
 from scipy import stats
 
 # ─── Ensure project root (Profiler/) is on sys.path ──────────────────────────
-# Profiler_Desktop_Gui.py lives at app/gui/ — we need to go up two levels so
-# that "app.utils.profiler_imports" and all other app.* imports resolve correctly.
+
 import sys as _sys_path_fix
 from pathlib import Path as _Path_fix
 _GUI_DIR      = _Path_fix(__file__).resolve().parent        # app/gui/
@@ -77,6 +76,7 @@ for _p in (_PROJECT_ROOT, _APP_DIR):
         _sys_path_fix.path.insert(0, str(_p))
 
 from app.utils.profiler_imports import *
+from app.analysis.profiler_features_importance import _resolve_features
 
 # ─── Helper: build feature matrix (excludes Class, ID, File, RT, Sum, _meta) ──
 _NON_FEATURE_COLS = {'Class', 'ID', 'File', 'RT', 'Sum', 'Original_index'}
@@ -193,7 +193,7 @@ def _load_page_icon():
     return "data:image/svg+xml;base64," + base64.b64encode(_svg.encode()).decode()
 
 st.set_page_config(
-    page_title="Profiler Desktop – Multi-Omics Analysis",
+    page_title="Profiler Offline",
     page_icon=_load_page_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
@@ -1615,28 +1615,78 @@ button[data-baseweb="tab"][aria-selected="true"] * {{
                     help="Peak prominence as % of global TIC max. Filters noise and shoulders."
                 )
 
-            st.markdown("**m/z binning tolerance**")
+            st.markdown("**m/z binning**")
+
+            # ── Binning mode toggle ──────────────────────────────────────────────────
+            _grid_mode = st.toggle(
+                "Fixed grid (uniform bins across the full m/z range)",
+                value=True, key="mz_fixed_grid_mode",
+                help=(
+                    "Fixed-grid mode: same chromatographic peak detection pipeline, "
+                    "but each peak is projected onto a uniform m/z grid. "
+                    "Number of features = (mz_max - mz_min) / bin_Da, computed automatically. "
+                    "Example: 600–1000 Da with 0.1 Da → exactly 4,000 features per peak.\n\n"
+                    "✅ Recommended for machine learning: guarantees identical feature vectors "
+                    "across all samples and files — required for most ML algorithms "
+                    "(PCA, Random Forest, SVM, neural networks, etc.).\n\n"
+                    "⚠️ Adaptive mode (toggle OFF): features are aligned by consensus m/z across "
+                    "files, which preserves natural peak positions. Better suited for peak "
+                    "annotation, metabolite identification, and targeted analysis, but may "
+                    "produce sparse or misaligned matrices across heterogeneous datasets."
+                )
+            )
+
             col_ppm, col_da = st.columns(2)
             with col_ppm:
                 mz_bin_ppm = st.number_input(
-                    "Bin (ppm)", min_value=0.0, max_value=500.0, value=100.0,
+                    "Bin (ppm)", min_value=0.0, max_value=500.0,
+                    value=0.0 if _grid_mode else 0.0,
                     step=10.0, key="mz_bin_ppm",
-                    help="ppm tolerance for m/z feature merging. 0 = use Da only."
+                    help="ppm tolerance. Mettre 0 en mode grille fixe.",
+                    disabled=_grid_mode
                 )
             with col_da:
                 mz_bin_da = st.number_input(
-                    "Bin (Da)", min_value=0.0, max_value=2.0, value=0.1,
+                    "Bin (Da)", min_value=0.001, max_value=2.0, value=0.1,
                     step=0.01, format="%.3f", key="mz_bin_da",
-                    help="Absolute Da tolerance. 0 = use ppm only. Larger window wins when both are set."
+                    help="Pas de bin en Da. En mode grille fixe, définit la résolution de la grille."
                 )
-            if mz_bin_ppm <= 20 and mz_bin_da == 0:
-                st.caption("ℹ️ Fine-grained · Orbitrap / QTOF")
-            elif mz_bin_da > 0:
-                st.caption(f"ℹ️ Da mode · {mz_bin_da:.3f} Da")
-            elif mz_bin_ppm <= 100:
-                st.caption("ℹ️ Balanced · TOF")
+
+            if _grid_mode:
+                col_mzmin, col_mzmax = st.columns(2)
+                with col_mzmin:
+                    mz_grid_min = st.number_input(
+                        "m/z min", min_value=0.0, max_value=10000.0, value=0.0,
+                        step=50.0, key="mz_grid_min",
+                        help="Borne basse de la grille. 0 = détecte automatiquement depuis les données."
+                    )
+                with col_mzmax:
+                    mz_grid_max = st.number_input(
+                        "m/z max", min_value=0.0, max_value=10000.0, value=0.0,
+                        step=50.0, key="mz_grid_max",
+                        help="Borne haute de la grille. 0 = détecte automatiquement depuis les données."
+                    )
+                _mz_min_arg = float(mz_grid_min) if mz_grid_min > 0 else None
+                _mz_max_arg = float(mz_grid_max) if mz_grid_max > 0 else None
+                if _mz_min_arg and _mz_max_arg:
+                    _n_bins_preview = round((_mz_max_arg - _mz_min_arg) / mz_bin_da)
+                    st.caption(
+                        f"Grille fixe : [{_mz_min_arg:.0f}, {_mz_max_arg:.0f}] Da "
+                        f"/ {mz_bin_da:.3f} Da = **{_n_bins_preview:,} features** par peak chromatographique"
+                    )
+                else:
+                    st.caption(f"Grille fixe : plage auto / {mz_bin_da:.3f} Da")
             else:
-                st.caption("ℹ️ Aggressive binning")
+                _mz_min_arg = None
+                _mz_max_arg = None
+                if mz_bin_ppm <= 20 and mz_bin_da == 0:
+                    st.caption("ℹ️ Fine-grained · Orbitrap / QTOF")
+                elif mz_bin_da > 0:
+                    st.caption(f"ℹ️ Da mode · {mz_bin_da:.3f} Da")
+                elif mz_bin_ppm <= 100:
+                    st.caption("ℹ️ Balanced · TOF")
+                else:
+                    st.caption("ℹ️ Aggressive binning")
 
             if st.button(" Load Spectra", key="load_spectra_btn",
                         use_container_width=True, type="primary"):
@@ -1652,6 +1702,9 @@ button[data-baseweb="tab"][aria-selected="true"] * {{
                             min_peak_width         = int(min_peak_width),
                             min_distance           = int(min_peak_distance),
                             min_prominence_pct     = float(min_prominence_pct),
+                            use_fixed_grid         = bool(_grid_mode),
+                            mz_min                 = _mz_min_arg,
+                            mz_max                 = _mz_max_arg,
                         )
                         # Expose auto-detected distance for sidebar hint
                         _chrom = st.session_state.get("mzml_chrom_data", [])
@@ -6282,13 +6335,20 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     significant_features = list(significant_features)
                     class_column = st.session_state.get("class_column", "Class")
 
-                    missing_cols = [f for f in significant_features if f not in data_vol.columns]
+                    # ── Résoudre str vs float columns (m/z mzML) ─────────────────
+                    import pandas as _pd_vol
+                    _data_vol_norm = data_vol.copy()
+                    _data_vol_norm.columns = _data_vol_norm.columns.astype(str)
+                    significant_features = [str(f) for f in significant_features]
+                    significant_features = _resolve_features(_data_vol_norm, significant_features)
+
+                    missing_cols = [f for f in significant_features if f not in _data_vol_norm.columns]
                     if missing_cols:
                         st.warning(f"Missing columns in selected data source: {', '.join(missing_cols)}")
                         significant_features = [f for f in significant_features if f not in missing_cols]
 
-                    if class_column in data_vol.columns:
-                        significant_data = data_vol[[class_column] + significant_features]
+                    if class_column in _data_vol_norm.columns:
+                        significant_data = _data_vol_norm[[class_column] + significant_features]
                 
                         st.write("**DataFrame with Significant Features from Selected Source:**")
                 
