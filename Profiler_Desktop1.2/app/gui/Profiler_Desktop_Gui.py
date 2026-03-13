@@ -7226,6 +7226,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                     kmf = KaplanMeierFitter()
                     classes = survie['Class'].unique()
+                    from plotly import express as px
                     _km_palette = px.colors.qualitative.Plotly
 
                     # Couleurs
