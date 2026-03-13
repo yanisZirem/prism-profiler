@@ -6534,6 +6534,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 if not selected_features:
                     st.error("No valid features found in the dataset. Please check your selection.")
                     st.stop()
+                # Forcer la conversion numérique des colonnes features (évite str/int TypeError)
+                data_heat = data_heat.copy()
+                for _f in selected_features:
+                    data_heat[_f] = pd.to_numeric(data_heat[_f], errors='coerce')
                 # Appliquer log2 sur tout le DataFrame si demandé (évite NaN/-inf)
                 if perform_stat_test and data_type == 'Log2':
                     data_heat[selected_features] = np.log2(data_heat[selected_features].clip(lower=1e-6))
@@ -6924,7 +6928,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     _grp_cache = {g: data_filtered[data_filtered[class_col] == g] for g in selected_classes}
 
                     def _run_test(mz):
-                        groups = [_grp_cache[g][mz].dropna() for g in selected_classes]
+                        groups = [pd.to_numeric(_grp_cache[g][mz], errors="coerce").dropna() for g in selected_classes]
                         try:
                             if test == 'Kruskal':
                                 return {"feature": mz, "pvalue": stats.kruskal(*groups).pvalue}
