@@ -516,7 +516,7 @@ def _pval_to_stars(p):
 
 
 def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
-                            use_log2, plot_type, capture_name):
+                            use_log2, plot_type, capture_name, significance_dict=None):
     """
     Publication-ready subplot grid — box / violin / bar.
 
@@ -537,6 +537,9 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
     # Résoudre les mz_values : str ou float → colonnes réelles (maintenant str)
     mz_values = [str(m) for m in mz_values]
     mz_values = _resolve_features(data, mz_values)
+    # Forcer la conversion numérique pour éviter str/int TypeError
+    for _f in mz_values:
+        data[_f] = pd.to_numeric(data[_f], errors="coerce")
     label     = "Class"
     classes   = sorted(data[label].dropna().unique())
     pairs     = list(combinations(classes, 2))
@@ -551,7 +554,8 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
             st.markdown(f"**Features {b+1}–{min(b+MAX_PER_PAGE, len(mz_values))}**")
             _make_feature_subplots(data, batch, class_colors, test, show_scatter,
                                    use_log2, plot_type,
-                                   f"{capture_name}_p{b//MAX_PER_PAGE}" if capture_name else None)
+                                   f"{capture_name}_p{b//MAX_PER_PAGE}" if capture_name else None,
+                                   significance_dict=significance_dict)
         return
 
     n     = len(mz_values)
@@ -601,14 +605,18 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         y0 = y1 - row_h_frac * (plot_area_h / fig_h)
         return x0, x1, y0, y1
 
-    # ── Pre-scan: max significant pairs across features ────────────────────────
+    # ── Pre-scan: ALL pairs across features (significant + ns) ────────────────
+    # Uses pre-computed significance_dict when available (single pair only)
+    # so the plot is always consistent with the summary counts.
     def _sig_for(mz):
         raw = data[mz].replace([np.inf, -np.inf], np.nan)
         cd  = np.log2(raw + 1e-9) if use_log2 else raw
         cv  = {c: cd[data[label] == c].dropna() for c in classes}
+        if significance_dict is not None and mz in significance_dict and len(pairs) == 1:
+            ca, cb = pairs[0]
+            return [(ca, cb, significance_dict[mz])]
         return [(ca, cb, _stat_test(cv[ca], cv[cb], test))
-                for ca, cb in pairs
-                if (_stat_test(cv[ca], cv[cb], test) or 1.0) < 0.05]
+                for ca, cb in pairs]
 
     # ── Create figure (NO subplot_titles) ─────────────────────────────────────
     fig = _subplots.make_subplots(
@@ -742,17 +750,21 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
 
         # ── Significance brackets ─────────────────────────────────────────────
         for brk_k, (ca, cb, p) in enumerate(sig_pairs):
-            stars  = _pval_to_stars(p)
-            tick_h = step * 0.22
-            br_y   = y_max + step * (0.5 + brk_k * 1.1)
+            stars     = _pval_to_stars(p)
+            is_sig    = p < 0.05
+            tick_h    = step * 0.22
+            br_y      = y_max + step * (0.5 + brk_k * 1.1)
+            ann_color = "black" if is_sig else "#888888"
+            brk_color = "black" if is_sig else "#aaaaaa"
+            ann_text  = f"<b>{stars}</b> p={p:.2g}" if is_sig else f"<i>ns</i> p={p:.2g}"
 
             # Bracket lines in data coordinates
             fig.add_shape(type="line", x0=ca, x1=cb, y0=br_y, y1=br_y,
-                xref=xref, yref=yref, line=dict(color="black", width=1.8))
+                xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
             fig.add_shape(type="line", x0=ca, x1=ca, y0=br_y-tick_h, y1=br_y,
-                xref=xref, yref=yref, line=dict(color="black", width=1.8))
+                xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
             fig.add_shape(type="line", x0=cb, x1=cb, y0=br_y-tick_h, y1=br_y,
-                xref=xref, yref=yref, line=dict(color="black", width=1.8))
+                xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
 
             # Label centred over bracket — paper x, data y
             ia, ib   = classes.index(ca), classes.index(cb)
@@ -762,9 +774,9 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
             fig.add_annotation(
                 x=x_centre, y=br_y + step * 0.20,
                 xref="paper", yref=yref,
-                text=f"<b>{stars}</b> p={p:.2g}",
+                text=ann_text,
                 showarrow=False,
-                font=dict(size=10, color="black", family="Arial"),
+                font=dict(size=10, color=ann_color, family="Arial"),
                 bgcolor="rgba(255,255,255,0.88)", borderpad=2,
             )
 
@@ -831,23 +843,26 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
 # ─── Public API ────────────────────────────────────────────────────────────────
 def boxplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                   loc="inside", show_scatter=False, use_log2=False,
-                                  capture_name=None):
+                                  capture_name=None, significance_dict=None):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
-                            show_scatter, use_log2, "box", capture_name)
+                            show_scatter, use_log2, "box", capture_name,
+                            significance_dict=significance_dict)
 
 
 def violinplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                      loc="inside", show_scatter=False, use_log2=False,
-                                     capture_name=None):
+                                     capture_name=None, significance_dict=None):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
-                            show_scatter, use_log2, "violin", capture_name)
+                            show_scatter, use_log2, "violin", capture_name,
+                            significance_dict=significance_dict)
 
 
 def barplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                   loc="inside", show_scatter=False, use_log2=False,
-                                  capture_name=None):
+                                  capture_name=None, significance_dict=None):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
-                            show_scatter, use_log2, "bar", capture_name)
+                            show_scatter, use_log2, "bar", capture_name,
+                            significance_dict=significance_dict)
 
 
 def eli5_format_to_dataframe(eli5_html):
@@ -1324,15 +1339,18 @@ def plot_significant_features(data, mz_values, class_colors=None, test='Kruskal'
     if plot_type == 'box':
         boxplot_significant_features(data, mz_values, class_colors, test, 
                                      loc='inside', show_scatter=show_scatter, 
-                                     use_log2=use_log2, capture_name=capture_name)
+                                     use_log2=use_log2, capture_name=capture_name,
+                                     significance_dict=significance_dict)
     elif plot_type == 'violin':
         violinplot_significant_features(data, mz_values, class_colors, test, 
                                         loc='inside', show_scatter=show_scatter, 
-                                        use_log2=use_log2, capture_name=capture_name)
+                                        use_log2=use_log2, capture_name=capture_name,
+                                        significance_dict=significance_dict)
     elif plot_type == 'bar':
         barplot_significant_features(data, mz_values, class_colors, test, 
                                      loc='inside', show_scatter=show_scatter, 
-                                     use_log2=use_log2, capture_name=capture_name)
+                                     use_log2=use_log2, capture_name=capture_name,
+                                     significance_dict=significance_dict)
     else:
         raise ValueError(f"Unknown plot_type: {plot_type}")
     
