@@ -3202,7 +3202,20 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         if _ddf is not None and "Class" in _ddf.columns:
                                             st.session_state[_dk] = _ddf.copy()
                                             st.session_state[_dk]["Class"] = st.session_state[_dk]["Class"].replace(_rmap)
+                                    # Re-sync DataLab cache
+                                    _cur_src = st.session_state.get('datalab_source', 'Raw / Edited')
+                                    _sync_map = {
+                                        'Raw / Edited': st.session_state.get('final_data', st.session_state.get('data')),
+                                        'Preprocessed': st.session_state.get('preprocessed_data'),
+                                        'Oversampled':  st.session_state.get('oversampled_data'),
+                                        'Undersampled': st.session_state.get('undersampled_data'),
+                                    }
+                                    _sync_df = _sync_map.get(_cur_src)
+                                    if _sync_df is not None:
+                                        st.session_state['datalab_df']  = _sync_df.copy()
+                                        st.session_state['overview_df'] = _sync_df.copy()
                                     st.success("Class names updated successfully!")
+                                    st.rerun()
                     
                             if reset_changes:
                                 st.session_state["rename_pending"] = {cls: cls for cls in class_names}
@@ -3211,8 +3224,12 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     lambda x: x if x in class_names else x
                                 )
                                 st.session_state["data"] = st.session_state["final_data"]
+                                # Re-sync DataLab cache
+                                st.session_state['datalab_df']  = st.session_state["final_data"].copy()
+                                st.session_state['overview_df'] = st.session_state["final_data"].copy()
                                 st.success("🗑️ All renaming changes have been reset.")
                                 gc.collect()
+                                st.rerun()
                 
 
 
@@ -3319,7 +3336,17 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                     del st.session_state[f"selected_classes_{i}"]
                                                 if f"group_name_{i}" in st.session_state:
                                                     del st.session_state[f"group_name_{i}"]
-                                    
+                                            # Re-sync DataLab cache
+                                            _cur_src_g = st.session_state.get('datalab_source', 'Raw / Edited')
+                                            _sync_g = {
+                                                'Raw / Edited': st.session_state.get('final_data', st.session_state.get('data')),
+                                                'Preprocessed': st.session_state.get('preprocessed_data'),
+                                                'Oversampled':  st.session_state.get('oversampled_data'),
+                                                'Undersampled': st.session_state.get('undersampled_data'),
+                                            }.get(_cur_src_g)
+                                            if _sync_g is not None:
+                                                st.session_state['datalab_df']  = _sync_g.copy()
+                                                st.session_state['overview_df'] = _sync_g.copy()
                                             st.success("✅ Class grouping applied successfully!")
                                             st.rerun()
                                     else:
@@ -3343,6 +3370,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             
                                     st.success("🗑️ All changes have been reset to original classes.")
                                     gc.collect()
+                                    # Re-sync DataLab cache after group reset
+                                    st.session_state['datalab_df']  = st.session_state["final_data"].copy()
+                                    st.session_state['overview_df'] = st.session_state["final_data"].copy()
                                     st.rerun()
 
 
@@ -3374,6 +3404,17 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                             _ddf = st.session_state.get(_dk)
                                             if _ddf is not None and _col_to_rename in _ddf.columns:
                                                 st.session_state[_dk] = _ddf.rename(columns={_col_to_rename: _col_new_name})
+                                        # Re-sync DataLab cache
+                                        _cur_src_r = st.session_state.get('datalab_source', 'Raw / Edited')
+                                        _sync_rn = {
+                                            'Raw / Edited': _renamed_df,
+                                            'Preprocessed': st.session_state.get('preprocessed_data'),
+                                            'Oversampled':  st.session_state.get('oversampled_data'),
+                                            'Undersampled': st.session_state.get('undersampled_data'),
+                                        }.get(_cur_src_r, _renamed_df)
+                                        if _sync_rn is not None:
+                                            st.session_state['datalab_df']  = _sync_rn.copy()
+                                            st.session_state['overview_df'] = _sync_rn.copy()
                                         st.success(f"Column '{_col_to_rename}' renamed to '{_col_new_name}'.")
                                         st.rerun()
                                 else:
@@ -3382,9 +3423,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         st.markdown("---")
                         st.markdown("##### ✂️ Remove / Keep Rows & Columns")
 
-                        # ✅ Créer un index temporaire UNIQUEMENT pour l'affichage
-                        display_df = df.reset_index(drop=False)
-                        display_df.rename(columns={"index": "Display_Index"}, inplace=True)
+                        # ✅ Créer un index de position (0..N-1) pour l'affichage — indépendant de l'index pandas
+                        _df_for_display = df.reset_index(drop=True)
+                        display_df = _df_for_display.copy()
+                        display_df.insert(0, 'Display_Index', range(len(display_df)))
 
                         # Pour l'affichage dans les multiselect
                         label_df = display_df[["Display_Index", "Class"]]
@@ -3425,23 +3467,24 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         # ------------------------- APPLY CHANGES -------------------------
                         if apply_changes:
                             with st.spinner("Applying modifications..."):
-                                modified_df = df.copy()
+                                # Toujours travailler sur une copie à index positionnel contigu
+                                modified_df = st.session_state["final_data"].reset_index(drop=True).copy()
                         
-                                # Keep rows first (utiliser l'index actuel du DataFrame)
+                                # Keep rows first (sélection positionnelle)
                                 if rows_keep_indexes:
-                                    modified_df = modified_df.iloc[rows_keep_indexes]
+                                    valid_keep = [i for i in rows_keep_indexes if i < len(modified_df)]
+                                    modified_df = modified_df.iloc[valid_keep].reset_index(drop=True)
                         
                                 # Keep columns (force Class retention)
                                 if columns_to_keep:
                                     if "Class" not in columns_to_keep:
                                         columns_to_keep.append("Class")
-                                    modified_df = modified_df[columns_to_keep]
+                                    modified_df = modified_df[[c for c in columns_to_keep if c in modified_df.columns]]
                         
-                                # Remove selected rows (utiliser l'index actuel)
+                                # Remove selected rows by position
                                 if selected_indexes:
-                                    # Convertir les index d'affichage en index réels
-                                    indexes_to_drop = [i for i in selected_indexes if i < len(modified_df)]
-                                    modified_df = modified_df.drop(modified_df.index[indexes_to_drop], errors='ignore')
+                                    valid_drop = [i for i in selected_indexes if i < len(modified_df)]
+                                    modified_df = modified_df.drop(index=valid_drop, errors='ignore').reset_index(drop=True)
                         
                                 # Remove selected columns (Class protected)
                                 if selected_columns:
@@ -3452,7 +3495,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 if selected_classes_to_remove:
                                     modified_df = modified_df[~modified_df["Class"].isin(selected_classes_to_remove)]
                         
-                                # ✅ Reset index pour nettoyer (pas de colonne Original_Index créée)
+                                # ✅ Reset index proprement
                                 modified_df.reset_index(drop=True, inplace=True)
                         
                                 st.session_state["final_data"] = modified_df
@@ -3487,12 +3530,29 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     _ddf2.reset_index(drop=True, inplace=True)
                                     st.session_state[_dk] = _ddf2
 
+                                # ── Re-sync DataLab cache ──────────────────────────────────────
+                                _cur_src_e = st.session_state.get('datalab_source', 'Raw / Edited')
+                                _sync_e = {
+                                    'Raw / Edited': modified_df,
+                                    'Preprocessed': st.session_state.get('preprocessed_data'),
+                                    'Oversampled':  st.session_state.get('oversampled_data'),
+                                    'Undersampled': st.session_state.get('undersampled_data'),
+                                }.get(_cur_src_e, modified_df)
+                                if _sync_e is not None:
+                                    st.session_state['datalab_df']  = _sync_e.copy()
+                                    st.session_state['overview_df'] = _sync_e.copy()
+
                                 st.success("✅ Modifications applied successfully.")
+                                st.rerun()
                 
                         # ------------------------- RESET -------------------------
                         if reset_changes:
-                            st.session_state["final_data"] = st.session_state["data"].copy()
+                            original = st.session_state["data"].copy()
+                            st.session_state["final_data"] = original
+                            st.session_state['datalab_df']  = original.copy()
+                            st.session_state['overview_df'] = original.copy()
                             st.success("🔁 Dataset has been restored to its original state.")
+                            st.rerun()
                 
 
 
@@ -4348,31 +4408,52 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     height=300
                                 )
 
-                                # -------------------- 🗑 MANUAL SAMPLE REMOVAL --------------------
-                                st.markdown("**🗑 Remove samples**")
+                                # Persister les options pour le widget de suppression (hors run_analysis)
+                                st.session_state['_qc_sample_options'] = plot_df["Sample index"].tolist()
 
-                                default_selection = detected_outliers.copy()
+                        # -------------------- 🗑 MANUAL SAMPLE REMOVAL (outside run_analysis) --------------------
+                        # Rendu en dehors du bloc if run_analysis: pour survivre au rerun Streamlit
+                        if st.session_state.get('qc_analysis_done') and st.session_state.get('_qc_sample_options') is not None:
+                            st.markdown("**🗑 Remove samples**")
 
-                                samples_to_remove = st.multiselect(
-                                    "Select sample indices to remove (pre-selected = IQR outliers):",
-                                    options=plot_df["Sample index"].tolist(),
-                                    default=default_selection
-                                )
+                            _default_outliers = [
+                                i for i in st.session_state.get('detected_outliers', [])
+                                if i in st.session_state['_qc_sample_options']
+                            ]
 
-                                if samples_to_remove:
-                                    if st.button(f"Remove {len(samples_to_remove)} selected samples"):
-                                        for key in ["data", "final_data", "overview_df", "preprocessed_data"]:
-                                            if key in st.session_state and st.session_state[key] is not None:
-                                                st.session_state[key] = (
-                                                    st.session_state[key]
-                                                    .drop(index=samples_to_remove, errors="ignore")
-                                                    .reset_index(drop=True)
-                                                )
+                            samples_to_remove = st.multiselect(
+                                "Select sample indices to remove (pre-selected = IQR outliers):",
+                                options=st.session_state['_qc_sample_options'],
+                                default=_default_outliers,
+                                key="outlier_removal_multiselect"
+                            )
 
-                                        st.success(f"✅ {len(samples_to_remove)} samples removed from all datasets.")
-                                        st.session_state['detected_outliers'] = []
+                            if samples_to_remove:
+                                if st.button(f"Remove {len(samples_to_remove)} selected samples", key="outlier_remove_btn"):
+                                    for key in ["data", "final_data", "overview_df", "preprocessed_data"]:
+                                        if key in st.session_state and st.session_state[key] is not None:
+                                            st.session_state[key] = (
+                                                st.session_state[key]
+                                                .drop(index=samples_to_remove, errors="ignore")
+                                                .reset_index(drop=True)
+                                            )
+                                    # Re-sync DataLab cache
+                                    _cur_src_qc = st.session_state.get('datalab_source', 'Raw / Edited')
+                                    _sync_qc = {
+                                        'Raw / Edited': st.session_state.get('final_data', st.session_state.get('data')),
+                                        'Preprocessed': st.session_state.get('preprocessed_data'),
+                                        'Oversampled':  st.session_state.get('oversampled_data'),
+                                        'Undersampled': st.session_state.get('undersampled_data'),
+                                    }.get(_cur_src_qc)
+                                    if _sync_qc is not None:
+                                        st.session_state['datalab_df']  = _sync_qc.copy()
+                                        st.session_state['overview_df'] = _sync_qc.copy()
 
-
+                                    st.success(f"✅ {len(samples_to_remove)} samples removed from all datasets.")
+                                    st.session_state['detected_outliers'] = []
+                                    st.session_state['qc_analysis_done'] = False
+                                    st.session_state['_qc_sample_options'] = None
+                                    st.rerun()
 
 
                 with _t1_sampling:
