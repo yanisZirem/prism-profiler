@@ -516,7 +516,8 @@ def _pval_to_stars(p):
 
 
 def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
-                            use_log2, plot_type, capture_name, significance_dict=None):
+                            use_log2, plot_type, capture_name, significance_dict=None,
+                            pval_correction='None'):
     """
     Publication-ready subplot grid — box / violin / bar.
 
@@ -544,6 +545,7 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
     classes   = sorted(data[label].dropna().unique())
     pairs     = list(combinations(classes, 2))
     n_cls     = len(classes)
+    n_pairs   = len(pairs)
     color_map = {c: class_colors.get(c, "#636EFA") for c in classes}
 
     # ── Pagination ────────────────────────────────────────────────────────────
@@ -555,7 +557,8 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
             _make_feature_subplots(data, batch, class_colors, test, show_scatter,
                                    use_log2, plot_type,
                                    f"{capture_name}_p{b//MAX_PER_PAGE}" if capture_name else None,
-                                   significance_dict=significance_dict)
+                                   significance_dict=significance_dict,
+                                   pval_correction=pval_correction)
         return
 
     n     = len(mz_values)
@@ -564,17 +567,20 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
 
     # ── Fixed square pixel size per subplot ───────────────────────────────────
     # Each subplot cell = 360 px wide × 360 px tall (square).
+    # For multi-class (many brackets), add extra height per pair.
     # Margins: left 70 (y-axis label), right 120 (legend), top 60, bottom 50.
-    CELL_PX   = 360
+    CELL_W    = 360
+    _extra    = max(0, min(n_pairs - 1, 8) * 28)   # cap at 8 brackets worth of extra height
+    CELL_H    = 360 + _extra
     H_GAP_PX  = 80    # horizontal gap between cells (for y-axis labels + padding)
-    V_GAP_PX  = 70    # vertical gap between rows (title + bracket headroom)
+    V_GAP_PX  = 80 + max(0, min(n_pairs - 1, 4) * 10)   # capped extra vertical gap
     MARGIN_L  = 70
     MARGIN_R  = 130
     MARGIN_T  = 50    # small — titles drawn inside this space above first row
     MARGIN_B  = 55
 
-    fig_w = MARGIN_L + ncols * CELL_PX + (ncols - 1) * H_GAP_PX + MARGIN_R
-    fig_h = MARGIN_T + nrows * CELL_PX + (nrows - 1) * V_GAP_PX + MARGIN_B
+    fig_w = MARGIN_L + ncols * CELL_W + (ncols - 1) * H_GAP_PX + MARGIN_R
+    fig_h = MARGIN_T + nrows * CELL_H + (nrows - 1) * V_GAP_PX + MARGIN_B
 
     # horizontal / vertical spacing as fractions of total figure size
     h_spacing = H_GAP_PX / fig_w if ncols > 1 else 0.0
@@ -584,8 +590,8 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
     # We need these to place paper-ref annotations precisely.
     plot_area_w = fig_w - MARGIN_L - MARGIN_R
     plot_area_h = fig_h - MARGIN_T - MARGIN_B
-    col_w_frac  = (CELL_PX) / plot_area_w
-    row_h_frac  = (CELL_PX) / plot_area_h
+    col_w_frac  = (CELL_W) / plot_area_w
+    row_h_frac  = (CELL_H) / plot_area_h
     h_gap_frac  = H_GAP_PX  / plot_area_w
     v_gap_frac  = V_GAP_PX  / plot_area_h
 
@@ -605,18 +611,57 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         y0 = y1 - row_h_frac * (plot_area_h / fig_h)
         return x0, x1, y0, y1
 
-    # ── Pre-scan: ALL pairs across features (significant + ns) ────────────────
-    # Uses pre-computed significance_dict when available (single pair only)
-    # so the plot is always consistent with the summary counts.
+    # ── Pre-scan: ALL pairwise comparisons for every feature ──────────────────
+    # For 2 classes  → 1 bracket, use significance_dict p if available.
+    # For 3+ classes → compute ALL pairwise Mann-Whitney p-values with
+    #                  Bonferroni correction; display one bracket per pair,
+    #                  stacked at increasing heights to avoid overlap.
+
     def _sig_for(mz):
+        """Return list of (class_a, class_b, p_raw_pairwise) for all pairs.
+
+        Strategy — consistent with the significance counter in Profiler.py:
+        • Binary (1 pair): use significance_dict[mz] directly — same value
+          that determined significant/non-significant in the counter.
+        • Multi-class (≥3 classes): the counter uses a GLOBAL test (Kruskal/ANOVA)
+          on all groups at once. Brackets show POST-HOC pairwise p-values using
+          the same pairwise test, with the user-chosen correction applied across
+          the pairs of THIS feature only (not across features).
+          We do NOT apply a second cross-feature correction here — that would
+          produce different results from the counter.
+        """
         raw = data[mz].replace([np.inf, -np.inf], np.nan)
-        cd  = np.log2(raw + 1e-9) if use_log2 else raw
-        cv  = {c: cd[data[label] == c].dropna() for c in classes}
-        if significance_dict is not None and mz in significance_dict and len(pairs) == 1:
+        if use_log2:
+            raw = np.log2(raw + 1e-9)
+        cv = {c: raw.loc[data[label] == c].dropna() for c in classes}
+
+        if n_pairs == 1:
+            # Binary: use the precomputed (and already corrected) p-value
             ca, cb = pairs[0]
-            return [(ca, cb, significance_dict[mz])]
-        return [(ca, cb, _stat_test(cv[ca], cv[cb], test))
-                for ca, cb in pairs]
+            if significance_dict is not None and mz in significance_dict:
+                return [(ca, cb, float(significance_dict[mz]))]
+            return [(ca, cb, _stat_test(cv[ca], cv[cb], test))]
+
+        # Multi-class: compute raw pairwise p-values with the chosen test
+        raw_pvals = [_stat_test(cv[ca], cv[cb], test) for ca, cb in pairs]
+
+        # Apply user-chosen correction across the pairs of this feature
+        try:
+            from statsmodels.stats.multitest import multipletests as _mt
+            _corr_map = {
+                'Bonferroni': 'bonferroni',
+                'FDR (Benjamini-Hochberg)': 'fdr_bh',
+            }
+            _method = _corr_map.get(pval_correction, None)
+            if _method and not all(p >= 1.0 for p in raw_pvals):
+                _, corrected, _, _ = _mt(raw_pvals, method=_method)
+                corrected = list(corrected)
+            else:
+                corrected = raw_pvals  # 'None': raw pairwise p-values
+        except Exception:
+            corrected = raw_pvals
+
+        return [(ca, cb, float(p)) for (ca, cb), p in zip(pairs, corrected)]
 
     # ── Create figure (NO subplot_titles) ─────────────────────────────────────
     fig = _subplots.make_subplots(
@@ -641,13 +686,13 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         row, col = r + 1, c + 1
         show_leg = (idx == 0)
 
-        x0d, x1d, y0d, y1d = _domain(row, col)
-
         # ── Feature data ──────────────────────────────────────────────────────
         raw      = data[mz].replace([np.inf, -np.inf], np.nan)
-        col_data = np.log2(raw + 1e-9) if use_log2 else raw
+        if use_log2:
+            raw = np.log2(raw + 1e-9)
+        col_data = raw
         y_label  = "log₂(Intensity)" if use_log2 else "Intensity"
-        cls_vals = {cls: col_data[data[label] == cls].dropna() for cls in classes}
+        cls_vals = {cls: col_data.loc[data[label] == cls].dropna() for cls in classes}
 
         # ── Main shape traces — points natifs Plotly DANS la forme ──────────────
         # Stratégie : boxpoints/points natif Plotly → dots INSIDE box/violin/bar
@@ -674,12 +719,12 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
                     box_visible=True,
                     meanline_visible=True,
                     meanline=dict(color="white", width=2),
-                    points=_pts_mode,    # "all" → affiche DANS le violon
+                    points=_pts_mode,
                     jitter=_jitter,
-                    pointpos=0,          # centré dans le violon
+                    pointpos=0,
                     marker=_pt_style,
                     spanmode="soft",
-                    x0=cls,
+                    x=[classes.index(cls)] * max(len(yv), 1),
                     hovertemplate=f"<b>{cls}</b><br>%{{y:.3f}}<extra></extra>",
                 ), row=row, col=col)
 
@@ -687,7 +732,7 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
                 mean_v = float(yv.mean()) if len(yv) else 0.0
                 std_v  = float(yv.std())  if len(yv) > 1 else 0.0
                 fig.add_trace(go.Bar(
-                    x=[cls], y=[mean_v],
+                    x=[classes.index(cls)], y=[mean_v],
                     name=cls, legendgroup=cls, showlegend=show_leg,
                     marker=dict(color=color, opacity=0.50,
                                 line=dict(color=color, width=1.3)),
@@ -696,10 +741,9 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
                                  thickness=1.5, width=6),
                     hovertemplate=f"<b>{cls}</b><br>Mean±SD: %{{y:.3f}}<extra></extra>",
                 ), row=row, col=col)
-                # Box invisible sur même catégorie pour le strip plot natif
                 if show_scatter and n_pts:
                     fig.add_trace(go.Box(
-                        y=yv, x=[cls] * n_pts,
+                        y=yv, x=[classes.index(cls)] * n_pts,
                         name=cls, legendgroup=cls, showlegend=False,
                         fillcolor="rgba(0,0,0,0)",
                         line=dict(color="rgba(0,0,0,0)", width=0),
@@ -711,15 +755,16 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
                         hovertemplate=f"<b>{cls}</b><br>%{{y:.3f}}<extra></extra>",
                     ), row=row, col=col)
 
-            else:  # box — points natifs DANS la boîte
+            else:  # box
                 fig.add_trace(go.Box(
                     y=yv, name=cls, legendgroup=cls, showlegend=show_leg,
+                    x=[classes.index(cls)] * max(len(yv), 1),
                     line=dict(color=color, width=2),
                     fillcolor=color, opacity=0.75,
                     boxmean="sd",
-                    boxpoints=_pts_mode,  # "all" + jitter → DANS la boîte
+                    boxpoints=_pts_mode,
                     jitter=_jitter,
-                    pointpos=0,           # centré
+                    pointpos=0,
                     marker=_pt_style,
                     hovertemplate=f"<b>{cls}</b><br>%{{y:.3f}}<extra></extra>",
                 ), row=row, col=col)
@@ -734,12 +779,19 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         y_max   = float(np.nanmax(all_y))
         y_range = max(abs(y_max - y_min), abs(y_max) * 0.02, 1e-6)
 
-        sig_pairs = _sig_for(mz)
-        n_brk     = len(sig_pairs)
-        step      = y_range * 0.14
-        headroom  = step * (0.5 + n_brk * 1.1) if n_brk else step * 0.2
-        y_hi      = y_max + headroom
-        y_lo      = y_min - y_range * 0.05
+        all_sig_pairs = _sig_for(mz)
+
+        # ── Always show ALL pairwise brackets (sig and non-sig).
+        # Sort by span (short first = lower bracket) to avoid overlap.
+        display_pairs = sorted(all_sig_pairs,
+            key=lambda t: abs(classes.index(t[1]) - classes.index(t[0])))
+
+        n_brk    = len(display_pairs)
+        # Use a larger step for many brackets to avoid crowding
+        step     = y_range * max(0.14, 0.10 + 0.02 * min(n_brk, 8))
+        headroom = step * (0.5 + n_brk * 1.2) if n_brk else step * 0.2
+        y_hi     = y_max + headroom
+        y_lo     = y_min - y_range * 0.05
 
         fig.update_yaxes(range=[y_lo, y_hi], row=row, col=col)
 
@@ -748,59 +800,88 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         xref   = f"x{ax_idx}"
         yref   = f"y{ax_idx}"
 
-        # ── Significance brackets ─────────────────────────────────────────────
-        for brk_k, (ca, cb, p) in enumerate(sig_pairs):
+        # ── x position = numeric index (matches traces which now use x=[i]) ──
+        def _data_x(cls_name):
+            return float(classes.index(cls_name))
+
+        # ── p-value formatter ─────────────────────────────────────────────────
+        def _fmt_p(pv):
+            if pv >= 1.0:   return "1"
+            if pv < 0.0001: return f"{pv:.2e}"
+            if pv < 0.001:  return f"{pv:.4f}"
+            if pv < 0.01:   return f"{pv:.3f}"
+            if pv < 0.1:    return f"{pv:.3f}"
+            return f"{pv:.2f}"
+
+        # ── Significance brackets — all in numeric data coords ────────────────
+        for brk_k, (ca, cb, p) in enumerate(display_pairs):
             stars     = _pval_to_stars(p)
             is_sig    = p < 0.05
             tick_h    = step * 0.22
-            br_y      = y_max + step * (0.5 + brk_k * 1.1)
+            br_y      = y_max + step * (0.5 + brk_k * 1.2)
             ann_color = "black" if is_sig else "#888888"
             brk_color = "black" if is_sig else "#aaaaaa"
-            ann_text  = f"<b>{stars}</b> p={p:.2g}" if is_sig else f"<i>ns</i> p={p:.2g}"
+            p_str     = _fmt_p(p)
+            ann_text  = f"<b>{stars}</b> p={p_str}" if is_sig else f"<i>ns</i> p={p_str}"
 
-            # Bracket lines in data coordinates
-            fig.add_shape(type="line", x0=ca, x1=cb, y0=br_y, y1=br_y,
+            xa       = _data_x(ca)
+            xb       = _data_x(cb)
+            x_centre = (xa + xb) / 2
+
+            fig.add_shape(type="line", x0=xa, x1=xb, y0=br_y, y1=br_y,
                 xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
-            fig.add_shape(type="line", x0=ca, x1=ca, y0=br_y-tick_h, y1=br_y,
+            fig.add_shape(type="line", x0=xa, x1=xa, y0=br_y - tick_h, y1=br_y,
                 xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
-            fig.add_shape(type="line", x0=cb, x1=cb, y0=br_y-tick_h, y1=br_y,
+            fig.add_shape(type="line", x0=xb, x1=xb, y0=br_y - tick_h, y1=br_y,
                 xref=xref, yref=yref, line=dict(color=brk_color, width=1.8))
 
-            # Label centred over bracket — paper x, data y
-            ia, ib   = classes.index(ca), classes.index(cb)
-            x_centre = (x0d + x1d) / 2 if n_cls == 1 else (
-                x0d + (x1d - x0d) * (ia + ib) / (2 * (n_cls - 1))
-            )
             fig.add_annotation(
                 x=x_centre, y=br_y + step * 0.20,
-                xref="paper", yref=yref,
+                xref=xref, yref=yref,
                 text=ann_text,
                 showarrow=False,
                 font=dict(size=10, color=ann_color, family="Arial"),
                 bgcolor="rgba(255,255,255,0.88)", borderpad=2,
             )
 
-        # ── Feature title — paper annotation ABOVE subplot domain ─────────────
-        # y1d is the top paper-fraction of this subplot's plot area.
-        # We place the title slightly above it using yshift (px).
+        # ── Feature title above all brackets ──────────────────────────────────
+        x_plot_centre = (_data_x(classes[0]) + _data_x(classes[-1])) / 2
+        title_y = y_hi + step * 0.35
+
+        if significance_dict is not None and mz in significance_dict:
+            global_p = significance_dict[mz]
+            g_stars = _pval_to_stars(global_p)
+            g_str   = _fmt_p(global_p)
+            if global_p < 0.05:
+                title_text = f"<b>{mz}</b>  <span style='color:#c00'>{g_stars} p={g_str}</span>"
+            else:
+                title_text = f"<b>{mz}</b>  <span style='color:#888'><i>ns</i> p={g_str}</span>"
+        else:
+            title_text = f"<b>{mz}</b>"
+
         fig.add_annotation(
-            x=(x0d + x1d) / 2,
-            y=y1d,
-            xref="paper", yref="paper",
-            text=f"<b>{mz}</b>",
+            x=x_plot_centre, y=title_y,
+            xref=xref, yref=yref,
+            text=title_text,
             showarrow=False,
             font=dict(size=13, color="black", family="Arial"),
-            xanchor="center",
-            yanchor="bottom",   # annotation hangs DOWN from y1d upward
-            yshift=6,           # 6 px gap between title bottom and plot top edge
+            xanchor="center", yanchor="bottom",
         )
 
-        # ── Axis styling ──────────────────────────────────────────────────────
-        fig.update_xaxes(**_ax, row=row, col=col)
+        # ── Axis styling — numeric x with class name labels ───────────────────
+        fig.update_xaxes(
+            **_ax,
+            tickmode="array",
+            tickvals=list(range(n_cls)),
+            ticktext=classes,
+            tickangle=-30 if n_cls > 3 else 0,
+            row=row, col=col,
+        )
         fig.update_yaxes(
             **_ax,
             title_text=y_label if col == 1 else "",
             title_font=dict(size=12, color="black", family="Arial"),
+            range=[y_lo, title_y + step * 0.5],
             row=row, col=col,
         )
         progress.progress(min((idx + 1) / n, 1.0))
@@ -818,9 +899,9 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
         ),
         margin=dict(l=MARGIN_L, r=MARGIN_R, t=MARGIN_T, b=MARGIN_B),
         hoverlabel=dict(bgcolor="white", font_size=12, font_color="black"),
-        violingap=0.25, violinmode="group",
-        boxgap=0.25,    boxmode="group",
-        bargap=0.30,    barmode="group",
+        violingap=0.3,
+        boxgap=0.3,
+        bargap=0.3,
     )
 
     # Render with fixed size — use_container_width=False keeps square aspect
@@ -843,26 +924,32 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
 # ─── Public API ────────────────────────────────────────────────────────────────
 def boxplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                   loc="inside", show_scatter=False, use_log2=False,
-                                  capture_name=None, significance_dict=None):
+                                  capture_name=None, significance_dict=None,
+                                  pval_correction='None'):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
                             show_scatter, use_log2, "box", capture_name,
-                            significance_dict=significance_dict)
+                            significance_dict=significance_dict,
+                            pval_correction=pval_correction)
 
 
 def violinplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                      loc="inside", show_scatter=False, use_log2=False,
-                                     capture_name=None, significance_dict=None):
+                                     capture_name=None, significance_dict=None,
+                                     pval_correction='None'):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
                             show_scatter, use_log2, "violin", capture_name,
-                            significance_dict=significance_dict)
+                            significance_dict=significance_dict,
+                            pval_correction=pval_correction)
 
 
 def barplot_significant_features(data, mz_values, class_colors=None, test="Kruskal",
                                   loc="inside", show_scatter=False, use_log2=False,
-                                  capture_name=None, significance_dict=None):
+                                  capture_name=None, significance_dict=None,
+                                  pval_correction='None'):
     _make_feature_subplots(data, mz_values, class_colors or {}, test,
                             show_scatter, use_log2, "bar", capture_name,
-                            significance_dict=significance_dict)
+                            significance_dict=significance_dict,
+                            pval_correction=pval_correction)
 
 
 def eli5_format_to_dataframe(eli5_html):
@@ -1331,8 +1418,9 @@ def plot_significant_features(data, mz_values, class_colors=None, test='Kruskal'
     - plot_type: 'box', 'violin', or 'bar'
     - show_scatter: whether to overlay individual points
     - use_log2: whether to apply log2 transformation
-    - pval_correction: correction method (not directly used in plotting, but passed for context)
-    - significance_dict: dict mapping features to adjusted p-values
+    - pval_correction: correction method applied to pairwise brackets in multi-class mode
+                       ('None', 'Bonferroni', 'FDR (Benjamini-Hochberg)')
+    - significance_dict: dict mapping features to adjusted p-values (used for binary comparison)
     """
     
     # Map plot type to the appropriate function
@@ -1340,17 +1428,20 @@ def plot_significant_features(data, mz_values, class_colors=None, test='Kruskal'
         boxplot_significant_features(data, mz_values, class_colors, test, 
                                      loc='inside', show_scatter=show_scatter, 
                                      use_log2=use_log2, capture_name=capture_name,
-                                     significance_dict=significance_dict)
+                                     significance_dict=significance_dict,
+                                     pval_correction=pval_correction)
     elif plot_type == 'violin':
         violinplot_significant_features(data, mz_values, class_colors, test, 
                                         loc='inside', show_scatter=show_scatter, 
                                         use_log2=use_log2, capture_name=capture_name,
-                                        significance_dict=significance_dict)
+                                        significance_dict=significance_dict,
+                                        pval_correction=pval_correction)
     elif plot_type == 'bar':
         barplot_significant_features(data, mz_values, class_colors, test, 
                                      loc='inside', show_scatter=show_scatter, 
                                      use_log2=use_log2, capture_name=capture_name,
-                                     significance_dict=significance_dict)
+                                     significance_dict=significance_dict,
+                                     pval_correction=pval_correction)
     else:
         raise ValueError(f"Unknown plot_type: {plot_type}")
     
