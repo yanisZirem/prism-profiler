@@ -57,7 +57,8 @@ Developed by [PRISM U1192 Laboratory](https://www.inserm.fr/en/research-inserm/p
 - ~3 GB disk space
 
 > 💡 Administrator rights are **not** required.
-
+⚠️ **Important:** During the installation of Miniconda or Anaconda, make sure to check the option **"Add to my PATH environment variable"** (or similar).  
+> Otherwise, the `conda` command will not be recognized in your terminal.
 ---
 
 ### Step 1 — Download
@@ -103,7 +104,16 @@ Profiler will open in your default browser. No terminal, no commands, fully loca
 ---
 
 ### Manual Installation (Linux / macOS / advanced)
+### Requirements
 
+- Windows 10 or 11 (64-bit)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/download) — **must be installed first**
+- ~3 GB disk space
+
+> 💡 Administrator rights are **not** required.
+⚠️ **Important:** During the installation of Miniconda or Anaconda, make sure to check the option **"Add to my PATH environment variable"** (or similar).  
+> Otherwise, the `conda` command will not be recognized in your terminal.
+---
 ```bash
 # 1. Create environment
 conda create -n profiler python=3.8.20
