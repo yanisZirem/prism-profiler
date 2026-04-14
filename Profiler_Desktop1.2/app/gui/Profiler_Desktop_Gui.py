@@ -4294,19 +4294,29 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 df_qc['Features per sample'] = feature_cols.notna().sum(axis=1)
                                 df_qc['Total signal'] = feature_cols.fillna(0).sum(axis=1)
 
+
+
                                 # --- QC stats ---
                                 fps_mean = df_qc['Features per sample'].mean()
-                                fps_std = df_qc['Features per sample'].std()
+                                fps_std  = df_qc['Features per sample'].std()
                                 _sig_mean = df_qc['Total signal'].mean()
                                 _sig_std  = df_qc['Total signal'].std()
-                                # CV only meaningful if mean > 0 (non-scaled absolute data)
+
+                                # CV sur le nombre de features
+                                if fps_mean > 0:
+                                    features_cv = (fps_std / fps_mean) * 100
+                                    _cv_feat_label = f"CV: {features_cv:.1f}%"
+                                else:
+                                    features_cv = None
+                                    _cv_feat_label = "CV: N/A"
+
+                                # CV sur le signal total (intensités)
                                 if _sig_mean > 0:
                                     signal_cv = (_sig_std / _sig_mean) * 100
                                     _cv_label = f"CV: {signal_cv:.1f}%"
                                 else:
                                     signal_cv = None
-                                    _cv_label = "CV: N/A (signal contains negatives — use absolute intensities)" 
-
+                                    _cv_label = "CV: N/A (signal contains negatives — use absolute intensities)"
 
                                 # --- Min / Max sample-level stats ---
                                 fps_min = df_qc['Features per sample'].min()
@@ -4316,14 +4326,15 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 signal_max = df_qc['Total signal'].max()
 
 
+                                # Affichage
                                 st.markdown("**Sample QC summary**")
                                 st.info(
                                     f"Features/sample → "
                                     f"min: {fps_min:.0f} | max: {fps_max:.0f} | "
-                                    f"mean: {fps_mean:.1f} | std: {fps_std:.1f}\n"
+                                    f"mean: {fps_mean:.1f} | std: {fps_std:.1f} | {_cv_feat_label}\n"
                                     f"Total signal → "
                                     f"min: {signal_min:.2e} | max: {signal_max:.2e} | "
-                                    f"{_cv_label}"
+                                    f"mean: {_sig_mean:.2e} | std: {_sig_std:.2e} | {_cv_label}"
                                 )
 
 
