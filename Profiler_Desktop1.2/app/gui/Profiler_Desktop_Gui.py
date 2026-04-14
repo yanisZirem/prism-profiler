@@ -6880,9 +6880,48 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             if _bp_df_preview is not None else []
         )
 
-
         # ── Feature selection OUTSIDE form (live filtering) ───────────────────
         st.markdown("**Feature Selection**")
+
+        # ── Paste features ────────────────────────────────────────────────────
+        with st.expander("📋 Paste a feature list", expanded=False):
+            _bp_paste_raw = st.text_area(
+                "Paste feature names (separated by spaces, commas, or newlines)",
+                key="bp_paste_features",
+                placeholder="e.g.  feature_123, feature_456  or  feature_123 feature_456",
+                height=90,
+            )
+            # Parse: split on commas, spaces, newlines — strip whitespace — deduplicate
+            import re as _re
+            _bp_paste_tokens = [
+                t.strip() for t in _re.split(r'[\s,]+', _bp_paste_raw.strip()) if t.strip()
+            ] if _bp_paste_raw.strip() else []
+
+            # Validate against available features (exact match first, then case-insensitive)
+            _bp_all_lower_map = {str(f).lower(): f for f in _bp_all_features}
+            _bp_pasted_valid, _bp_pasted_invalid = [], []
+            for _tok in _bp_paste_tokens:
+                if _tok in _bp_all_features:
+                    _bp_pasted_valid.append(_tok)
+                elif _tok.lower() in _bp_all_lower_map:
+                    _bp_pasted_valid.append(_bp_all_lower_map[_tok.lower()])
+                else:
+                    _bp_pasted_invalid.append(_tok)
+
+            # Deduplicate while preserving order
+            _seen = set()
+            _bp_pasted_valid = [
+                f for f in _bp_pasted_valid
+                if not (_seen.add(f) or f in _seen - {f})
+            ]
+
+            if _bp_paste_tokens:
+                if _bp_pasted_valid:
+                    st.success(f"✅ {len(_bp_pasted_valid)} feature(s) recognised and ready to add to selection.")
+                if _bp_pasted_invalid:
+                    st.warning(f"⚠️ {len(_bp_pasted_invalid)} not found in dataset: {', '.join(_bp_pasted_invalid[:10])}"
+                                + (" …" if len(_bp_pasted_invalid) > 10 else ""))
+
         _c_srch, _c_topn = st.columns([3, 1])
         with _c_srch:
             _bp_search = st.text_input(
@@ -6902,16 +6941,23 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             if _bp_search.strip().lower() in str(f).lower()]
             if _bp_search.strip() else _bp_all_features
         )
-        _bp_default = _bp_filtered[:int(_bp_topn)] if _bp_topn > 0 else []
+
+        # Merge pasted valid features into default selection (union with top-N)
+        _bp_default_topn = _bp_filtered[:int(_bp_topn)] if _bp_topn > 0 else []
+        _bp_default = list(dict.fromkeys(_bp_pasted_valid + _bp_default_topn))  # pasted first, dedup
+
+        # Ensure options list contains all pasted valid features (even if filtered out)
+        _bp_options = list(dict.fromkeys(_bp_pasted_valid + _bp_filtered))
 
         mz_values_selected = st.multiselect(
             f"Features ({len(_bp_filtered):,} available"
             + (f", filtered from {len(_bp_all_features):,}" if _bp_search.strip() else "")
+            + (f" · {len(_bp_pasted_valid)} pasted" if _bp_pasted_valid else "")
             + ")",
-            options=_bp_filtered,
+            options=_bp_options,
             default=_bp_default,
             key="bp_features_multiselect",
-            help="Select one or more features to compare across classes.",
+            help="Select one or more features to compare across classes. Use the paste box above to add features quickly.",
         )
 
         # ── Analysis params INSIDE form ────────────────────────────────────────
@@ -7010,7 +7056,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 class_col = st.session_state.get("label_column", "Class")
                 data_filtered = data_sig[data_sig[class_col].isin(selected_classes)].copy()
                 # Multiselect already validated — just confirm they exist in filtered df
-                mz_values = [m for m in mz_values_selected if m in data_filtered.columns]
+                mz_values = _resolve_features_df(data_filtered, mz_values_selected)
 
                 if not mz_values:
                     st.warning("⚠️ None of the selected features found in this data source.")
