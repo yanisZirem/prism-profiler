@@ -3,8 +3,8 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 11/03/2026
-Version: 1.3.0
+Last Updated: 15/04/2026
+Version: 1.2.3
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
 Start with: streamlit run profiler_gui_desktop.py
@@ -6301,6 +6301,37 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
             submitted = st.form_submit_button("Display Volcano Plot")
 
+        # ── Control class selector (outside form — always reactive) ──────────
+        _vol_src_key_preview = {
+            "Raw data": st.session_state.get('data'),
+            "Preprocessed": st.session_state.get('preprocessed_data'),
+            "Oversampled": st.session_state.get('oversampled_data'),
+            "Undersampled": st.session_state.get('undersampled_data'),
+        }.get(_vol_src_map.get(_t5_src, "None"))
+
+        _vol_control_class = None
+        if _vol_src_key_preview is not None and 'Class' in _vol_src_key_preview.columns:
+            _vol_classes = list(_vol_src_key_preview['Class'].dropna().unique())
+            if len(_vol_classes) == 2:
+                st.markdown(
+                    "<div style='background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;"
+                    "padding:10px 14px;margin:6px 0;font-size:0.85rem;color:#1e40af;'>"
+                    "🔁 <b>Binary comparison detected</b> — choose which class is the <b>Control</b> "
+                    "(denominator in Fold Change). Features <em>upregulated</em> are higher in the <em>other</em> class.</div>",
+                    unsafe_allow_html=True
+                )
+                _vol_control_class = st.selectbox(
+                    "Control class (reference / denominator)",
+                    options=_vol_classes,
+                    index=0,
+                    key="volcano_control_class",
+                    help=(
+                        "The selected class is used as the denominator when computing Fold Change.\n"
+                        "Fold Change = mean(Other) / mean(Control)\n"
+                        "Upregulated = higher in Other vs Control."
+                    )
+                )
+
         # ---------------- ACTION ----------------
         if submitted:
             # Load selected data source
@@ -6353,7 +6384,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             }
 
                             volcano_data = calculate_volcano_data(
-                                data_vol, class_column, selected_features, p_value_threshold, correction_method=method_map[correction_method]
+                                data_vol, class_column, selected_features, p_value_threshold,
+                                correction_method=method_map[correction_method],
+                                control_class=st.session_state.get("volcano_control_class")
                             )
 
                             # Apply fold change filter
@@ -6711,12 +6744,61 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     cls: feats for cls, feats in _hm_exclusive.items() if feats
                 }
 
+                _cls_color_map = st.session_state.get('class_colors', {})
                 for cls, feats in overexpressed_features.items():
                     exc = _hm_exclusive.get(cls, [])
+                    _col = _cls_color_map.get(cls, "#318CE7")
                     if feats:
-                        st.info(f"**Class {cls}**: {len(feats)} overexpressed · {len(exc)} exclusive")
+                        st.markdown(
+                            f"<div style='background:rgba(49,140,231,0.07);border-left:4px solid {_col};"
+                            f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;'>"
+                            f"<b style='color:{_col};'>{cls}</b> — "
+                            f"<b>{len(feats)}</b> overexpressed features&nbsp;·&nbsp;"
+                            f"<b>{len(exc)}</b> exclusive features</div>",
+                            unsafe_allow_html=True
+                        )
                     else:
-                        st.info(f"**Class {cls}**: No overexpressed features detected")
+                        st.markdown(
+                            f"<div style='background:#f8fafc;border-left:4px solid #94a3b8;"
+                            f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;color:#64748b;'>"
+                            f"<b>{cls}</b> — No overexpressed features detected</div>",
+                            unsafe_allow_html=True
+                        )
+
+                # ── Overexpressed features detail table (always shown) ────────────────
+                _over_df_rows = []
+                _feat_cols_for_over = selected_features
+                _df_for_over = data_source_df[['Class'] + [f for f in _feat_cols_for_over if f in data_source_df.columns]].copy()
+                for _f in _feat_cols_for_over:
+                    if _f in _df_for_over.columns:
+                        _df_for_over[_f] = pd.to_numeric(_df_for_over[_f], errors='coerce')
+                _classes_over = _df_for_over['Class'].unique()
+                for _cls in _classes_over:
+                    _cls_vals = _df_for_over[_df_for_over['Class'] == _cls][[f for f in _feat_cols_for_over if f in _df_for_over.columns]].mean()
+                    _other_vals = _df_for_over[_df_for_over['Class'] != _cls][[f for f in _feat_cols_for_over if f in _df_for_over.columns]].mean()
+                    _diff = _cls_vals - _other_vals
+                    for _feat, _score in _diff[_diff > 0].sort_values(ascending=False).items():
+                        _over_df_rows.append({"Class": _cls, "Feature": _feat, "Overexpression Score": round(_score, 4)})
+
+                if _over_df_rows:
+                    _over_df = pd.DataFrame(_over_df_rows)
+                    st.markdown("**Over-expressed Features by Class**")
+                    import csv as _csv_mod
+                    _col1, _col2 = st.columns([3, 1])
+                    with _col1:
+                        st.dataframe(_over_df, use_container_width=True)
+                    with _col2:
+                        _csv_over = _over_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=_csv_over,
+                            file_name=f"overexpressed_features_p{p_value_threshold if perform_stat_test else 'all'}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            help="Download the overexpressed features table as CSV file"
+                        )
+                else:
+                    st.info("No overexpressed features detected for selected classes.")
 
                 if perform_stat_test and 'significant_features' in locals():
                     st.session_state["heatmap_significant_features"] = significant_features
@@ -6757,46 +6839,6 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             use_container_width=True,
                             help="Download the significant features table as CSV file"
                         )
-
-
-                    over_df = []
-
-                    classes = significant_df['Class'].unique()
-                    for cls in classes:
-                        cls_values = significant_df[significant_df['Class'] == cls][valid_significant_features].mean()
-                        other_values = significant_df[significant_df['Class'] != cls][valid_significant_features].mean()
-                
-                        diff = cls_values - other_values
-                        cls_over = diff[diff > 0].sort_values(ascending=False)
-                
-                        for feature, score in cls_over.items():
-                            over_df.append({
-                                "Class": cls,
-                                "Feature": feature,
-                                "Overexpression Score": round(score, 4)
-                            })
-
-                    if over_df:
-                        over_df = pd.DataFrame(over_df)
-
-                        st.markdown("**Over-expressed Features by Class**")
-                
-                        # Bouton de téléchargement pour la table des over-expressed features
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.dataframe(over_df)
-                        with col2:
-                            csv_overexpressed = over_df.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label="📥 Download CSV",
-                                data=csv_overexpressed,
-                                file_name=f"overexpressed_features_p{p_value_threshold}.csv",
-                                mime="text/csv",
-                                use_container_width=True,
-                                help="Download the overexpressed features table as CSV file"
-                            )
-                    else:
-                        st.info("No overexpressed features detected for selected classes.")
 
                     st.markdown("**Common Overexpressed Features Between Classes**")
 
