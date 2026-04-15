@@ -1,30 +1,18 @@
 """
-Software Name: Profiler
-Module Name: Enrichment analysis module for Profiler
+profiler_genes_enrichement.py
+Enrichment analysis module for Profiler — 100% Plotly interactive.
+
 Two modes in render_enrichment_tab():
   ORA  — Over-Representation Analysis via Enrichr / local GMT
   GSEA — Gene Set Enrichment Analysis via gseapy.prerank()
 
-Author: Yanis Zirem
-Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
-Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
-
-Context:
-This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
-It is designed for archiving on Zenodo and integration into GitHub releases.
-
-License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
-Citation:
-If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
-
-Links:
-- GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
-
+Key design decisions:
+  - ORA gene inputs inside st.form (prevents live-rerender freeze)
+  - GSEA fully outside any form (ranked list + database = live)
+  - Shared _render_db_selector() for DB choice in both tabs
+  - All plots: axes/labels/legend in large black text, high quality
+  - ASCII sanitisation before every gseapy call (fixes codec errors)
 """
-
 
 import gc
 import re
@@ -334,11 +322,101 @@ def _plot_enrichment_heatmap(df):
 def _plot_gene_count(gene_mapping, color_map):
     gm = pd.DataFrame(gene_mapping).copy()
     gm["Gene Count"] = gm["Genes"].apply(len)
-    n   = gm["Pathway"].nunique()
+
+    # Compute total unique genes per pathway (across all classes)
+    pathway_total = (
+        gm.groupby("Pathway")["Genes"]
+        .apply(lambda s: len(set(g for lst in s for g in lst)))
+        .rename("Total Genes in Pathway")
+        .reset_index()
+    )
+    gm = gm.merge(pathway_total, on="Pathway", how="left")
+    gm["Gene %"] = (gm["Gene Count"] / gm["Total Genes in Pathway"].replace(0, 1) * 100).round(1)
+
+    n = gm["Pathway"].nunique()
+
+    # Bar: absolute count
     fig = px.bar(gm, x="Gene Count", y="Pathway", color="Class",
-                 orientation="h", color_discrete_map=color_map)
+                 orientation="h", color_discrete_map=color_map,
+                 hover_data={"Gene %": True, "Gene Count": True, "Total Genes in Pathway": True})
     fig = _layout(fig, "Gene Count per Enriched Pathway", height=max(450, n*30+120))
     fig.update_xaxes(title_text="Number of Genes")
+    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+    return fig
+
+
+def _plot_gene_pct(gene_mapping, color_map, combined_df=None):
+    """
+    % of pathway genes detected per class.
+    Uses the Overlap column (e.g. '2/104') from ORA results to compute the
+    true coverage: detected_genes / total_genes_in_pathway * 100.
+    Falls back to gene_mapping counts if combined_df is not available.
+    """
+    gm = pd.DataFrame(gene_mapping).copy()
+    gm["Gene Count"] = gm["Genes"].apply(len)
+
+    if combined_df is not None and "Overlap" in combined_df.columns:
+        # Parse Overlap "detected/total" → total pathway size per (Term, Class)
+        def _parse_overlap(ov):
+            try:
+                parts = str(ov).split("/")
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+            except Exception:
+                pass
+            return None, None
+
+        _ov = combined_df[["Term", "Class", "Overlap"]].copy()
+        _ov[["Detected", "Total"]] = _ov["Overlap"].apply(
+            lambda x: pd.Series(_parse_overlap(x))
+        )
+        _ov = _ov.dropna(subset=["Detected", "Total"])
+        _ov["Detected"] = _ov["Detected"].astype(int)
+        _ov["Total"]    = _ov["Total"].astype(int)
+        _ov["Gene %"]   = (_ov["Detected"] / _ov["Total"].replace(0, 1) * 100).round(1)
+
+        # Optionally add adjusted p-value for hover
+        hover_extra = {}
+        if "Adjusted P-value" in combined_df.columns:
+            _ov = _ov.merge(
+                combined_df[["Term", "Class", "Adjusted P-value"]].drop_duplicates(),
+                on=["Term", "Class"], how="left"
+            )
+            hover_extra["Adjusted P-value"] = ":.4f"
+
+        n = _ov["Term"].nunique()
+        fig = px.bar(
+            _ov, x="Gene %", y="Term", color="Class",
+            orientation="h", color_discrete_map=color_map,
+            text="Gene %",
+            hover_data={"Detected": True, "Total": True, **hover_extra},
+        )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig = _layout(fig, "% of Pathway Genes Detected per Class", height=max(450, n*30+120))
+        fig.update_xaxes(title_text="Gene Coverage (%)", range=[0, 110])
+        fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+        return fig
+
+    # Fallback: use gene_mapping only (less accurate — total = union across classes)
+    pathway_total = (
+        gm.groupby("Pathway")["Genes"]
+        .apply(lambda s: len(set(g for lst in s for g in lst)))
+        .rename("Total Genes in Pathway")
+        .reset_index()
+    )
+    gm = gm.merge(pathway_total, on="Pathway", how="left")
+    gm["Gene %"] = (gm["Gene Count"] / gm["Total Genes in Pathway"].replace(0, 1) * 100).round(1)
+
+    n = gm["Pathway"].nunique()
+    fig = px.bar(
+        gm, x="Gene %", y="Pathway", color="Class",
+        orientation="h", color_discrete_map=color_map,
+        text="Gene %",
+        hover_data={"Gene Count": True, "Total Genes in Pathway": True},
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+    fig = _layout(fig, "% of Pathway Genes Detected per Class", height=max(450, n*30+120))
+    fig.update_xaxes(title_text="Gene Coverage (%)", range=[0, 110])
     fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
     return fig
 
@@ -453,10 +531,14 @@ def _plot_network(gene_mapping, color_map):
         colors = [color_map.get(G.nodes[n].get("cls",""),"#94a3b8") for n in nodes]
         fig.add_trace(go.Scatter(
             x=x_, y=y_,
-            mode="markers+text" if ntype=="pathway" else "markers",
-            text=nodes if ntype=="pathway" else None,
-            textposition="top center",
-            textfont=dict(family=_FONT_FAMILY, size=9, color="#0f172a"),
+            mode="markers+text",
+            text=nodes,
+            textposition="top center" if ntype == "pathway" else "bottom center",
+            textfont=dict(
+                family=_FONT_FAMILY,
+                size=9 if ntype == "pathway" else 7,
+                color="#0f172a" if ntype == "pathway" else "#475569"
+            ),
             marker=dict(size=sz, symbol=symbol, color=colors,
                         line=dict(width=1, color="white")),
             name=ntype.capitalize(), hovertext=nodes, hoverinfo="text",
@@ -519,6 +601,13 @@ def _render_ora_results(combined, gene_mapping, gene_set_label, color_map, class
         fig = _plot_gene_count(gene_mapping, color_map)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
         _capture_plotly(fig, "enrichment_gene_count"); del fig; gc.collect()
+
+        try:
+            fig_pct = _plot_gene_pct(gene_mapping, color_map, combined_df=combined)
+            st.plotly_chart(fig_pct, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+            _capture_plotly(fig_pct, "enrichment_gene_pct"); del fig_pct; gc.collect()
+        except Exception as _e:
+            st.warning(f"Gene % plot skipped: {_e}")
 
     with st.expander("Gene × Pathway Heatmap", expanded=False):
         if gene_mapping:
@@ -1156,7 +1245,7 @@ def render_enrichment_tab():
         if rank_ok and ranked_series is not None:
             st.markdown(f'<span class="badge-ok">✓ {rank_desc}</span>',
                         unsafe_allow_html=True)
-            with st.expander("Preview ranked list (top / bottom 10)", expanded=False):
+            with st.expander("👁️ Preview ranked list (top / bottom 10)", expanded=False):
                 preview = pd.DataFrame({"Feature": ranked_series.index,
                                         "Score":   ranked_series.values})
                 ct, cb = st.columns(2)

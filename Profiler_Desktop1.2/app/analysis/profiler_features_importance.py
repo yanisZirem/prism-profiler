@@ -1007,7 +1007,8 @@ def eli5_format_to_dataframe(eli5_html):
 
 def calculate_volcano_data(
     data, class_column, features,
-    p_value_threshold=0.05, correction_method="fdr_bh"
+    p_value_threshold=0.05, correction_method="fdr_bh",
+    control_class=None
 ):
     # ── Résoudre les features (str vs float columns) ──────────────────────────
     data = data.copy()
@@ -1015,8 +1016,13 @@ def calculate_volcano_data(
     features = [str(f) for f in features]               # idem pour les features
     features = _resolve_features(data, features)        # filtre les manquantes
 
-    classes = data[class_column].unique()
+    classes = list(data[class_column].unique())
     results = []
+
+    # ── If binary + control_class specified, reorder so control is always first ─
+    if control_class is not None and control_class in classes and len(classes) == 2:
+        other = [c for c in classes if c != control_class]
+        classes = [control_class] + other
 
     grouped = {c: data.loc[data[class_column] == c, features] for c in classes}
 
