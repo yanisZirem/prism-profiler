@@ -70,7 +70,7 @@ from app.data.profiler_structured_data_file import (
     maxquant_data, load_structured_data, update_class_names, get_data,
     cluster_index_to_letter, diann_data, perseus_data,
     get_meta_columns, get_omics_columns, get_target_column_options,
-    CLASS_ALIASES, ID_ALIASES,
+    CLASS_ALIASES, ID_ALIASES,detect_omics_format
 )
 
 # core/
