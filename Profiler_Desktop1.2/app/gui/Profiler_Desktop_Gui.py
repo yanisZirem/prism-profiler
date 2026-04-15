@@ -154,6 +154,73 @@ def _picon(key, label, color="#318CE7", size=15):
 
 
 
+# ─── Data source resolver (used across all tabs) ───────────────────────────────
+
+def _resolve_data_source(source_name: str) -> "pd.DataFrame | None":
+    """
+    Resolve a data source name to the corresponding DataFrame.
+    Used consistently across all analysis tabs.
+    """
+    mapping = {
+        'Raw Data': lambda: st.session_state.get('final_data') or st.session_state.get('data'),
+        'Raw data': lambda: st.session_state.get('final_data') or st.session_state.get('data'),
+        'Raw': lambda: st.session_state.get('final_data') or st.session_state.get('data'),
+        'Edited/Renamed': lambda: st.session_state.get('final_data'),
+        'Preprocessed': lambda: st.session_state.get('preprocessed_data'),
+        'Oversampled': lambda: st.session_state.get('oversampled_data'),
+        'Undersampled': lambda: st.session_state.get('undersampled_data'),
+        'Preprocessed + Oversampled': lambda: st.session_state.get('oversampled_data'),
+        'Preprocessed + Undersampled': lambda: st.session_state.get('undersampled_data'),
+    }
+    resolver = mapping.get(source_name)
+    if resolver:
+        return resolver()
+    return None
+
+
+def _resolve_features_df(df: "pd.DataFrame", features: list) -> list:
+    """
+    Resolve a list of feature names against the actual columns of a DataFrame.
+
+    Handles the mzML case where column names are floats (e.g. 100.07) but the
+    caller may hold them as strings (e.g. '100.07') or vice-versa.  Returns
+    only the features that are present in the DataFrame, preserving order and
+    converting each element to the exact type used by the DataFrame columns so
+    the returned list can be used directly for column indexing.
+    """
+    if df is None or not features:
+        return []
+
+    col_set = set(df.columns)
+
+    # Build a str->actual-col lookup for float columns (mzML m/z values)
+    str_to_col = {}
+    for col in df.columns:
+        if isinstance(col, float):
+            str_to_col[str(col)] = col
+            # Also cover truncated representations like '100.07' vs '100.0700…'
+            try:
+                str_to_col[f"{col:g}"] = col
+            except (ValueError, TypeError):
+                pass
+
+    resolved = []
+    for f in features:
+        if f in col_set:
+            resolved.append(f)
+        elif isinstance(f, str) and f in str_to_col:
+            resolved.append(str_to_col[f])
+        elif isinstance(f, float) and str(f) in {str(c) for c in col_set}:
+            # feature is float but columns are stored as strings
+            for col in df.columns:
+                try:
+                    if float(col) == f:
+                        resolved.append(col)
+                        break
+                except (ValueError, TypeError):
+                    pass
+    return resolved
+
 
 def check_stop(message="Analysis stopped by user"):
     """
