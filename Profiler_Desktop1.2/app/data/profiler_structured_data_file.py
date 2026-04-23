@@ -1,28 +1,4 @@
 """
-Software Name: Profiler
-Module Name: Features importance
-Author: Yanis Zirem
-Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
-Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
-
-Context:
-This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
-It is designed for archiving on Zenodo and integration into GitHub releases.
-
-License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
-Citation:
-If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
-
-Links:
-- GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
-
-"""
-
-
-"""
 profiler_structured_data_file.py
 Handles tabular data loading with:
  - Smart CSV delimiter detection (,  ;  tab  |) with user confirmation
@@ -887,36 +863,137 @@ def progenesis_data(file, rename_mapping=None):
 
 # ─── PEAKS Studio ─────────────────────────────────────────────────────────────
 
+def _detect_peaks_version(df: pd.DataFrame) -> str:
+    """
+    Heuristic to distinguish PEAKS Studio format versions.
+    Returns '13.1' for PEAKS 13.1+, 'legacy' otherwise.
+
+    PEAKS 13.1 signature:
+      - 'Protein Group' column (numeric group id)
+      - 'Accession' column
+      - Per-sample Area columns as 'Area <SampleName>' (no colon)
+      - Per-sample #Spec columns as '#Spec <SampleName>'
+      - Per-sample Coverage columns as 'Coverage(%) <SampleName>'
+      - 'Average Mass' (vs legacy 'Avg. Mass')
+      - '-10LgP' (capital L, vs legacy '-10lgP')
+      - 'Top' boolean column
+    """
+    has_protein_group  = "Protein Group" in df.columns
+    has_accession      = "Accession" in df.columns
+    has_average_mass   = "Average Mass" in df.columns
+    has_top            = "Top" in df.columns
+    # Per-sample Area columns with a space (no colon) — e.g. 'Area BT-HLA-Chymo'
+    area_space_cols    = [c for c in df.columns
+                          if re.match(r"^Area\s+\S", c)]
+
+    if (has_protein_group and has_accession
+            and (has_average_mass or has_top or area_space_cols)):
+        return "13.1"
+    return "legacy"
+
+
 def peaks_data(file, rename_mapping=None):
     """
     PEAKS Studio protein/peptide export (CSV).
-    Annotation: Protein ID, Gene, Description, Coverage, #Peptides, …
-    Intensity / Area columns: named after sample files or 'Area:SampleName'.
+
+    Supports:
+      • Legacy PEAKS (≤12):
+          - Annotation: 'Protein ID', 'Gene', 'Description', 'Coverage (%)', '#Peptides', …
+          - Intensity columns: 'Area:SampleName' or 'SampleName Area'
+      • PEAKS Studio 13.1+:
+          - Annotation: 'Protein Group', 'Top', 'Accession', 'Gene', '-10LgP',
+            'Coverage(%)', '#Peptides', '#Unique', 'PTM', 'Average Mass', 'Description'
+          - Per-sample annotation: 'Coverage(%) <Sample>', '#Spec <Sample>'
+          - Intensity columns: 'Area <SampleName>' (space-separated, no colon)
     """
     try:
         df = load_data_safely(file, sep=",")
+        df = _clean_col_names(df)
+        version = _detect_peaks_version(df)
 
-        ANNOT_COLS = {
-            "Protein ID", "Gene", "Description", "Species",
-            "Coverage (%)", "#Peptides", "#Unique", "#Spectra",
-            "Avg. Mass", "Score", "Group Profile (Ratio)",
-            "Peptide", "Sequence", "Modified Sequence", "Charge",
-            "m/z", "RT", "Area", "ppm",
-        }
-        annot_present = [c for c in df.columns if c in ANNOT_COLS or c.split(":")[0].strip() in ANNOT_COLS]
-        area_cols     = [c for c in df.columns
-                         if c.startswith("Area:") or
-                         (c not in annot_present and "area" in c.lower())]
+        if version == "13.1":
+            # ── PEAKS 13.1 ────────────────────────────────────────────────────
+            # Fixed annotation columns (not per-sample)
+            FIXED_ANNOT = {
+                "Protein Group", "Top", "Accession", "Gene",
+                "-10LgP", "-10lgP",          # handle both capitalisations
+                "Coverage(%)", "Coverage (%)",
+                "#Peptides", "#Unique", "PTM", "Average Mass",
+                "Avg. Mass", "Description",
+            }
+            # Per-sample pattern columns (Coverage(%) X, #Spec X) — annotation, not intensity
+            per_sample_annot_prefixes = ("Coverage(%) ", "Coverage (%) ", "#Spec ", "#De Novo ")
 
-        if not area_cols:
-            area_cols = [c for c in df.columns if c not in annot_present]
+            area_cols = []
+            for c in df.columns:
+                # 'Area <SampleName>' — the defining intensity column of PEAKS 13.1
+                if re.match(r"^Area\s+\S", c):
+                    area_cols.append(c)
 
-        feat_col = _pick_feature_label_col(df, ["Gene", "Protein ID", "Description", "Peptide", "Sequence"])
-        feature_labels = _make_unique_labels(df[feat_col]) if feat_col else [str(i) for i in range(len(df))]
+            if not area_cols:
+                # Fallback: any column not in fixed annot and not a per-sample annot prefix
+                area_cols = [
+                    c for c in df.columns
+                    if c not in FIXED_ANNOT
+                    and not any(c.startswith(p) for p in per_sample_annot_prefixes)
+                ]
 
-        df_t = df[area_cols].T.reset_index()
-        df_t.columns = ["Class"] + feature_labels
-        df_t["Class"] = df_t["Class"].str.replace(r"^Area:\s*", "", regex=True).str.strip()
+            feat_col = _pick_feature_label_col(
+                df, ["Gene", "Accession", "Description"]
+            )
+            feature_labels = (
+                _make_unique_labels(df[feat_col]) if feat_col
+                else [str(i) for i in range(len(df))]
+            )
+
+            df_t = df[area_cols].T.reset_index()
+            df_t.columns = ["Class"] + feature_labels
+            # Strip leading 'Area ' prefix to recover sample name
+            df_t["Class"] = (
+                df_t["Class"]
+                .str.replace(r"^Area\s+", "", regex=True)
+                .str.strip()
+            )
+
+        else:
+            # ── Legacy PEAKS (≤12) ────────────────────────────────────────────
+            ANNOT_COLS = {
+                "Protein ID", "Protein Group", "Accession", "Gene", "Description",
+                "Species", "Organism", "Coverage (%)", "#Peptides", "#Unique",
+                "#Spectra", "#Spec", "#De Novo", "Avg. Mass", "Average Mass", "Score",
+                "-10lgP", "-10LgP", "PTM", "Group Profile (Ratio)",
+                "Peptide", "Sequence", "Modified Sequence", "Charge",
+                "m/z", "RT", "Area", "ppm",
+            }
+            annot_present = [
+                c for c in df.columns
+                if c in ANNOT_COLS or c.split(":")[0].strip() in ANNOT_COLS
+            ]
+            area_cols = [
+                c for c in df.columns
+                if c.startswith("Area:") or c.endswith(" Area")
+                or (c not in annot_present and "area" in c.lower())
+            ]
+            if not area_cols:
+                area_cols = [c for c in df.columns if c not in annot_present]
+
+            feat_col = _pick_feature_label_col(
+                df, ["Gene", "Protein ID", "Description", "Peptide", "Sequence"]
+            )
+            feature_labels = (
+                _make_unique_labels(df[feat_col]) if feat_col
+                else [str(i) for i in range(len(df))]
+            )
+
+            df_t = df[area_cols].T.reset_index()
+            df_t.columns = ["Class"] + feature_labels
+            df_t["Class"] = (
+                df_t["Class"]
+                .str.replace(r"^Area:\s*", "", regex=True)   # 'Area:SampleName'
+                .str.replace(r"\s*Area$",  "", regex=True)   # 'SampleName Area'
+                .str.strip()
+            )
+
         return _finalise_transposed(df_t, rename_mapping)
 
     except Exception as e:
@@ -1289,8 +1366,12 @@ def _sig_progenesis(df, fname):
             any("normalised" in c.lower() or "normalized" in c.lower() for c in df.columns))
 
 def _sig_peaks(df, fname):
-    return ("Protein ID" in df.columns or "Peptide" in df.columns) and \
-           any(c.startswith("Area") for c in df.columns)
+    has_area = any(c.startswith("Area") or c.endswith(" Area") or c == "Area" for c in df.columns)
+    # Legacy PEAKS (≤12): 'Protein ID' or 'Peptide' + Area columns
+    legacy = ("Protein ID" in df.columns or "Peptide" in df.columns) and has_area
+    # PEAKS Studio 13.1: 'Protein Group' (numeric group id) + 'Accession' + per-sample Area columns
+    peaks_131 = ("Protein Group" in df.columns and "Accession" in df.columns and has_area)
+    return legacy or peaks_131
 
 def _sig_featurecounts(df, fname):
     return "Geneid" in df.columns and "Chr" in df.columns
@@ -1386,6 +1467,6 @@ def load_omics_auto(file, rename_mapping=None):
     raise ValueError(
         "Could not automatically detect the file format. "
         "Supported formats: MaxQuant, DIA-NN, Spectronaut, FragPipe, "
-        "Proteome Discoverer, Progenesis, PEAKS, featureCounts, STAR, HTSeq, "
-        "Salmon, kallisto, XCMS/MZmine, MetaboAnalyst."
+        "Proteome Discoverer, Progenesis, PEAKS Studio (legacy & 13.1+), "
+        "featureCounts, STAR, HTSeq, Salmon, kallisto, XCMS/MZmine, MetaboAnalyst."
     )
