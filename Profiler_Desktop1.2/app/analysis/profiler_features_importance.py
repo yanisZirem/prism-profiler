@@ -561,6 +561,49 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
                                    pval_correction=pval_correction)
         return
 
+    # ── Condition selector — filtre uniquement les brackets p-value ──────────
+    # Les boxplots de TOUTES les conditions restent affichés.
+    # Seules les paires entre les conditions sélectionnées auront des brackets.
+    if len(classes) > 2:
+        # Clé stable : basée sur le nom du plot + les classes disponibles
+        # JAMAIS sur id() ou len() qui changent à chaque re-render
+        _stable_key = f"{capture_name or 'plot'}_{'_'.join(sorted(str(c) for c in classes))}"
+
+        st.markdown("**Condition selection for p-value brackets**")
+        _col1, _col2 = st.columns([2, 1])
+        with _col1:
+            _selected_classes = st.multiselect(
+                "Select conditions for p-value brackets (all pairs shown if empty):",
+                options=classes,
+                default=st.session_state.get(f"cond_select_{_stable_key}", []),
+                key=f"cond_select_{_stable_key}",
+                help="All boxplots stay visible. Only the brackets between selected conditions are drawn. Select 2+ conditions to restrict brackets.",
+            )
+        with _col2:
+            _bracket_mode = st.radio(
+                "Brackets to show:",
+                options=["All pairs", "Significant only"],
+                index=0,
+                key=f"brk_mode_{_stable_key}",
+                help="'Significant only' hides ns brackets to reduce clutter.",
+            )
+
+        # Paires autorisées pour les brackets : uniquement entre conditions sélectionnées
+        # Les données et les boxplots ne sont PAS filtrés
+        if len(_selected_classes) >= 2:
+            _bracket_pairs = set(combinations(_selected_classes, 2)) | \
+                             set(combinations(reversed(_selected_classes), 2))
+        elif len(_selected_classes) == 1:
+            st.warning("Please select at least 2 conditions for brackets.")
+            _bracket_pairs = None  # aucune restriction
+        else:
+            _bracket_pairs = None  # vide = tout afficher
+
+        _show_ns_brackets = (_bracket_mode == "All pairs")
+    else:
+        _bracket_pairs    = None
+        _show_ns_brackets = True
+
     n     = len(mz_values)
     ncols = min(4, max(1, n))
     nrows = max(1, int(np.ceil(n / ncols)))
@@ -781,9 +824,19 @@ def _make_feature_subplots(data, mz_values, class_colors, test, show_scatter,
 
         all_sig_pairs = _sig_for(mz)
 
-        # ── Always show ALL pairwise brackets (sig and non-sig).
+        # ── Filter brackets based on user's bracket mode selection ────────────
+        if _show_ns_brackets:
+            display_pairs = list(all_sig_pairs)
+        else:
+            display_pairs = [(ca, cb, p) for ca, cb, p in all_sig_pairs if p < 0.05]
+
+        # Filtrer par les conditions sélectionnées (si restriction active)
+        if _bracket_pairs is not None:
+            display_pairs = [(ca, cb, p) for ca, cb, p in display_pairs
+                             if (ca, cb) in _bracket_pairs or (cb, ca) in _bracket_pairs]
+
         # Sort by span (short first = lower bracket) to avoid overlap.
-        display_pairs = sorted(all_sig_pairs,
+        display_pairs = sorted(display_pairs,
             key=lambda t: abs(classes.index(t[1]) - classes.index(t[0])))
 
         n_brk    = len(display_pairs)
