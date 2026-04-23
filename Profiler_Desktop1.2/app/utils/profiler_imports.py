@@ -70,7 +70,14 @@ from app.data.profiler_structured_data_file import (
     maxquant_data, load_structured_data, update_class_names, get_data,
     cluster_index_to_letter, diann_data, perseus_data,
     get_meta_columns, get_omics_columns, get_target_column_options,
-    CLASS_ALIASES, ID_ALIASES,detect_omics_format
+    CLASS_ALIASES, ID_ALIASES, detect_omics_format,
+    # Extended omics format parsers
+    spectronaut_protein_data, spectronaut_peptide_data,
+    fragpipe_data, proteome_discoverer_data, progenesis_data,
+    peaks_data, maxquant_peptide_data, diann_peptide_data,
+    rnaseq_counts_data, salmon_kallisto_data, featurecounts_data,
+    star_counts_data, htseq_counts_data, metaboanalyst_data,
+    xcms_mzmine_data, load_omics_auto, render_tabular_loader,
 )
 
 # core/
@@ -127,10 +134,6 @@ from app.analysis.profiler_normality import (
     plot_missing_heatmap, plot_missing_per_class,
     plot_zero_inflation_per_class, plot_feature_completeness_rank,
 )
-
-# Extended omics format parsers
-
-
 # Longitudinal / repeated-measures analysis module
 from app.analysis.profiler_longitudinal import (
     validate_longitudinal_df,
