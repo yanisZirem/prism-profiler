@@ -7213,8 +7213,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         st.info(f"**Significant features (p < 0.05)**: {len(sig_df)} / {len(result_df)}")
                         st.info(f"**Non-significant features**: {len(nonsig_df)} / {len(result_df)}")
 
-                        # Appel à la fonction de plot
-                        plot_significant_features(
+                        # Stocker les arguments du plot dans session_state
+                        # pour pouvoir le ré-afficher sans re-soumettre le formulaire
+                        st.session_state["_boxplot_args"] = dict(
                             data=data_filtered,
                             mz_values=mz_values,
                             class_colors=st.session_state.get("class_colors", None),
@@ -7226,6 +7227,15 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             significance_dict=dict(zip(result_df.feature, result_df.adj_pvalue)),
                             capture_name="boxplots_fig"
                         )
+
+        # ── Toujours ré-afficher le plot si des args sont stockés ─────────────────
+        # (permet aux widgets dans _make_feature_subplots de fonctionner sans re-submit)
+        if not submitted and st.session_state.get("_boxplot_args"):
+            _args = st.session_state["_boxplot_args"]
+            plot_significant_features(**_args)
+        elif submitted and st.session_state.get("_boxplot_args"):
+            _args = st.session_state["_boxplot_args"]
+            plot_significant_features(**_args)
 
 
 
