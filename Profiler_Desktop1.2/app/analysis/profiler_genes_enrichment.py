@@ -667,13 +667,35 @@ def perform_gsea(gene_lists, class_names, gene_set, organism, num_pathways):
 
 def perform_gsea_offline(gene_lists, class_names, gene_set_path, organism, num_pathways):
     """ORA via local GMT."""
+    import io
+
+    # ── Resolve gene_set_path to an actual filesystem path ───────────────────
+    # gene_set_path may be:
+    #   (a) a pathlib.Path / str  → already a valid path, use as-is
+    #   (b) a Streamlit UploadedFile (BytesIO-like) → must be written to a
+    #       temporary file first, otherwise str() gives "<BytesIO object …>"
+    #       and gseapy tries to hit the Enrichr API instead.
+    _tmp_gmt_file = None  # keep reference so it stays alive during the loop
+    if hasattr(gene_set_path, "read"):
+        # It's a file-like object (UploadedFile or similar)
+        gene_set_path.seek(0)
+        _tmp_gmt_file = tempfile.NamedTemporaryFile(
+            suffix=".gmt", delete=False, mode="wb"
+        )
+        _tmp_gmt_file.write(gene_set_path.read())
+        _tmp_gmt_file.flush()
+        _tmp_gmt_file.close()
+        _resolved_gmt = _tmp_gmt_file.name
+    else:
+        _resolved_gmt = str(gene_set_path)
+
     results, gene_mapping = [], []
     for i, gene_list in enumerate(gene_lists):
         if not gene_list: continue
         clean_list = _sanitise_gene_list(gene_list)
         try:
             enr = gp.enrichr(gene_list=clean_list,
-                             gene_sets=str(gene_set_path),
+                             gene_sets=_resolved_gmt,
                              organism=organism or "Human")
             if enr.results.empty:
                 st.warning(f"No results for '{class_names[i]}'."); continue
@@ -691,12 +713,23 @@ def perform_gsea_offline(gene_lists, class_names, gene_set_path, organism, num_p
         except Exception as e:
             st.error(f"Enrichment error for '{class_names[i]}': {e}")
     if not results:
-        st.warning("No enrichment results found."); return
+        st.warning("No enrichment results found.")
+        if _tmp_gmt_file is not None:
+            import os
+            try: os.unlink(_tmp_gmt_file.name)
+            except Exception: pass
+        return
     combined  = pd.concat(results, ignore_index=True)
     color_map = st.session_state.get("class_colors", {})
-    label = Path(gene_set_path).name if hasattr(gene_set_path,"name") else str(gene_set_path)
+    label = (getattr(gene_set_path, "name", None)
+             or Path(_resolved_gmt).name)
     _render_ora_results(combined, gene_mapping, label, color_map, class_names)
-    del results, combined, gene_mapping; gc.collect()
+    del results, combined, gene_mapping
+    if _tmp_gmt_file is not None:
+        import os
+        try: os.unlink(_tmp_gmt_file.name)
+        except Exception: pass
+    gc.collect()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
