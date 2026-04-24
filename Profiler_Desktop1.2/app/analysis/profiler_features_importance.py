@@ -1910,6 +1910,9 @@ def plot_heatmap_samples(
     if capture_name:
         st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
         st.session_state[capture_name] = fig          # ← direct re-display key
+        # Store PNG bytes so GUI persistent blocks can re-render the download
+        # button across reruns without needing kaleido or re-running the computation.
+        st.session_state[f"{capture_name}_png_bytes"] = img_bytes
 
     st.download_button(
         label="📥 Download Heatmap as PNG",
