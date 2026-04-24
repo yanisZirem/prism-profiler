@@ -3324,10 +3324,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 )
 
                                 # Identifier les classes déjà sélectionnées pour CE groupe spécifique
+                                # On cherche par l'index du groupe (stocké sous group_idx_{i}) plutôt que par gname
+                                # pour éviter les décalages quand gname change
+                                _group_key = f"_group_idx_{i}"
                                 current_group_classes = [
-                                    cls for cls, grp_name in st.session_state["group_temp_mapping"].items()
-                                    if grp_name == gname
-                                ] if gname else []
+                                    cls for cls, grp_idx in st.session_state.get("group_temp_mapping_idx", {}).items()
+                                    if grp_idx == i
+                                ]
 
                                 # Recalculer les classes assignées MAINTENANT (après les inputs précédents)
                                 assigned_classes = set(st.session_state["group_temp_mapping"].keys())
@@ -3345,21 +3348,32 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     help=f"Available: {len(available_classes)} classes"
                                 )
 
-                                # Mettre à jour le mapping temporaire
-                                if gname and selected:
-                                    # Retirer les anciennes assignations de ce groupe
-                                    for cls in current_group_classes:
-                                        if cls not in selected and cls in st.session_state["group_temp_mapping"]:
-                                            del st.session_state["group_temp_mapping"][cls]
+                                # Mettre à jour le mapping temporaire (indexé par position du groupe)
+                                if "group_temp_mapping_idx" not in st.session_state:
+                                    st.session_state["group_temp_mapping_idx"] = {}
 
-                                    # Ajouter les nouvelles
+                                # Retirer les anciennes assignations de ce groupe
+                                for cls in current_group_classes:
+                                    if cls not in selected:
+                                        st.session_state["group_temp_mapping"].pop(cls, None)
+                                        st.session_state["group_temp_mapping_idx"].pop(cls, None)
+
+                                # Mettre à jour avec la sélection courante
+                                if gname and selected:
                                     for cls in selected:
                                         st.session_state["group_temp_mapping"][cls] = gname
+                                        st.session_state["group_temp_mapping_idx"][cls] = i
+                                elif not gname and selected:
+                                    # Nom de groupe pas encore renseigné: stocker l'index en attendant
+                                    for cls in selected:
+                                        st.session_state["group_temp_mapping_idx"][cls] = i
+                                        # On ne met pas dans group_temp_mapping sans nom
                                 elif not selected:
                                     # Si plus de sélection, retirer ce groupe du mapping
-                                    for cls in current_group_classes:
-                                        if cls in st.session_state["group_temp_mapping"]:
-                                            del st.session_state["group_temp_mapping"][cls]
+                                    for cls in list(st.session_state["group_temp_mapping_idx"].keys()):
+                                        if st.session_state["group_temp_mapping_idx"].get(cls) == i:
+                                            st.session_state["group_temp_mapping"].pop(cls, None)
+                                            st.session_state["group_temp_mapping_idx"].pop(cls, None)
 
                                 st.markdown("---")
 
@@ -3373,6 +3387,11 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 else:
                                     st.success(f"✅ **Summary:** All {len(class_names)} classes have been assigned to groups!")
 
+                            # Afficher le message persistant de succès/reset s'il y en a un
+                            if st.session_state.get("_group_apply_success"):
+                                st.success(st.session_state.pop("_group_apply_success"))
+                            if st.session_state.get("_group_reset_success"):
+                                st.success(st.session_state.pop("_group_reset_success"))
 
                             # Boutons d'action
                             col1, col2 = st.columns(2)
@@ -3398,11 +3417,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                                             # Nettoyer les états temporaires
                                             st.session_state["group_temp_mapping"] = {}
+                                            st.session_state["group_temp_mapping_idx"] = {}
                                             for i in range(n_groups):
-                                                if f"selected_classes_{i}" in st.session_state:
-                                                    del st.session_state[f"selected_classes_{i}"]
-                                                if f"group_name_{i}" in st.session_state:
-                                                    del st.session_state[f"group_name_{i}"]
+                                                st.session_state.pop(f"selected_classes_{i}", None)
+                                                st.session_state.pop(f"group_name_{i}", None)
                                             # Re-sync DataLab cache
                                             _cur_src_g = st.session_state.get('datalab_source', 'Raw / Edited')
                                             _sync_g = {
@@ -3414,7 +3432,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                             if _sync_g is not None:
                                                 st.session_state['datalab_df']  = _sync_g.copy()
                                                 st.session_state['overview_df'] = _sync_g.copy()
-                                            st.success("✅ Class grouping applied successfully!")
+                                            # Message persistant (survit au rerun)
+                                            st.session_state["_group_apply_success"] = "✅ Class grouping applied successfully!"
                                             st.rerun()
                                     else:
                                         st.warning("⚠️ No classes have been assigned to groups yet.")
@@ -3427,19 +3446,19 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     st.session_state["class_renaming"] = {cls: cls for cls in original_classes}
                                     st.session_state["final_data"] = st.session_state["data"].copy()
                                     st.session_state["group_temp_mapping"] = {}
+                                    st.session_state["group_temp_mapping_idx"] = {}
                             
                                     # Nettoyer tous les états de groupes
                                     for i in range(n_groups):
-                                        if f"selected_classes_{i}" in st.session_state:
-                                            del st.session_state[f"selected_classes_{i}"]
-                                        if f"group_name_{i}" in st.session_state:
-                                            del st.session_state[f"group_name_{i}"]
+                                        st.session_state.pop(f"selected_classes_{i}", None)
+                                        st.session_state.pop(f"group_name_{i}", None)
                             
-                                    st.success("🗑️ All changes have been reset to original classes.")
-                                    gc.collect()
                                     # Re-sync DataLab cache after group reset
                                     st.session_state['datalab_df']  = st.session_state["final_data"].copy()
                                     st.session_state['overview_df'] = st.session_state["final_data"].copy()
+                                    # Message persistant (survit au rerun)
+                                    st.session_state["_group_reset_success"] = "🗑️ All changes have been reset to original classes."
+                                    gc.collect()
                                     st.rerun()
 
 
@@ -4609,14 +4628,35 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         <span style='color:#fcd34d;font-weight:700;'>{n_cls}</span> classes
                     </div>""", unsafe_allow_html=True)
 
-            # Ensure class_colors
+            # ── Ensure class_colors is in sync with the *current* class names ──
+            # When classes are renamed/grouped, old keys may linger and new keys
+            # may be missing. We rebuild the dict so that:
+            #   1. New class names get a default colour (or inherit the colour of
+            #      their predecessor via class_renaming, so user picks are kept).
+            #   2. Stale keys (old names that no longer exist) are removed.
             import plotly.express as px
             if _viz_df is not None and 'Class' in _viz_df.columns:
                 if 'class_colors' not in st.session_state:
                     st.session_state['class_colors'] = {}
-                for _ci, _cls in enumerate(_viz_df['Class'].unique()):
-                    if _cls not in st.session_state['class_colors']:
-                        st.session_state['class_colors'][_cls] = px.colors.qualitative.Plotly[_ci % len(px.colors.qualitative.Plotly)]
+                _current_classes = list(_viz_df['Class'].unique())
+                # Build inverse renaming map: new_name → old_name (for colour inheritance)
+                _rmap = st.session_state.get('class_renaming', {})
+                _rmap_inv = {}
+                for _old, _new in _rmap.items():
+                    if _new not in _rmap_inv:
+                        _rmap_inv[_new] = _old
+                _palette = px.colors.qualitative.Plotly
+                _new_colors = {}
+                for _ci, _cls in enumerate(_current_classes):
+                    if _cls in st.session_state['class_colors']:
+                        _new_colors[_cls] = st.session_state['class_colors'][_cls]
+                    elif _rmap_inv.get(_cls) in st.session_state['class_colors']:
+                        # Inherit colour from the predecessor name after renaming
+                        _new_colors[_cls] = st.session_state['class_colors'][_rmap_inv[_cls]]
+                    else:
+                        _new_colors[_cls] = _palette[_ci % len(_palette)]
+                # Replace entirely so stale old-name keys are removed
+                st.session_state['class_colors'] = _new_colors
 
             st.markdown("<hr style='margin:10px 0 14px 0;border:none;border-top:1px solid rgba(255,255,255,0.07);'>", unsafe_allow_html=True)
 
@@ -4873,6 +4913,15 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
         # ── Venn / UpSet ──
         with _cmp_subtabs[2]:
             st.markdown('<p style="color:gray;font-size:14px;">Visualize class relationships and feature overlaps. Exclusive features per class can be extracted and sent directly to ORA enrichment.</p>', unsafe_allow_html=True)
+            st.info(
+                "💡 **Recommended source: Raw Data** — Venn & UpSet diagrams compute *presence/absence* "
+                "of features per class based on non-null values. "
+                "After preprocessing, missing values are often imputed (filled with 0 or an estimated "
+                "value), which erases the natural sparsity pattern and inflates the overlap between "
+                "classes. For proteomics especially, use the **Raw Data** source to correctly identify "
+                "features that are exclusively detected in one condition.",
+                icon="ℹ️",
+            )
             with st.form("venn_upset_form"):
                 col1_v, col2_v = st.columns(2)
                 with col1_v:
@@ -6470,18 +6519,27 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 fold_change_threshold,capture_name="volcano_fig",
                             )
 
-                            st.plotly_chart(volcano_plot, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
-                            # volcano already captured by plot_volcano() with key "volcano_fig"
-
-                            # Store results
+                            # Store results first, then rerun so the persistent block renders
                             st.session_state["volcano_data"] = filtered_volcano_data
                             st.session_state["show_volcano"] = True
+                            st.session_state["volcano_fig"] = volcano_plot
+                            st.rerun()
 
                     except Exception as e:
                         st.error(f"Error generating Volcano Plot: {e}")
                     finally:
                         del data_vol
                         gc.collect()
+
+        # ── Re-display stored volcano figure (persists across ANY rerun) ────────
+        if st.session_state.get("show_volcano"):
+            _stored_vol_fig = st.session_state.get("volcano_fig")
+            if _stored_vol_fig is not None:
+                st.plotly_chart(_stored_vol_fig, use_container_width=True, config={
+                    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True,
+                    'modeBarButtonsToAdd': ['downloadImage'],
+                    'toImageButtonOptions': {'format': 'png', 'scale': 2}
+                })
 
         # ---------------- RESULTS ----------------
         if "volcano_data" in st.session_state:
@@ -6688,6 +6746,16 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
             # Bouton de validation
             submitted = st.form_submit_button("Show Heatmap")
+            _hm_clear = st.form_submit_button("🗑️ Clear Heatmap", help="Remove the current heatmap so you can configure a new one.")
+
+        # Clear heatmap if requested
+        if _hm_clear:
+            for _k in ("show_heatmap", "heatmap_fig", "heatmap_overexpressed_features",
+                       "heatmap_exclusive_features", "heatmap_significant_features",
+                       "heatmap_data_source_df", "heatmap_over_df", "heatmap_n_features",
+                       "heatmap_p_threshold", "heatmap_avg_by_class", "heatmap_class_labels"):
+                st.session_state.pop(_k, None)
+            st.rerun()
 
 
 
@@ -6811,28 +6879,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     cls: feats for cls, feats in _hm_exclusive.items() if feats
                 }
 
-                _cls_color_map = st.session_state.get('class_colors', {})
-                for cls, feats in overexpressed_features.items():
-                    exc = _hm_exclusive.get(cls, [])
-                    _col = _cls_color_map.get(cls, "#318CE7")
-                    if feats:
-                        st.markdown(
-                            f"<div style='background:rgba(49,140,231,0.07);border-left:4px solid {_col};"
-                            f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;'>"
-                            f"<b style='color:{_col};'>{cls}</b> — "
-                            f"<b>{len(feats)}</b> overexpressed features&nbsp;·&nbsp;"
-                            f"<b>{len(exc)}</b> exclusive features</div>",
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        st.markdown(
-                            f"<div style='background:#f8fafc;border-left:4px solid #94a3b8;"
-                            f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;color:#64748b;'>"
-                            f"<b>{cls}</b> — No overexpressed features detected</div>",
-                            unsafe_allow_html=True
-                        )
-
-                # ── Overexpressed features detail table (always shown) ────────────────
+                # ── Persist results for re-display across reruns ───────────────
                 _over_df_rows = []
                 _feat_cols_for_over = selected_features
                 _df_for_over = data_source_df[['Class'] + [f for f in _feat_cols_for_over if f in data_source_df.columns]].copy()
@@ -6846,118 +6893,146 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     _diff = _cls_vals - _other_vals
                     for _feat, _score in _diff[_diff > 0].sort_values(ascending=False).items():
                         _over_df_rows.append({"Class": _cls, "Feature": _feat, "Overexpression Score": round(_score, 4)})
-
-                if _over_df_rows:
-                    _over_df = pd.DataFrame(_over_df_rows)
-                    st.markdown("**Over-expressed Features by Class**")
-                    import csv as _csv_mod
-                    _col1, _col2 = st.columns([3, 1])
-                    with _col1:
-                        st.dataframe(_over_df, use_container_width=True)
-                    with _col2:
-                        _csv_over = _over_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=_csv_over,
-                            file_name=f"overexpressed_features_p{p_value_threshold if perform_stat_test else 'all'}.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                            help="Download the overexpressed features table as CSV file"
-                        )
-                else:
-                    st.info("No overexpressed features detected for selected classes.")
-
+                st.session_state["heatmap_over_df"] = pd.DataFrame(_over_df_rows) if _over_df_rows else pd.DataFrame()
+                st.session_state["heatmap_n_features"]   = len(selected_features)
+                st.session_state["heatmap_p_threshold"]  = p_value_threshold if perform_stat_test else None
+                st.session_state["heatmap_avg_by_class"] = average_by_class
+                st.session_state["heatmap_class_labels"] = list(classes)
                 if perform_stat_test and 'significant_features' in locals():
                     st.session_state["heatmap_significant_features"] = significant_features
-                    st.session_state["heatmap_data_source_df"] = data_source_df  
+                    st.session_state["heatmap_data_source_df"]       = data_source_df
 
-                    valid_significant_features = [f for f in significant_features if f in data_source_df.columns]
-            
-                    if not valid_significant_features:
-                        st.warning("No significant features available in the data source selected.")
-                        st.stop()
-
-                    # Garder les intensités brutes
-                    significant_df = data_source_df[['Class'] + valid_significant_features].copy()
-
-                    st.markdown("**Significant Features**")
-            
-
-                    import csv
-
-                    # Bouton de téléchargement pour la table des features significatives
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.dataframe(significant_df)
-                    with col2:
-                        # Préparer le CSV au format Excel-friendly
-                        csv_significant = significant_df.to_csv(
-                            index=False,
-                            sep=';',  # point-virgule comme séparateur
-                            quoting=csv.QUOTE_NONNUMERIC,  # texte entre guillemets
-                            encoding='utf-8-sig'
-                        )
-                
-                        st.download_button(
-                            label="📥 Download CSV",
-                            data=csv_significant.encode("utf-8-sig"),
-                            file_name=f"significant_features_p{p_value_threshold}.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                            help="Download the significant features table as CSV file"
-                        )
-
-                    st.markdown("**Common Overexpressed Features Between Classes**")
-
-
-                    valid_over = {cls: feats for cls, feats in overexpressed_features.items() if feats}
-
-                    if len(valid_over) < 2:
-                        st.info("Not enough classes with overexpressed features to compute intersections.")
-                    else:
-
-                        common_all = set.intersection(*map(set, valid_over.values()))
-                
-                        if common_all:
-                            st.success(f"**Common to ALL Classes ({len(common_all)}):** {', '.join(sorted(common_all))}")
-                        else:
-                            st.warning("No features are commonly overexpressed across ALL classes.")
-
-
-                        st.markdown("**Pairwise Intersections**")
-                        for i, cls1 in enumerate(valid_over):
-                            for cls2 in list(valid_over)[i + 1:]:
-                                inter = set(valid_over[cls1]).intersection(valid_over[cls2])
-                                if inter:
-                                    st.info(
-                                        f"**{cls1} ∩ {cls2}** ({len(inter)} features): "
-                                        + ", ".join(sorted(inter))
-                                    )
-                                else:
-                                    st.info(f"**{cls1} ∩ {cls2}**: None")
-
-
-                for var in [
-                    "data_heat",
-                    "data_source_df",
-                    "selected_features",
-                    "custom_colors",
-                    "common_all",
-                    "valid_over",
-                    "over_df"
-                ]:
-                    try:
-                        del globals()[var]
-                    except:
-                        pass
-
+                for var in ["data_heat", "data_source_df", "selected_features",
+                            "custom_colors", "_df_for_over", "_over_df_rows"]:
+                    try: del locals()[var]
+                    except: pass
                 gc.collect()
-
+                # Hand off to the persistent display block below (avoids
+                # double-render and ensures all reruns show the heatmap).
+                st.rerun()
 
             except Exception as e:
                 import traceback
                 st.error(f"An error occurred while generating the Heatmap: {e}")
                 st.text(traceback.format_exc())
+
+        # ── Re-display stored heatmap results (persists across ANY rerun) ────
+        # The figure is stored in session_state["heatmap_fig"] by
+        # plot_heatmap_samples() itself. We always re-render it here so
+        # download_button clicks (or any other widget interaction) never
+        # cause it to disappear.
+        if st.session_state.get("show_heatmap"):
+            _stored_fig = st.session_state.get("heatmap_fig")
+            if _stored_fig is not None:
+                st.plotly_chart(_stored_fig, use_container_width=True, config={
+                    "scrollZoom": True,
+                    "displayModeBar": True,
+                    "displaylogo": False,
+                    "modeBarButtonsToAdd": ["downloadImage"],
+                    "toImageButtonOptions": {"format": "png", "scale": 3},
+                })
+
+            # ── Overexpressed summary ──────────────────────────────────────────
+            _over_feats = st.session_state.get("heatmap_overexpressed_features", {})
+            _exc_feats  = st.session_state.get("heatmap_exclusive_features", {})
+            _cls_color_map = st.session_state.get('class_colors', {})
+            _n_feat = st.session_state.get("heatmap_n_features", "?")
+            _p_thr  = st.session_state.get("heatmap_p_threshold")
+
+            st.markdown(f"**{_n_feat} feature(s)** used in the heatmap.")
+            if _p_thr is not None:
+                st.markdown(f"P-value threshold: `{_p_thr}`")
+
+            st.markdown("**Overexpressed Features by Class**")
+            for cls, feats in _over_feats.items():
+                exc = _exc_feats.get(cls, [])
+                _col = _cls_color_map.get(cls, "#318CE7")
+                if feats:
+                    st.markdown(
+                        f"<div style='background:rgba(49,140,231,0.07);border-left:4px solid {_col};"
+                        f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;'>"
+                        f"<b style='color:{_col};'>{cls}</b> — "
+                        f"<b>{len(feats)}</b> overexpressed features&nbsp;·&nbsp;"
+                        f"<b>{len(exc)}</b> exclusive features</div>",
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        f"<div style='background:#f8fafc;border-left:4px solid #94a3b8;"
+                        f"border-radius:6px;padding:8px 14px;margin:4px 0;font-size:0.88rem;color:#64748b;'>"
+                        f"<b>{cls}</b> — No overexpressed features detected</div>",
+                        unsafe_allow_html=True
+                    )
+
+            # ── Overexpressed detail table ─────────────────────────────────────
+            _over_df = st.session_state.get("heatmap_over_df", pd.DataFrame())
+            if not _over_df.empty:
+                st.markdown("**Over-expressed Features by Class**")
+                import csv as _csv_mod
+                _col1, _col2 = st.columns([3, 1])
+                with _col1:
+                    st.dataframe(_over_df, use_container_width=True)
+                with _col2:
+                    _csv_over = _over_df.to_csv(index=False).encode('utf-8')
+                    _p_label = st.session_state.get("heatmap_p_threshold", "all")
+                    st.download_button(
+                        label="📥 Download CSV",
+                        data=_csv_over,
+                        file_name=f"overexpressed_features_p{_p_label}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        help="Download the overexpressed features table as CSV file"
+                    )
+            else:
+                st.info("No overexpressed features detected for selected classes.")
+
+            # ── Significant features table (stat test) ─────────────────────────
+            _sig_feats   = st.session_state.get("heatmap_significant_features")
+            _sig_src_df  = st.session_state.get("heatmap_data_source_df")
+            _p_thr_sig   = st.session_state.get("heatmap_p_threshold")
+            if _sig_feats and _sig_src_df is not None:
+                _valid_sig = [f for f in _sig_feats if f in _sig_src_df.columns]
+                if _valid_sig:
+                    significant_df = _sig_src_df[['Class'] + _valid_sig].copy()
+                    st.markdown("**Significant Features**")
+                    import csv
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.dataframe(significant_df)
+                    with col2:
+                        csv_significant = significant_df.to_csv(
+                            index=False, sep=';',
+                            quoting=csv.QUOTE_NONNUMERIC,
+                            encoding='utf-8-sig'
+                        )
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv_significant.encode("utf-8-sig"),
+                            file_name=f"significant_features_p{_p_thr_sig}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                        )
+
+                    st.markdown("**Common Overexpressed Features Between Classes**")
+                    _valid_over = {cls: feats for cls, feats in _over_feats.items() if feats}
+                    if len(_valid_over) < 2:
+                        st.info("Not enough classes with overexpressed features to compute intersections.")
+                    else:
+                        _common_all = set.intersection(*map(set, _valid_over.values()))
+                        if _common_all:
+                            st.success(f"**Common to ALL Classes ({len(_common_all)}):** {', '.join(sorted(_common_all))}")
+                        else:
+                            st.warning("No features are commonly overexpressed across ALL classes.")
+                        st.markdown("**Pairwise Intersections**")
+                        for i, cls1 in enumerate(_valid_over):
+                            for cls2 in list(_valid_over)[i + 1:]:
+                                inter = set(_valid_over[cls1]).intersection(_valid_over[cls2])
+                                if inter:
+                                    st.info(f"**{cls1} ∩ {cls2}** ({len(inter)} features): " + ", ".join(sorted(inter)))
+                                else:
+                                    st.info(f"**{cls1} ∩ {cls2}**: None")
+                
+        gc.collect()
 
 
 
