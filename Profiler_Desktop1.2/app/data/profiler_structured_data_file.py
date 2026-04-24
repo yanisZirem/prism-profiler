@@ -863,6 +863,72 @@ def progenesis_data(file, rename_mapping=None):
 
 # ─── PEAKS Studio ─────────────────────────────────────────────────────────────
 
+def _aggregate_peaks_duplicates(
+    df: pd.DataFrame,
+    gene_col: str,
+    area_cols: list,
+    score_col: str = None,
+    strategy: str = "best_score",
+) -> pd.DataFrame:
+    """
+    Collapse duplicate gene/feature rows in a PEAKS protein table.
+
+    Parameters
+    ----------
+    df          : raw PEAKS DataFrame (before transposition)
+    gene_col    : column used as feature label (e.g. 'Gene' or 'Accession')
+    area_cols   : list of per-sample Area column names
+    score_col   : score column to use for 'best_score' strategy ('-10LgP' / '-10lgP')
+    strategy    : one of
+                    'none'       – keep all rows, append numeric suffix for duplicates
+                    'best_score' – keep the row with the highest -10LgP per gene
+                    'sum'        – sum intensities of all isoforms per gene
+                    'mean'       – average intensities of all isoforms per gene
+
+    Returns
+    -------
+    Aggregated DataFrame (same columns as input, duplicates resolved).
+    """
+    if strategy == "none":
+        return df
+
+    # Fill missing gene labels so they don't all collapse into one bucket
+    df = df.copy()
+    df[gene_col] = df[gene_col].fillna("").astype(str).str.strip()
+    # Rows with empty gene label keep their original index as unique key
+    empty_mask = df[gene_col] == ""
+    df.loc[empty_mask, gene_col] = [f"__empty_{i}" for i in df.index[empty_mask]]
+
+    if strategy == "best_score":
+        if score_col and score_col in df.columns:
+            df[score_col] = pd.to_numeric(df[score_col], errors="coerce")
+            df = (
+                df.sort_values(score_col, ascending=False)
+                  .groupby(gene_col, sort=False)
+                  .first()
+                  .reset_index()
+            )
+        else:
+            # No score column – keep first occurrence (highest row in file ≈ best rank)
+            df = df.groupby(gene_col, sort=False).first().reset_index()
+
+    elif strategy in ("sum", "mean"):
+        agg_func = "sum" if strategy == "sum" else "mean"
+        non_area = [c for c in df.columns if c not in area_cols]
+        # Numeric area columns aggregated; non-area columns → keep first value
+        agg_dict = {c: agg_func for c in area_cols}
+        agg_dict.update({c: "first" for c in non_area if c != gene_col})
+        df = df.groupby(gene_col, sort=False).agg(agg_dict).reset_index()
+
+    else:
+        raise ValueError(f"Unknown aggregation strategy: '{strategy}'. "
+                         f"Choose from 'none', 'best_score', 'sum', 'mean'.")
+
+    # Restore empty-label rows to original empty string
+    df[gene_col] = df[gene_col].str.replace(r"^__empty_\d+$", "", regex=True)
+    return df
+
+
 def _detect_peaks_version(df: pd.DataFrame) -> str:
     """
     Heuristic to distinguish PEAKS Studio format versions.
@@ -905,58 +971,46 @@ def peaks_data(file, rename_mapping=None):
             'Coverage(%)', '#Peptides', '#Unique', 'PTM', 'Average Mass', 'Description'
           - Per-sample annotation: 'Coverage(%) <Sample>', '#Spec <Sample>'
           - Intensity columns: 'Area <SampleName>' (space-separated, no colon)
+
+    Duplicate gene aggregation
+    --------------------------
+    When the same gene symbol appears on multiple rows (different isoforms /
+    protein groups), the parser offers four strategies selectable via a
+    Streamlit widget:
+
+        none        – keep every row, append __1 / __2 … suffix  (default)
+        best_score  – keep the row with the highest -10LgP score per gene
+        sum         – sum intensities of all isoforms per gene
+        mean        – average intensities of all isoforms per gene
     """
     try:
         df = load_data_safely(file, sep=",")
         df = _clean_col_names(df)
         version = _detect_peaks_version(df)
 
+        # ── 1. Identify area & feature-label columns ───────────────────────────
         if version == "13.1":
-            # ── PEAKS 13.1 ────────────────────────────────────────────────────
-            # Fixed annotation columns (not per-sample)
             FIXED_ANNOT = {
                 "Protein Group", "Top", "Accession", "Gene",
-                "-10LgP", "-10lgP",          # handle both capitalisations
+                "-10LgP", "-10lgP",
                 "Coverage(%)", "Coverage (%)",
                 "#Peptides", "#Unique", "PTM", "Average Mass",
                 "Avg. Mass", "Description",
             }
-            # Per-sample pattern columns (Coverage(%) X, #Spec X) — annotation, not intensity
             per_sample_annot_prefixes = ("Coverage(%) ", "Coverage (%) ", "#Spec ", "#De Novo ")
 
-            area_cols = []
-            for c in df.columns:
-                # 'Area <SampleName>' — the defining intensity column of PEAKS 13.1
-                if re.match(r"^Area\s+\S", c):
-                    area_cols.append(c)
-
+            area_cols = [c for c in df.columns if re.match(r"^Area\s+\S", c)]
             if not area_cols:
-                # Fallback: any column not in fixed annot and not a per-sample annot prefix
                 area_cols = [
                     c for c in df.columns
                     if c not in FIXED_ANNOT
                     and not any(c.startswith(p) for p in per_sample_annot_prefixes)
                 ]
 
-            feat_col = _pick_feature_label_col(
-                df, ["Gene", "Accession", "Description"]
-            )
-            feature_labels = (
-                _make_unique_labels(df[feat_col]) if feat_col
-                else [str(i) for i in range(len(df))]
-            )
+            feat_candidates = ["Gene", "Accession", "Description"]
+            score_col = next((c for c in ["-10LgP", "-10lgP"] if c in df.columns), None)
 
-            df_t = df[area_cols].T.reset_index()
-            df_t.columns = ["Class"] + feature_labels
-            # Strip leading 'Area ' prefix to recover sample name
-            df_t["Class"] = (
-                df_t["Class"]
-                .str.replace(r"^Area\s+", "", regex=True)
-                .str.strip()
-            )
-
-        else:
-            # ── Legacy PEAKS (≤12) ────────────────────────────────────────────
+        else:  # legacy PEAKS ≤12
             ANNOT_COLS = {
                 "Protein ID", "Protein Group", "Accession", "Gene", "Description",
                 "Species", "Organism", "Coverage (%)", "#Peptides", "#Unique",
@@ -977,20 +1031,90 @@ def peaks_data(file, rename_mapping=None):
             if not area_cols:
                 area_cols = [c for c in df.columns if c not in annot_present]
 
-            feat_col = _pick_feature_label_col(
-                df, ["Gene", "Protein ID", "Description", "Peptide", "Sequence"]
-            )
-            feature_labels = (
-                _make_unique_labels(df[feat_col]) if feat_col
-                else [str(i) for i in range(len(df))]
-            )
+            feat_candidates = ["Gene", "Protein ID", "Description", "Peptide", "Sequence"]
+            score_col = next((c for c in ["-10lgP", "-10LgP"] if c in df.columns), None)
 
-            df_t = df[area_cols].T.reset_index()
-            df_t.columns = ["Class"] + feature_labels
+        feat_col = _pick_feature_label_col(df, feat_candidates)
+
+        # ── 2. Duplicate detection & aggregation UI ────────────────────────────
+        if feat_col:
+            n_total   = len(df)
+            n_unique  = df[feat_col].nunique(dropna=False)
+            n_dupes   = n_total - n_unique
+
+            if n_dupes > 0:
+                st.info(
+                    f"⚠️ **PEAKS – duplicate features detected** · "
+                    f"{n_total:,} protein groups → {n_unique:,} unique **{feat_col}** values "
+                    f"({n_dupes:,} duplicates). "
+                    f"Choose how to aggregate isoforms:"
+                )
+
+                STRATEGY_LABELS = {
+                    "none":       "Keep all rows (append __1, __2 … suffix)",
+                    "best_score": f"Best score per gene  (highest {score_col or '-10LgP'})",
+                    "sum":        "Sum intensities of all isoforms per gene",
+                    "mean":       "Average intensities of all isoforms per gene",
+                }
+                # Remove best_score if no score column available
+                if not score_col:
+                    STRATEGY_LABELS.pop("best_score")
+
+                chosen_label = st.selectbox(
+                    "Aggregation strategy",
+                    options=list(STRATEGY_LABELS.values()),
+                    index=0,
+                    key="peaks_aggregation_strategy",
+                    help=(
+                        "**Keep all rows** – preserves every isoform; features with the same "
+                        "gene name receive a numeric suffix (ACT, ACT__1, ACT__2 …).\n\n"
+                        "**Best score** – retains only the highest-confidence protein group "
+                        "per gene (recommended for classification).\n\n"
+                        "**Sum / Mean** – collapses isoforms into a single row by summing or "
+                        "averaging their Area values (useful for pathway-level analysis)."
+                    ),
+                )
+                # Reverse-map label → key
+                strategy = next(
+                    k for k, v in STRATEGY_LABELS.items() if v == chosen_label
+                )
+
+                if strategy != "none":
+                    n_before = len(df)
+                    df = _aggregate_peaks_duplicates(
+                        df,
+                        gene_col=feat_col,
+                        area_cols=area_cols,
+                        score_col=score_col,
+                        strategy=strategy,
+                    )
+                    n_after = len(df)
+                    st.success(
+                        f"✅ Aggregation applied (*{strategy}*): "
+                        f"{n_before:,} → **{n_after:,}** features."
+                    )
+
+        # ── 3. Build feature labels ────────────────────────────────────────────
+        feature_labels = (
+            _make_unique_labels(df[feat_col]) if feat_col
+            else [str(i) for i in range(len(df))]
+        )
+
+        # ── 4. Transpose to samples × features ───────────────────────────────
+        df_t = df[area_cols].T.reset_index()
+        df_t.columns = ["Class"] + feature_labels
+
+        if version == "13.1":
             df_t["Class"] = (
                 df_t["Class"]
-                .str.replace(r"^Area:\s*", "", regex=True)   # 'Area:SampleName'
-                .str.replace(r"\s*Area$",  "", regex=True)   # 'SampleName Area'
+                .str.replace(r"^Area\s+", "", regex=True)
+                .str.strip()
+            )
+        else:
+            df_t["Class"] = (
+                df_t["Class"]
+                .str.replace(r"^Area:\s*", "", regex=True)
+                .str.replace(r"\s*Area$",  "", regex=True)
                 .str.strip()
             )
 
