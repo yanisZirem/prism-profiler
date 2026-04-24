@@ -1902,15 +1902,21 @@ def plot_heatmap_samples(
         meta_annotation_cols=valid_meta,
     )
 
-    # Store plotly fig for interactive report (preferred)
+    # Store plotly fig — two purposes:
+    #   1. Keyed by capture_name for the HTML report pipeline (_report_*)
+    #   2. Keyed by capture_name directly so the GUI can re-display it across
+    #      reruns (e.g. when a download_button is clicked) without re-running
+    #      the full computation.
     if capture_name:
         st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
+        st.session_state[capture_name] = fig          # ← direct re-display key
 
     st.download_button(
         label="📥 Download Heatmap as PNG",
         data=img_bytes,
         file_name="heatmap.png",
         mime="image/png",
+        key=f"dl_heatmap_png_{capture_name or 'heatmap'}",
     )
 
     gc.collect()
