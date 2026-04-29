@@ -1,12 +1,13 @@
 
+
 """
 Software Name: Profiler
 Module name : data_exploration
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
+Last Updated: 23/10/2025
+Version: 1.0.0
 
 Context:
 This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
@@ -15,7 +16,7 @@ It is designed for archiving on Zenodo and integration into GitHub releases.
 License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
 Citation:
 If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
+Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. 
 
 Links:
 - GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
@@ -315,8 +316,10 @@ import base64
 import gc
 import numpy as np
 import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
 from matplotlib.colors import to_rgba
+import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use("Agg")
 
@@ -438,55 +441,104 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
         font=dict(family="Arial"),
     )
 
-    # Draw filled circles
+    # ── Pre-compute label positions with anti-overlap nudging ─────────────────
+    def _label_pos(members_list, positions, radius, all_classes):
+        idxs = [all_classes.index(c) for c in members_list]
+        cx = float(np.mean([positions[i][0] for i in idxs]))
+        cy = float(np.mean([positions[i][1] for i in idxs]))
+        if len(members_list) == 1:
+            angle = np.arctan2(cy, cx)
+            cx += np.cos(angle) * radius * 0.45
+            cy += np.sin(angle) * radius * 0.45
+        return cx, cy
+
+    label_data = []
+    for members, feats in intersections.items():
+        if not feats:
+            continue
+        cx, cy = _label_pos(list(members), positions, radius, classes)
+        label_data.append((members, feats, cx, cy))
+
+    # Iterative repulsion to separate overlapping labels
+    MIN_DIST = 0.13
+    for _ in range(60):
+        for i in range(len(label_data)):
+            m_i, f_i, xi, yi = label_data[i]
+            dx_total, dy_total = 0.0, 0.0
+            for j in range(len(label_data)):
+                if i == j:
+                    continue
+                _, _, xj, yj = label_data[j]
+                dist = np.hypot(xi - xj, yi - yj) + 1e-9
+                if dist < MIN_DIST:
+                    push = (MIN_DIST - dist) / dist * 0.4
+                    dx_total += (xi - xj) * push
+                    dy_total += (yi - yj) * push
+            label_data[i] = (m_i, f_i,
+                             float(np.clip(xi + dx_total, -0.95, 0.95)),
+                             float(np.clip(yi + dy_total, -0.88, 0.88)))
+
+    # ── Draw filled circles + class labels ───────────────────────────────────
     for i, (cls, (cx, cy)) in enumerate(zip(classes, positions)):
         color      = color_palette.get(cls, "#888888")
         fill_color = _hex_to_rgba(color, alpha=0.28)
         xs, ys = _circle_points(cx, cy, radius)
+        # Circle trace — legendgroup = cls
         fig.add_trace(go.Scatter(
             x=xs, y=ys,
             fill="toself", fillcolor=fill_color,
             line=dict(color=color, width=2.5),
             mode="lines", name=cls,
+            legendgroup=cls,
             hoverinfo="skip", showlegend=True,
         ))
-        # Class label outside circle
-        lx = max(-0.95, min(0.95, cx * 1.55))
-        ly = max(-0.88, min(0.88, cy * 1.55))
+        # Class label outside circle — same legendgroup so it hides with the circle
+        lx = float(np.clip(cx * 1.55, -0.95, 0.95))
+        ly = float(np.clip(cy * 1.55, -0.88, 0.88))
         n_feat = len(detected_features[cls])
-        fig.add_annotation(
-            x=lx, y=ly,
-            text=f"<b>{cls}</b><br><span style='font-size:11px;color:#555'>{n_feat} features</span>",
-            showarrow=False, font=dict(size=13, color=color), align="center",
-        )
+        fig.add_trace(go.Scatter(
+            x=[lx], y=[ly],
+            mode="text",
+            text=[f"<b>{cls}</b><br><span style='font-size:11px'>{n_feat} features</span>"],
+            textfont=dict(size=13, color=color, family="Arial"),
+            textposition="middle center",
+            legendgroup=cls,
+            showlegend=False,
+            hoverinfo="skip",
+            name=cls,
+        ))
 
-    # Intersection hover points
-    for members, feats in intersections.items():
-        if not feats:
-            continue
-        idxs = [classes.index(c) for c in members]
-        cx = np.mean([positions[i][0] for i in idxs])
-        cy = np.mean([positions[i][1] for i in idxs])
+    # ── Intersection number traces linked to dominant class legendgroup ───────
+    for members, feats, lx, ly in label_data:
+        dominant = max(list(members), key=lambda c: len(detected_features[c]))
+
         label_lines = [
-            f"<b>{'∩ '.join(sorted(members))}</b>",
-            f"<b>{len(feats)} features</b>", "─────────",
+            f"<b>{'  ∩  '.join(sorted(members))}</b>",
+            f"<b>{len(feats)} features</b>",
+            "─────────",
         ] + sorted(feats)[:20]
         if len(feats) > 20:
             label_lines.append(f"… +{len(feats)-20} more")
+
         fig.add_trace(go.Scatter(
-            x=[cx], y=[cy],
+            x=[lx], y=[ly],
             mode="markers+text",
             marker=dict(size=1, color="rgba(0,0,0,0)"),
             text=[str(len(feats))],
-            textfont=dict(size=14, color="#111", family="Arial Black"),
+            textfont=dict(size=13, color="#111", family="Arial Black"),
             textposition="middle center",
             hovertemplate="<br>".join(label_lines) + "<extra></extra>",
-            showlegend=False, name="",
+            legendgroup=dominant,
+            showlegend=False,
+            name="",
         ))
 
     # ── Render ────────────────────────────────────────────────────────────────
     st.plotly_chart(fig, use_container_width=True, config={
-        "displayModeBar": False,
+        "displayModeBar": True,
+        "displaylogo": False,
+        "scrollZoom": True,
+        "modeBarButtonsToRemove": [],
         "toImageButtonOptions": {"format": "png", "scale": 3},
     })
 
@@ -546,6 +598,7 @@ def _show_intersection_tables(detected_features, intersections, exclusive_featur
 def _venn_capture_static(data, class_column, color_palette, source, capture_name):
     """Fallback: generate static matplotlib Venn for HTML report capture."""
     try:
+        from venn import venn
         # ⚡ vectorized version
         _feat_cols_c = [c for c in data.columns if c != class_column]
         _nm = data[_feat_cols_c].notna()
