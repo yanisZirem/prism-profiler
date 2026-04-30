@@ -1082,9 +1082,13 @@ def render_enrichment_tab():
         else:
             _num_cls_default = st.session_state.get("_ora_num_classes", 1)
 
+        # max_value adapts to the actual number of detected classes (avoids
+        # StreamlitValueAboveMaxError when more than 50 classes are present)
+        _num_cls_max = max(50, _num_cls_default)
+        _num_cls_val = min(_num_cls_default, _num_cls_max)
         num_cls = st.number_input(
-            "Number of classes / comparisons", min_value=1, max_value=50,
-            value=_num_cls_default, step=1,
+            "Number of classes / comparisons", min_value=1, max_value=_num_cls_max,
+            value=_num_cls_val, step=1,
             key="ora_num_classes",
             help="Automatically set from detected source — adjust if needed",
         )

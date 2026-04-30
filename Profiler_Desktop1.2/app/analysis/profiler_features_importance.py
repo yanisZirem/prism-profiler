@@ -4,7 +4,7 @@ Module Name: Features importance
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 11/03/2026
+Last Updated: 30/04/2026
 Version: 1.3.0
 
 Context:
@@ -14,7 +14,7 @@ It is designed for archiving on Zenodo and integration into GitHub releases.
 License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
 Citation:
 If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
+Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. doi:10.1093/bioinformatics/btaf644
 
 Links:
 - GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
@@ -24,7 +24,23 @@ Links:
 # --- Standard library ---
 import io
 import gc
+import os
 from itertools import combinations
+
+# ── Desktop: détection CPUs et configuration parallélisme ────────────────────
+_N_CPUS = os.cpu_count() or 2
+
+# BLAS/MKL/OpenBLAS — sans plafond serveur, utilise tous les cœurs
+for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_env, str(_N_CPUS))
+
+# TensorFlow : utilise tous les CPUs logiques disponibles
+try:
+    import tensorflow as _tf
+    _tf.config.threading.set_intra_op_parallelism_threads(_N_CPUS)
+    _tf.config.threading.set_inter_op_parallelism_threads(_N_CPUS)
+except Exception:
+    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -302,7 +318,9 @@ def plot_shap_values(model, X, class_colors=None, class_names=None,
             explainer = shap.LinearExplainer(fitted_model, X_transformed)
         else:
             st.warning("Using KernelExplainer (may be slow on large datasets).")
-            bg = shap.kmeans(X_transformed, min(50, X_transformed.shape[0]))
+            # Desktop: jusqu'à 150 samples de background → meilleure précision SHAP
+            _bg_size = min(150, X_transformed.shape[0])
+            bg = shap.kmeans(X_transformed, _bg_size)
             fn = (fitted_model.predict_proba
                   if hasattr(fitted_model, "predict_proba")
                   else fitted_model.predict)
@@ -414,7 +432,7 @@ def plot_shap_values(model, X, class_colors=None, class_names=None,
         legend=dict(font=dict(size=11)),
     )
 
-    st.markdown("#### 🐝 SHAP Beeswarm")
+    st.markdown("**SHAP Beeswarm**")
     st.plotly_chart(fig_bee, use_container_width=True)
     st.session_state[f"{capture_prefix}_beeswarm"] = ("plotly", fig_bee)
 
@@ -472,7 +490,7 @@ def plot_shap_values(model, X, class_colors=None, class_names=None,
         margin=dict(l=170, r=80, t=65, b=60),
     )
 
-    st.markdown("#### 📊 SHAP Feature Importance (Bar)")
+    st.markdown("**SHAP Feature Importance (Bar)**")
     st.plotly_chart(fig_bar, use_container_width=True)
     st.session_state[f"{capture_prefix}_bar"] = ("plotly", fig_bar)
 
