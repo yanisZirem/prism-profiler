@@ -3,56 +3,63 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 15/04/2026
+Last Updated: 30/04/2026
 Version: 1.2.3
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
-Start with: streamlit run profiler_gui_desktop.py
 It is designed for archiving on Zenodo and integration into GitHub releases.
 
 License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
 Citation:
 If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
+Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. doi:10.1093/bioinformatics/btaf644
 
 Links:
 - GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
 """
 
 
+# ── Standard library ─────────────────────────────────────────────────────────
 import os
-import tempfile
-import shutil
+import sys
+import io
+import re
+import gc
+import base64
 import uuid
-import zipfile
-import threading
-import functools
 import time
 import datetime
-import gc
-import re
-import io
-import base64
+import tempfile
+import shutil
+import zipfile
+import threading
 import traceback
+import functools
 import multiprocessing
 from typing import Callable, Any
 from pathlib import Path
 from itertools import combinations
 from collections import Counter
 
+# ── Third-party: core ─────────────────────────────────────────────────────────
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+import kaleido
+
 import joblib
 import gseapy as gp
-import kaleido
-import plotly.io as pio
 
-from neurocombat_sklearn import CombatModel
+# ── Third-party: scikit-learn (frequently used, kept direct) ──────────────────
 from sklearn.exceptions import NotFittedError
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.preprocessing import StandardScaler, LabelEncoder, MinMaxScaler
@@ -60,21 +67,34 @@ from sklearn.ensemble import IsolationForest
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import cohen_kappa_score
 from sklearn.metrics.pairwise import cosine_similarity
+
+# ── Third-party: stats ────────────────────────────────────────────────────────
 from scipy.stats import f_oneway, gaussian_kde
-from statsmodels.stats.multitest import multipletests
 from scipy import stats
+from statsmodels.stats.multitest import multipletests
 
-# ─── Ensure project root (Profiler/) is on sys.path ──────────────────────────
+# ── Third-party: domain ───────────────────────────────────────────────────────
+from neurocombat_sklearn import CombatModel
 
-import sys as _sys_path_fix
-from pathlib import Path as _Path_fix
-_GUI_DIR      = _Path_fix(__file__).resolve().parent        # app/gui/
-_APP_DIR      = _GUI_DIR.parent                             # app/
-_PROJECT_ROOT = _APP_DIR.parent                             # Profiler/
+# ── Performance: pandas Copy-on-Write (pandas 2+) ────────────────────────────
+try:
+    pd.options.mode.copy_on_write = True
+except Exception:
+    pass
+
+# ── BLAS/MKL threads: use all cores on local desktop ─────────────────────────
+for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
+    os.environ.setdefault(_env, '10')
+
+# ── Ensure project root (Profiler/) is on sys.path ───────────────────────────
+_GUI_DIR      = Path(__file__).resolve().parent   # app/gui/
+_APP_DIR      = _GUI_DIR.parent                   # app/
+_PROJECT_ROOT = _APP_DIR.parent                   # Profiler/
 for _p in (_PROJECT_ROOT, _APP_DIR):
-    if str(_p) not in _sys_path_fix.path:
-        _sys_path_fix.path.insert(0, str(_p))
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
+# ── Profiler package imports ──────────────────────────────────────────────────
 from app.utils.profiler_imports import *
 from app.analysis.profiler_features_importance import _resolve_features
 
@@ -86,34 +106,21 @@ def _get_X(df, extra_drop=None):
     drop = set(_NON_FEATURE_COLS)
     if extra_drop:
         drop.update(extra_drop)
-    # also drop any _meta column
     drop.update(c for c in df.columns if str(c).endswith('_meta'))
     cols = [c for c in df.columns if c not in drop]
     return df[cols].select_dtypes(include='number')
 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.impute import KNNImputer
-from scipy.stats import f_oneway
-import io
 
+# ── CSS loader — cached once per process, never re-read on rerun ──────────────
+@st.cache_resource
+def _load_css() -> str:
+    """Load Profiler_Desktop.css from the same directory as this script."""
+    _css_path = Path(__file__).parent / "Profiler_Desktop.css"
+    try:
+        return _css_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""  # graceful degradation: no CSS is better than a crash
 
-# ── Performance: pandas Copy-on-Write (pandas 2+) — avoid hidden copies ──────
-try:
-    pd.options.mode.copy_on_write = True
-except Exception:
-    pass
-# ── Use all available threads for numpy/scipy (BLAS) ─────────────────────────
-import os as _os_perf
-for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
-    _os_perf.environ.setdefault(_env, '10')
-import plotly.express as px
-from sklearn.metrics import cohen_kappa_score
-from sklearn.metrics.pairwise import cosine_similarity
-import seaborn as sns
-from statsmodels.stats.multitest import multipletests
-from scipy import stats
-
-import kaleido
 
 # ═══════════════════════════════════════════════════
 # PROFILER CUSTOM SVG ICONS
@@ -260,404 +267,87 @@ def _load_page_icon():
     return "data:image/svg+xml;base64," + base64.b64encode(_svg.encode()).decode()
 
 st.set_page_config(
-    page_title="Profiler Offline",
+    page_title="Profiler Desktop — Omics Analysis",
     page_icon=_load_page_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
         'Get Help': 'https://github.com/yanisZirem/Profiler_v1_requests_datatests',
-        'About': 'Profiler Desktop v1.2 — Local offline multi-omics analysis. No login required.'
+        'Report a bug': 'mailto:yanis.zirem@univ-lille.fr',
+        'About': """
+**Profiler v1.2** — Open Omics Analysis Platform *(Desktop Edition)*
+
+Developed at **PRISM INSERM U1192**, Université de Lille.
+
+A unified platform for proteomics, metabolomics, lipidomics and transcriptomics — from raw data to publication-ready figures, differential analysis, AI modeling, pathway enrichment and survival analysis.
+
+**Author:** Yanis Zirem  
+**Contact:** yanis.zirem@univ-lille.fr  
+**Publication:** Zirem Y. et al., *Bioinformatics*, Oxford, 2026 — doi:10.1093/bioinformatics/btaf644  
+**Website:** https://prism-profiler.univ-lille.fr  
+**GitHub:** https://github.com/yanisZirem/Profiler_v1_requests_datatests
+
+*The interface layer is powered by [Streamlit](https://streamlit.io) — an open-source Python framework for data apps.*
+
+*Free for academic, educational and non-commercial use.*"""
     }
 )
 
-# ── Professional theme ──────────────────────────────────────────
+# ── Load CSS from file (cached — no re-read on rerun) ────────────────────────
+st.markdown(f"<style>{_load_css()}</style>", unsafe_allow_html=True)
+
+# ── Menu ⋮ : masquer "Rerun" et "About" natifs Streamlit ─────────────────────
+# "About" est remplacé par notre version dans set_page_config (menu_items).
+# "Rerun" est superflu pour l'utilisateur final.
+# Le footer "Made with Streamlit" est masqué (mention dans notre About à la place).
 st.markdown("""
 <style>
-/* ── Core resets ── */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
+/* ── Garder le menu ⋮ visible ── */
+#MainMenu { visibility: visible !important; }
 
-/* ── Global typography ── */
-html, body, [class*="css"] {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-}
+/* ── Masquer Rerun (1er item) et About natif (dernier item) ── */
+[data-testid="main-menu-list"] > ul > li:first-child,
+[data-testid="main-menu-list"] > ul > li:last-child { display: none !important; }
+[data-testid="main-menu-list"] li[role="menuitem"]:first-child,
+[data-testid="main-menu-list"] li[role="menuitem"]:last-child { display: none !important; }
 
-/* ── Sidebar – fond clair professionnel ── */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #f0f5fc 0%, #e8f0f9 60%, #dde8f5 100%) !important;
-    border-right: 2px solid #c5d8ee !important;
-    box-shadow: 3px 0 16px rgba(49,140,231,0.08) !important;
-}
-[data-testid="stSidebar"] * { color: #1e293b !important; }
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4 {
-    color: #1e3a5f !important;
-}
-[data-testid="stSidebar"] .stSelectbox label,
-[data-testid="stSidebar"] .stTextInput label,
-[data-testid="stSidebar"] .stNumberInput label,
-[data-testid="stSidebar"] .stCheckbox label {
-    color: #1e3a5f !important; font-size: 0.78rem !important; font-weight: 700 !important;
-    text-transform: uppercase !important; letter-spacing: 0.06em !important;
-}
-[data-testid="stSidebar"] [data-baseweb="select"] > div,
-[data-testid="stSidebar"] [data-baseweb="input"] > div {
-    background: #ffffff !important;
-    border-color: #94b8d8 !important;
-    border-radius: 8px !important;
-    color: #1e293b !important;
-    font-weight: 500 !important;
-}
-[data-testid="stSidebar"] [data-baseweb="select"] span { color: #1e293b !important; font-weight: 500 !important; }
-[data-testid="stSidebar"] .stExpander {
-    border: 1px solid #c0d4ea !important;
-    border-radius: 10px !important;
-    margin-bottom: 6px !important;
-    background: rgba(255,255,255,0.75) !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
-}
-[data-testid="stSidebar"] .stExpander:hover {
-    border-color: #318CE7 !important;
-    box-shadow: 0 2px 8px rgba(49,140,231,0.12) !important;
-}
-[data-testid="stSidebar"] .stExpander summary {
-    color: #1a4a80 !important; font-weight: 800 !important;
-    font-size: 0.83rem !important;
-    letter-spacing: 0.01em !important;
-}
-[data-testid="stSidebar"] details[open] summary {
-    color: #1565c0 !important;
-    border-bottom: 1px solid #c0d4ea !important;
-    background: rgba(49,140,231,0.05) !important;
-    border-radius: 10px 10px 0 0 !important;
-}
-/* Sidebar buttons */
-[data-testid="stSidebar"] .stButton > button {
-    background: #ffffff !important;
-    color: #1a4a80 !important;
-    border: 2px solid #318CE7 !important;
-    border-radius: 8px !important;
-    font-weight: 700 !important; font-size: 0.8rem !important;
-    padding: 6px 14px !important;
-    transition: all 0.2s !important;
-    box-shadow: 0 1px 4px rgba(49,140,231,0.1) !important;
-}
-[data-testid="stSidebar"] .stButton > button:hover {
-    background: #318CE7 !important;
-    color: #ffffff !important;
-    box-shadow: 0 4px 12px rgba(49,140,231,0.3) !important;
-}
-[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
-    background: #ffffff !important;
-    border-color: #ef4444 !important;
-    color: #dc2626 !important;
-}
-[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-    background: #ef4444 !important;
-    color: #fff !important;
-}
-/* Sidebar file uploader */
-[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-    background: rgba(49,140,231,0.04) !important;
-    border: 2px dashed #318CE7 !important;
-    border-radius: 10px !important;
-    padding: 4px !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"]:hover {
-    background: rgba(49,140,231,0.08) !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-    background: linear-gradient(135deg,#318CE7,#1a65c0) !important;
-    color: #fff !important; border: none !important; border-radius: 6px !important;
-}
-/* Sidebar hr */
-[data-testid="stSidebar"] hr {
-    border-color: #c0d4ea !important;
-    margin: 10px 0 !important;
-}
-/* Sidebar checkbox */
-[data-testid="stSidebar"] [data-baseweb="checkbox"] span {
-    border-color: #318CE7 !important;
-    background: rgba(49,140,231,0.08) !important;
-}
+/* ── Masquer footer "Made with Streamlit" ── */
+footer { visibility: hidden !important; height: 0 !important; }
 
-/* ── Main content area ── */
-.main .block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
-    max-width: 1400px;
-}
+/* ── Masquer header Streamlit ── */
+header { visibility: hidden !important; }
 
-/* ── Tab navigation ── */
-div[data-baseweb="tab-list"] {
-    gap: 3px;
-    background: linear-gradient(135deg, #0d1f3c 0%, #1a2f50 100%);
-    padding: 6px;
-    border-radius: 12px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.18);
-    width: 100% !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
-    overflow: hidden !important;
-}
-button[data-baseweb="tab"] {
-    border-radius: 8px !important;
-    padding: 6px 8px !important;
-    font-weight: 700 !important;
-    font-size: 0.73rem !important;
-    transition: all 0.22s cubic-bezier(.4,0,.2,1) !important;
-    color: #1e293b !important;
-    background: rgba(255,255,255,0.75) !important;
-    border: 1px solid rgba(255,255,255,0.5) !important;
-    letter-spacing: 0.01em !important;
-    text-shadow: none !important;
-    opacity: 1 !important;
-    flex: 1 1 auto !important;
-    min-width: 60px !important;
-    max-width: 130px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-}
-@media (max-width: 900px) {
-    button[data-baseweb="tab"] {
-        font-size: 0.65rem !important;
-        padding: 5px 5px !important;
-        min-width: 50px !important;
-    }
-}
-@media (max-width: 600px) {
-    div[data-baseweb="tab-list"] {
-        gap: 2px !important;
-        padding: 4px !important;
-    }
-    button[data-baseweb="tab"] {
-        font-size: 0.6rem !important;
-        padding: 4px 4px !important;
-        min-width: 40px !important;
-        max-width: 90px !important;
-    }
-}
-button[data-baseweb="tab"]:hover {
-    background: rgba(255,255,255,0.92) !important;
-    color: #1e293b !important;
-    border-color: rgba(255,255,255,0.8) !important;
-}
-/* ── Tab 1 Home – bleu ── */
-button[data-baseweb="tab"]:nth-child(1)[aria-selected="true"] {
-    background: linear-gradient(135deg,#318CE7,#1a65c0) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(49,140,231,0.45) !important;
-    border-color: rgba(99,174,255,0.4) !important;
-}
-/* ── Tab 2 Data Lab – violet ── */
-button[data-baseweb="tab"]:nth-child(2)[aria-selected="true"] {
-    background: linear-gradient(135deg,#8b5cf6,#6d28d9) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(139,92,246,0.45) !important;
-    border-color: rgba(167,139,250,0.4) !important;
-}
-/* ── Tab 3 Data Viz – cyan ── */
-button[data-baseweb="tab"]:nth-child(3)[aria-selected="true"] {
-    background: linear-gradient(135deg,#06b6d4,#0284c7) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(6,182,212,0.45) !important;
-    border-color: rgba(103,232,249,0.4) !important;
-}
-/* ── Tab 4 Comparisons – indigo ── */
-button[data-baseweb="tab"]:nth-child(4)[aria-selected="true"] {
-    background: linear-gradient(135deg,#6366f1,#4338ca) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(99,102,241,0.45) !important;
-    border-color: rgba(165,180,252,0.4) !important;
-}
-/* ── Tab 5 AI Modeling – rose ── */
-button[data-baseweb="tab"]:nth-child(5)[aria-selected="true"] {
-    background: linear-gradient(135deg,#ec4899,#be185d) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(236,72,153,0.45) !important;
-    border-color: rgba(249,168,212,0.4) !important;
-}
-/* ── Tab 6 Biomarkers – orange ── */
-button[data-baseweb="tab"]:nth-child(6)[aria-selected="true"] {
-    background: linear-gradient(135deg,#f97316,#ea580c) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(249,115,22,0.45) !important;
-    border-color: rgba(253,186,116,0.4) !important;
-}
-/* ── Tab 7 Enrichment – vert émeraude ── */
-button[data-baseweb="tab"]:nth-child(7)[aria-selected="true"] {
-    background: linear-gradient(135deg,#10b981,#047857) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(16,185,129,0.45) !important;
-    border-color: rgba(110,231,183,0.4) !important;
-}
-/* ── Tab 8 Survival – teal ── */
-button[data-baseweb="tab"]:nth-child(8)[aria-selected="true"] {
-    background: linear-gradient(135deg,#14b8a6,#0f766e) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(20,184,166,0.45) !important;
-    border-color: rgba(94,234,212,0.4) !important;
-}
-/* ── Tab 9 Real-Time – amber ── */
-button[data-baseweb="tab"]:nth-child(9)[aria-selected="true"] {
-    background: linear-gradient(135deg,#f59e0b,#d97706) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 10px rgba(245,158,11,0.45) !important;
-    border-color: rgba(252,211,77,0.4) !important;
-}
-
-/* ── Expanders ── */
-details.st-expander {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 10px !important;
-    margin-bottom: 10px !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
-}
-details.st-expander summary {
-    font-weight: 600 !important;
-    padding: 10px 14px !important;
-}
-details.st-expander[open] summary {
-    border-bottom: 1px solid #e2e8f0 !important;
-    background: #f8fafc !important;
-    border-radius: 10px 10px 0 0 !important;
-}
-
-/* ── Buttons ── */
-.stButton > button {
-    background: linear-gradient(135deg, #318CE7 0%, #2060c0 100%) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 8px 20px !important;
-    font-weight: 500 !important;
-    font-size: 0.88rem !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 6px rgba(49,140,231,0.25) !important;
-}
-.stButton > button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 12px rgba(49,140,231,0.4) !important;
-}
-.stButton > button:active {
-    transform: translateY(0) !important;
-}
-.stDownloadButton > button {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 8px 20px !important;
-    font-weight: 500 !important;
-    box-shadow: 0 2px 6px rgba(16,185,129,0.25) !important;
-}
-
-/* ── Forms ── */
-[data-testid="stForm"] {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 10px !important;
-    padding: 16px !important;
-    background: #fafbfd !important;
-}
-
-/* ── Login / Signup input fields styled like file uploaders ── */
-[data-testid="stSidebar"] [data-testid="stForm"] [data-baseweb="input"] {
-    border: 2px dashed rgba(49,140,231,0.5) !important;
-    border-radius: 10px !important;
-    background: rgba(49,140,231,0.04) !important;
-    transition: all 0.2s !important;
-}
-[data-testid="stSidebar"] [data-testid="stForm"] [data-baseweb="input"]:hover,
-[data-testid="stSidebar"] [data-testid="stForm"] [data-baseweb="input"]:focus-within {
-    border-color: #318CE7 !important;
-    background: rgba(49,140,231,0.09) !important;
-    box-shadow: 0 0 0 3px rgba(49,140,231,0.12) !important;
-}
-[data-testid="stSidebar"] [data-testid="stForm"] input {
-    background: transparent !important;
-    color: #1e293b !important;
-    font-size: 0.85rem !important;
-}
-
-/* ── Metrics ── */
-[data-testid="metric-container"] {
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 12px;
-    background: #f8fafc;
-}
-
-/* ── Info/Warning/Success boxes ── */
-.stAlert {
-    border-radius: 8px !important;
-}
-
-/* ── DataFrames ── */
-.dataframe {
-    border-radius: 8px !important;
-    overflow: hidden !important;
-}
-
-/* ── Progress bar ── */
-[data-testid="stProgressBar"] > div > div {
-    background: linear-gradient(90deg, #318CE7, #60a5fa) !important;
-    border-radius: 4px !important;
-}
-
-/* ── Section headers ── */
-.section-header {
-    font-size: 1.05rem; font-weight: 700; color: #1e40af;
-    border-bottom: 2px solid #318CE7; padding: 6px 0 5px 12px;
-    margin: 14px 0 10px 0; background: linear-gradient(90deg, #eff6ff 0%, transparent 100%);
-    border-radius: 4px 4px 0 0;
-}
-/* File uploader visibility */
-[data-testid="stFileUploader"] {
-    border: 2px dashed rgba(49,140,231,0.4) !important; border-radius: 10px !important;
-    padding: 4px !important; background: rgba(49,140,231,0.03) !important; transition: all 0.2s !important;
-}
-[data-testid="stFileUploader"]:hover { border-color: #318CE7 !important; background: rgba(49,140,231,0.07) !important; }
-[data-testid="stFileUploader"] button { background: #318CE7 !important; color: white !important; border: none !important; border-radius: 6px !important; }
-/* Sub-tab styling */
-div[data-baseweb="tab-list"] { gap: 4px; background: #e8eef5; padding: 4px; border-radius: 10px; }
-
-/* ── Sidebar clean redesign ── */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #f0f5fc 0%, #e8f0f9 60%, #dde8f5 100%) !important;
-}
-[data-testid="stSidebar"] .stButton > button {
-    font-size: 0.78rem !important;
-    padding: 6px 10px !important;
-    border-radius: 7px !important;
-}
-[data-testid="stSidebar"] .stExpander {
-    border: 1px solid #d0e2f3 !important;
-    border-radius: 10px !important;
-    background: rgba(255,255,255,0.7) !important;
-    margin-bottom: 6px !important;
-    box-shadow: 0 1px 4px rgba(49,140,231,0.06) !important;
-}
-[data-testid="stSidebar"] .stExpander:hover {
-    border-color: #318CE7 !important;
-    box-shadow: 0 2px 8px rgba(49,140,231,0.14) !important;
-}
-[data-testid="stSidebar"] .stExpander > details > summary {
-    font-size: 0.82rem !important;
-    font-weight: 700 !important;
-    color: #1a4a80 !important;
-    padding: 9px 12px !important;
-}
-/* ── Main content full width ── */
-.main .block-container {
-    max-width: 100% !important;
-    padding-left: 1.5rem !important;
-    padding-right: 1.5rem !important;
-}
+/* ── Indicateur de statut (spinner) reste visible ── */
+[data-testid="stStatusWidget"] { visibility: visible !important; }
 </style>
 """, unsafe_allow_html=True)
-# ── End theme ────────────────────────────────────────────────
+
+# ── JS de secours : masque Rerun & About natif par texte (robuste aux mises à jour) ──
+st.markdown("""
+<script>
+(function hideMenuItems() {
+    const HIDDEN_LABELS = ['Rerun', 'About'];
+    function tryHide() {
+        const items = document.querySelectorAll(
+            '[data-testid="main-menu-list"] li, [data-testid="main-menu-list"] button, [role="menuitem"]'
+        );
+        items.forEach(function(item) {
+            const text = (item.innerText || item.textContent || '').trim();
+            HIDDEN_LABELS.forEach(function(label) {
+                if (text.startsWith(label)) {
+                    item.style.setProperty('display', 'none', 'important');
+                    const parent = item.closest('li');
+                    if (parent) parent.style.setProperty('display', 'none', 'important');
+                }
+            });
+        });
+    }
+    const observer = new MutationObserver(tryHide);
+    observer.observe(document.body, { childList: true, subtree: true });
+    tryHide();
+})();
+</script>
+""", unsafe_allow_html=True)
 
 if "workflow_step" not in st.session_state:
     st.session_state.workflow_step = 0
@@ -675,25 +365,7 @@ workflow_steps = [
     "⏳ <strong>Survival Analysis</strong><br><small>Model survival outcomes and stratify risk groups.</small>",
     "⚡ <strong>Real-Time Prediction</strong><br><small>Predict instantly from new unseen data.</small>",
 ]
-st.markdown(
-    """
-    <style>
-        .sidebar .block-container {
-            padding-top: 20px;
-            padding-bottom: 20px;
-        }
-        .sidebar img {
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            transition: transform 0.3s;
-        }
-        .sidebar img:hover {
-            transform: scale(1.05);
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# (sidebar img styles now in Profiler_Desktop.css)
 
 
 
@@ -1359,13 +1031,7 @@ button[data-baseweb="tab"] span,
 button[data-baseweb="tab"] p,
 button[data-baseweb="tab"] * {{
     font-family: "PI", "Segoe UI", system-ui, sans-serif !important;
-    color: #1e293b !important;
     font-size: 0.90rem !important;
-}}
-button[data-baseweb="tab"][aria-selected="true"],
-button[data-baseweb="tab"][aria-selected="true"] span,
-button[data-baseweb="tab"][aria-selected="true"] * {{
-    color: #ffffff !important;
 }}
 [data-testid="stSidebar"] .stExpander summary,
 [data-testid="stSidebar"] .stExpander summary * {{
@@ -4046,10 +3712,14 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                 combat = CombatModel()
                                                 corrected = combat.fit_transform(features, batch_labels)
                                                 # Rebuild: structural cols + _meta cols + corrected features
+                                                # Deduplicate: a _meta col selected as batch column
+                                                # is already in cols_exclude → adding it again via _keep_meta
+                                                # produces duplicate columns that crash PyArrow/st.dataframe.
                                                 _keep_meta = [c for c in data.columns if str(c).endswith("_meta")]
-                                                meta = data[
-                                                    [c for c in cols_exclude if c in data.columns] + _keep_meta
-                                                ].reset_index(drop=True)
+                                                _cols_exclude_set = set(cols_exclude)
+                                                _meta_extra = [c for c in _keep_meta if c not in _cols_exclude_set]
+                                                _meta_col_list = [c for c in cols_exclude if c in data.columns] + _meta_extra
+                                                meta = data[_meta_col_list].reset_index(drop=True)
                                                 data = pd.concat(
                                                     [meta, pd.DataFrame(corrected, columns=features.columns)],
                                                     axis=1
@@ -4107,7 +3777,12 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 _pp_total_cols = _pp_dl.shape[1]
                 if _pp_total_cols > 100:
                     st.info(f"Too many features ({_pp_total_cols}). Showing first 50 & last 50 columns. You can download the full preprocessed dataset below.")
-                    _pp_preview_df = pd.concat([_pp_dl.iloc[:, :50], _pp_dl.iloc[:, -50:]], axis=1)
+                    _pp_first = _pp_dl.iloc[:, :50]
+                    _pp_last = _pp_dl.iloc[:, -50:]
+                    # Deduplicate: drop from tail slice any col already in head slice
+                    # (metadata cols near index 0 can appear in both halves on small datasets)
+                    _pp_last = _pp_last.loc[:, ~_pp_last.columns.isin(_pp_first.columns)]
+                    _pp_preview_df = pd.concat([_pp_first, _pp_last], axis=1)
                     st.dataframe(_pp_preview_df, use_container_width=True)
                 else:
                     st.dataframe(_pp_dl, use_container_width=True)
@@ -6518,8 +6193,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                             # Store results first, then rerun so the persistent block renders
                             st.session_state["volcano_data"] = filtered_volcano_data
+                            st.session_state["volcano_all_data"] = volcano_data  # full unfiltered (for stats table)
                             st.session_state["show_volcano"] = True
                             st.session_state["volcano_fig"] = volcano_plot
+                            st.session_state["volcano_correction_method"] = correction_method
                             st.rerun()
 
                     except Exception as e:
@@ -6541,9 +6218,14 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
         # ---------------- RESULTS ----------------
         if "volcano_data" in st.session_state:
             try:
-                volcano_data = st.session_state["volcano_data"]
-                data_vol = st.session_state.get("volcano_data_source_df")  
-                comparisons = volcano_data["Comparison"].unique()
+                import csv as _csv_mod
+
+                volcano_data        = st.session_state["volcano_data"]
+                data_vol            = st.session_state.get("volcano_data_source_df")
+                correction_label    = st.session_state.get("volcano_correction_method", "None")
+                p_thresh            = st.session_state.get("volcano_p_threshold", 0.05)
+                fc_thresh           = st.session_state.get("volcano_fc_threshold", 0.0)
+                comparisons         = volcano_data["Comparison"].unique()
                 significant_features = set()
 
                 _volcano_up_by_comparison   = {}
@@ -6551,93 +6233,222 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                 for comparison in comparisons:
                     comparison_data = volcano_data[volcano_data["Comparison"] == comparison]
-                    upregulated = comparison_data[comparison_data["Regulation Type"] == "Upregulated"]["Feature"].tolist()
+                    upregulated   = comparison_data[comparison_data["Regulation Type"] == "Upregulated"]["Feature"].tolist()
                     downregulated = comparison_data[comparison_data["Regulation Type"] == "Downregulated"]["Feature"].tolist()
-
                     _volcano_up_by_comparison[comparison]   = upregulated
                     _volcano_down_by_comparison[comparison] = downregulated
-
-                    st.write(f"**Comparison: {comparison}**")
-
-                    if upregulated:
-                        st.info("**Upregulated Features:**")
-                        st.success(", ".join(upregulated))
-                        significant_features.update(upregulated)
-                    else:
-                        st.warning("No specifically upregulated features found.")
-
-                    if downregulated:
-                        st.info("**Downregulated Features:**")
-                        st.success(", ".join(downregulated))
-                        significant_features.update(downregulated)
-                    else:
-                        st.warning("No specifically downregulated features found.")
+                    significant_features.update(upregulated + downregulated)
 
                 # Store per-comparison up/down for ORA auto-detection
                 st.session_state["volcano_up_by_comparison"]   = _volcano_up_by_comparison
                 st.session_state["volcano_down_by_comparison"] = _volcano_down_by_comparison
 
-                # Display dataframe of significant features from the selected data source
+                # ── Determine whether adjusted p-value was applied ───────────────────
+                _has_correction = correction_label not in ("None", None)
+                _pval_label     = "Adjusted P-Value" if _has_correction else "P-Value"
+                _corr_display   = correction_label if _has_correction else "None (raw p-values)"
+
+                # ════════════════════════════════════════════════════════════════
+                # 1. FEATURE EXTRACTION DATAFRAME  (samples × significant features)
+                # ════════════════════════════════════════════════════════════════
                 if significant_features and data_vol is not None:
-                    significant_features = list(significant_features)
-                    class_column = st.session_state.get("class_column", "Class")
+                    sig_feat_list = list(significant_features)
+                    class_column  = st.session_state.get("class_column", "Class")
 
                     # ── Résoudre str vs float columns (m/z mzML) ─────────────────
-                    import pandas as _pd_vol
                     _data_vol_norm = data_vol.copy()
                     _data_vol_norm.columns = _data_vol_norm.columns.astype(str)
-                    significant_features = [str(f) for f in significant_features]
-                    significant_features = _resolve_features(_data_vol_norm, significant_features)
+                    sig_feat_list = [str(f) for f in sig_feat_list]
+                    sig_feat_list = _resolve_features(_data_vol_norm, sig_feat_list)
 
-                    missing_cols = [f for f in significant_features if f not in _data_vol_norm.columns]
+                    missing_cols = [f for f in sig_feat_list if f not in _data_vol_norm.columns]
                     if missing_cols:
                         st.warning(f"Missing columns in selected data source: {', '.join(missing_cols)}")
-                        significant_features = [f for f in significant_features if f not in missing_cols]
+                        sig_feat_list = [f for f in sig_feat_list if f not in missing_cols]
 
                     if class_column in _data_vol_norm.columns:
-                        significant_data = _data_vol_norm[[class_column] + significant_features]
-                
-                        st.write("**DataFrame with Significant Features from Selected Source:**")
-                        st.info(
-                            "💡 **Feature Extraction Tip:** This table of significant features can be used as a "
-                            "feature extraction step. You can download it and re-import it into Profiler or any "
-                            "other pipeline to perform machine learning classification (Random Forest, SVM, etc.), "
-                            "dimensionality reduction and visualization (PCA, t-SNE, UMAP), or unsupervised "
-                            "clustering (K-Means, hierarchical clustering, etc.)."
-                        )
-                
-                        # Layout avec bouton de téléchargement
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.dataframe(significant_data)
-                        with col2:
-                            # Récupérer les paramètres pour le nom de fichier
-                            p_thresh = st.session_state.get("volcano_p_threshold", 0.05)
-                            fc_thresh = st.session_state.get("volcano_fc_threshold", 0.0)
-                    
-                            import csv
+                        significant_data = _data_vol_norm[[class_column] + sig_feat_list]
 
-                            # Préparer le CSV avec le même format que ton export "cleaned dataset"
-                            csv_volcano = significant_data.to_csv(
-                                index=False,
-                                sep=';',  # point important : séparateur ';'
-                                quoting=csv.QUOTE_NONNUMERIC,  # pour mettre les chaînes entre guillemets
+                        st.markdown("---")
+                        st.markdown(
+                            "**Feature Extraction Dataset**",
+                            help="Significant features only — ready for downstream ML / clustering."
+                        )
+                        st.info(
+                            "💡 **Feature Extraction Tip:** This table contains only the statistically significant "
+                            "features filtered by your p-value and fold-change thresholds. It can be downloaded and "
+                            "re-imported into Profiler or any other pipeline for machine learning classification "
+                            "(Random Forest, SVM, …), dimensionality reduction (PCA, t-SNE, UMAP) or unsupervised "
+                            "clustering (K-Means, hierarchical, …)."
+                        )
+
+                        col_df, col_dl = st.columns([4, 1])
+                        with col_df:
+                            st.dataframe(significant_data, use_container_width=True)
+                        with col_dl:
+                            st.markdown("&nbsp;")
+                            csv_feat = significant_data.to_csv(
+                                index=False, sep=';',
+                                quoting=_csv_mod.QUOTE_NONNUMERIC,
                                 encoding='utf-8-sig'
                             )
-
                             st.download_button(
-                                label="📥 Download CSV",
-                                data=csv_volcano.encode("utf-8-sig"),  # encoder pour Windows/Excel
-                                file_name=f"volcano_significant_features_p{p_thresh}_fc{fc_thresh}.csv",
+                                label="📥 Download Feature Extraction CSV",
+                                data=csv_feat.encode("utf-8-sig"),
+                                file_name=f"feature_extraction_p{p_thresh}_fc{fc_thresh}.csv",
                                 mime="text/csv",
                                 use_container_width=True,
-                                help="Download the significant features table as CSV file"
+                                help="Download the feature extraction table (samples × significant features)"
                             )
-
                     else:
                         st.error("Class column missing from the selected data source.")
-                elif not significant_features:
-                    st.warning("No significant features found.")
+
+                # ════════════════════════════════════════════════════════════════
+                # 2. STATISTICAL SUMMARY TABLE  (features × stats)
+                # ════════════════════════════════════════════════════════════════
+                st.markdown("---")
+                st.markdown(
+                    f"**Significant Features — Statistical Summary**  "
+                    f"<span style='font-size:0.8rem;color:#64748b;font-weight:400;'>"
+                    f"Correction: {_corr_display}</span>",
+                    unsafe_allow_html=True
+                )
+
+                _sig_only = volcano_data[volcano_data["Regulation Type"] != "Non-Significant"].copy()
+
+                if not _sig_only.empty:
+                    _display_cols = ["Feature", "Comparison", "Fold Change", "Log2 Fold Change",
+                                     "P-Value", "Regulation Type"]
+                    _sig_display = _sig_only[_display_cols].copy()
+                    if _has_correction:
+                        _sig_display = _sig_display.rename(columns={"P-Value": _pval_label})
+
+                    _round_cols = ["Fold Change", "Log2 Fold Change", _pval_label]
+                    for _rc in _round_cols:
+                        if _rc in _sig_display.columns:
+                            _sig_display[_rc] = _sig_display[_rc].round(6)
+
+                    _sig_display = _sig_display.sort_values(
+                        ["Comparison", "Log2 Fold Change"],
+                        ascending=[True, False],
+                        key=lambda s: s.abs() if s.name == "Log2 Fold Change" else s
+                    )
+
+                    def _style_reg(val):
+                        if val == "Upregulated":
+                            return "background-color:#fee2e2;color:#b91c1c;font-weight:600;"
+                        elif val == "Downregulated":
+                            return "background-color:#dbeafe;color:#1d4ed8;font-weight:600;"
+                        return ""
+
+                    col_tbl, col_tdl = st.columns([4, 1])
+                    with col_tbl:
+                        # Only apply Pandas Styler when the dataframe is small enough
+                        # (avoids "max number of cells" error for large volcano results)
+                        _MAX_STYLER_CELLS = 200_000
+                        if _sig_display.size <= _MAX_STYLER_CELLS:
+                            styled_table = _sig_display.style.applymap(
+                                _style_reg, subset=["Regulation Type"]
+                            ).format(
+                                {c: "{:.6f}" for c in _round_cols if c in _sig_display.columns}
+                            )
+                            st.dataframe(styled_table, use_container_width=True, height=360)
+                        else:
+                            # Too many cells for the Styler → plain display without colour coding
+                            st.dataframe(_sig_display, use_container_width=True, height=360)
+                    with col_tdl:
+                        st.markdown("&nbsp;")
+                        csv_stats = _sig_display.to_csv(
+                            index=False, sep=';',
+                            quoting=_csv_mod.QUOTE_NONNUMERIC,
+                            encoding='utf-8-sig'
+                        )
+                        st.download_button(
+                            label="📥 Download Stats Table",
+                            data=csv_stats.encode("utf-8-sig"),
+                            file_name=f"volcano_stats_p{p_thresh}_fc{fc_thresh}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            help="Download the statistical summary table"
+                        )
+                else:
+                    st.warning("No significant features found (after fold-change filter).")
+
+                # ════════════════════════════════════════════════════════════════
+                # 3. OVEREXPRESSED / UNDEREXPRESSED LISTS  (per comparison)
+                # ════════════════════════════════════════════════════════════════
+                st.markdown("---")
+                st.markdown("**Differential Expression Summary**")
+
+                for comparison in comparisons:
+                    upregulated   = _volcano_up_by_comparison.get(comparison, [])
+                    downregulated = _volcano_down_by_comparison.get(comparison, [])
+
+                    with st.expander(f"📌 {comparison}  —  "
+                                     f"🔴 {len(upregulated)} upregulated · "
+                                     f"🔵 {len(downregulated)} downregulated",
+                                     expanded=(len(comparisons) == 1)):
+
+                        _col_up, _col_dn = st.columns(2)
+
+                        with _col_up:
+                            st.markdown(
+                                "<div style='background:#fef2f2;border:1px solid #fca5a5;"
+                                "border-radius:8px;padding:10px 14px;'>"
+                                "<b style='color:#b91c1c;'>🔴 Overexpressed (Upregulated)</b>",
+                                unsafe_allow_html=True
+                            )
+                            if upregulated:
+                                for _f in upregulated:
+                                    st.markdown(
+                                        f"<span style='display:inline-block;margin:2px 4px;"
+                                        f"background:#fee2e2;color:#991b1b;border-radius:4px;"
+                                        f"padding:2px 8px;font-size:0.82rem;'>{_f}</span>",
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.markdown(
+                                    "<span style='color:#9ca3af;font-size:0.85rem;'>None found</span>",
+                                    unsafe_allow_html=True
+                                )
+                            st.markdown("</div>", unsafe_allow_html=True)
+
+                        with _col_dn:
+                            st.markdown(
+                                "<div style='background:#eff6ff;border:1px solid #93c5fd;"
+                                "border-radius:8px;padding:10px 14px;'>"
+                                "<b style='color:#1d4ed8;'>🔵 Underexpressed (Downregulated)</b>",
+                                unsafe_allow_html=True
+                            )
+                            if downregulated:
+                                for _f in downregulated:
+                                    st.markdown(
+                                        f"<span style='display:inline-block;margin:2px 4px;"
+                                        f"background:#dbeafe;color:#1e40af;border-radius:4px;"
+                                        f"padding:2px 8px;font-size:0.82rem;'>{_f}</span>",
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.markdown(
+                                    "<span style='color:#9ca3af;font-size:0.85rem;'>None found</span>",
+                                    unsafe_allow_html=True
+                                )
+                            st.markdown("</div>", unsafe_allow_html=True)
+
+                        _dl_df = pd.DataFrame({
+                            "Feature": upregulated + downregulated,
+                            "Direction": (["Upregulated"] * len(upregulated) +
+                                          ["Downregulated"] * len(downregulated))
+                        })
+                        st.download_button(
+                            label=f"📥 Download lists — {comparison}",
+                            data=_dl_df.to_csv(index=False).encode("utf-8-sig"),
+                            file_name=f"diff_expr_{comparison.replace(' ', '_')}.csv",
+                            mime="text/csv",
+                            key=f"dl_lists_{comparison}",
+                            use_container_width=True
+                        )
+
             except Exception as e:
                 st.error(f"Unexpected error: {e}")
 
