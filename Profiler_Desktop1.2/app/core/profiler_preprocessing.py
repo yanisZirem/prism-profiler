@@ -1,15 +1,63 @@
+"""
+Software Name: Profiler
+Author: Yanis Zirem
+Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
+Creation Date: 15/01/2025
+Last Updated: 30/04/2026
+Version: 1.2.0
+
+Context:
+This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
+It is designed for archiving on Zenodo and integration into GitHub releases.
+
+License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
+Citation:
+If Profiler or this module (a part of Profiler) is used in a publication, please cite:
+Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. doi:10.1093/bioinformatics/btaf644
+
+Links:
+- GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
+
+"""
+
+import os
 import pandas as pd
 import numpy as np
 import streamlit as st
 from scipy.stats import rankdata
 import dask.dataframe as dd
-
 import numexpr as ne
-from pandarallel import pandarallel
 import gc
-# Initialiser pandarallel
-# ── pandarallel: 3 workers max — 10 workers × N users = CPU saturation ───────
-pandarallel.initialize(progress_bar=False, nb_workers=3)
+import threading
+
+# ── Desktop: détection automatique des CPUs disponibles ──────────────────────
+_N_CPUS = os.cpu_count() or 2          # tous les cœurs de la machine locale
+_N_WORKERS = max(1, _N_CPUS - 1)       # laisse 1 cœur libre pour l'UI
+
+# ── numexpr : utilise tous les threads disponibles ────────────────────────────
+ne.set_num_threads(_N_CPUS)
+
+# ── Variables d'environnement BLAS/MKL/OpenBLAS — sans plafond serveur ───────
+for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
+    os.environ[_env] = str(_N_CPUS)
+
+# ── pandarallel : initialisation lazy, thread-safe, tous CPUs ─────────────────
+_pandarallel_lock = threading.Lock()
+_pandarallel_ready = False
+
+def _ensure_pandarallel():
+    """Initialise pandarallel une seule fois, avec tous les CPUs disponibles."""
+    global _pandarallel_ready
+    if _pandarallel_ready:
+        return
+    with _pandarallel_lock:
+        if not _pandarallel_ready:
+            try:
+                from pandarallel import pandarallel as _pp
+                _pp.initialize(progress_bar=False, nb_workers=_N_WORKERS, verbose=0)
+                _pandarallel_ready = True
+            except Exception:
+                pass  # fallback silencieux si pandarallel indispo
 
 
 def preprocess_data(all_data, normalization_type=None, _progress_bar=None):
@@ -262,10 +310,8 @@ def total_intensity_norm(X):
 
 
 ########Paralellization dask ########
-import numexpr as ne
 import dask.dataframe as dd
-
-ne.set_num_threads(4)  # aligned with BLAS thread limit in Profiler.py
+# ne et _N_CPUS déjà importés en haut du fichier
 
 def preprocess_data_dask(ddf, normalization_type=None, _progress_bar=None):
     if _progress_bar:

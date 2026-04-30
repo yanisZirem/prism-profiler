@@ -4,7 +4,7 @@ Module Name: Features importance
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
+Last Updated: 30/04/2026
 Version: 1.2.0
 
 Context:
@@ -14,7 +14,7 @@ It is designed for archiving on Zenodo and integration into GitHub releases.
 License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
 Citation:
 If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
+Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. doi:10.1093/bioinformatics/btaf644
 
 Links:
 - GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
@@ -25,6 +25,12 @@ Links:
 
 # === Standard Library ===
 import gc
+import os
+
+# ── Desktop: détection automatique des CPUs ───────────────────────────────────
+_N_CPUS   = os.cpu_count() or 2     # tous les cœurs physiques/logiques
+_N_JOBS   = -1                       # sklearn/joblib → utilise tous les CPUs
+_N_CV_JOBS = _N_CPUS                 # parallélisme des folds CV
 
 # === Data manipulation ===
 import numpy as np
@@ -113,8 +119,8 @@ def train_models(
     X, y,
     n_splits=3,
     progress_bar=None,
-    n_jobs_cv=10,          # parallélisme CV
-    calibrate=False        # calibration OFF par défaut car coûteux
+    n_jobs_cv=_N_CV_JOBS,   # desktop: tous les CPUs pour les folds CV
+    calibrate=False
 ):
     # --- Encodage labels ---
     le = LabelEncoder()
@@ -137,44 +143,41 @@ def train_models(
     adapted_n_neighbors = min(5, min_samples_per_class)
     adapted_n_neighbors = max(1, adapted_n_neighbors)
 
-    # ⚠️ IMPORTANT :
-    # On met n_jobs=1 dans les modèles, et on parallélise via cross_val_predict
+    # ── Desktop: n_jobs=-1 dans chaque modèle + parallélisme CV ─────────────
+    # Les modèles internes utilisent tous les cœurs disponibles.
+    # cross_val_predict parallélise en plus les folds (n_jobs_cv).
     models = {
-        'RandomForest': RandomForestClassifier(n_estimators=50, max_depth=10, n_jobs=1),
-        'AdaBoost': AdaBoostClassifier(n_estimators=50, algorithm="SAMME"),
-        'SGD': SGDClassifier(),
+        'RandomForest': RandomForestClassifier(n_estimators=200, max_depth=None, n_jobs=_N_JOBS),
+        'AdaBoost': AdaBoostClassifier(n_estimators=100, algorithm="SAMME"),
+        'SGD': SGDClassifier(n_jobs=_N_JOBS),
         'NaiveBayes_Gaussian': GaussianNB(),
-        # 'NaiveBayes_Bernoulli': BernoulliNB(),
-        'DecisionTree': DecisionTreeClassifier(max_depth=10),
-        'LogisticRegression': LogisticRegression(max_iter=500, solver='lbfgs', n_jobs=1),
-        'Perceptron': Perceptron(),
+        'DecisionTree': DecisionTreeClassifier(max_depth=None),
+        'LogisticRegression': LogisticRegression(max_iter=1000, solver='lbfgs', n_jobs=_N_JOBS),
+        'Perceptron': Perceptron(n_jobs=_N_JOBS),
         'RidgeClassifier': RidgeClassifier(),
-        # LASSO (L1)
         'Lasso': LogisticRegression(
             penalty='l1',
             solver='saga',
-            max_iter=1000,
-            C=0.5
-            ), 
+            max_iter=2000,
+            C=0.5,
+            n_jobs=_N_JOBS,
+        ),
         'ElasticNet': LogisticRegression(
             penalty='elasticnet',
             solver='saga',
             l1_ratio=0.5,
-            max_iter=2000,
+            max_iter=3000,
             C=1.0,
+            n_jobs=_N_JOBS,
         ),
-        'PassiveAggressive': PassiveAggressiveClassifier(),
-        # 'ExtraTree': ExtraTreeClassifier(max_depth=10),
-        'ExtraTrees': ExtraTreesClassifier(n_estimators=50, n_jobs=1, max_depth=10),
-        # 'Bagging': BaggingClassifier(n_jobs=1, n_estimators=10),
-        # 'Dummy': DummyClassifier(),
-        # 'NearestCentroid': NearestCentroid(),
-        'KNeighbors': KNeighborsClassifier(n_neighbors=adapted_n_neighbors, n_jobs=1),
+        'PassiveAggressive': PassiveAggressiveClassifier(n_jobs=_N_JOBS),
+        'ExtraTrees': ExtraTreesClassifier(n_estimators=200, n_jobs=_N_JOBS, max_depth=None),
+        'KNeighbors': KNeighborsClassifier(n_neighbors=adapted_n_neighbors, n_jobs=_N_JOBS),
         'LinearDiscriminantAnalysis': LinearDiscriminantAnalysis(),
         'QuadraticDiscriminantAnalysis': QuadraticDiscriminantAnalysis(),
-        'GradientBoosting': GradientBoostingClassifier(n_estimators=50),
-        'HistGradientBoosting': HistGradientBoostingClassifier(max_iter=50),
-        'LGBMClassifier': LGBMClassifier(n_jobs=1, max_depth=5, n_estimators=50)
+        'GradientBoosting': GradientBoostingClassifier(n_estimators=100),
+        'HistGradientBoosting': HistGradientBoostingClassifier(max_iter=200),
+        'LGBMClassifier': LGBMClassifier(n_jobs=_N_JOBS, max_depth=-1, n_estimators=200),
     }
 
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
@@ -593,9 +596,9 @@ import streamlit as st
 
 def train_regression_models(X, y, n_splits=5, progress_bar=None, n_jobs=None):
 
-    cpu_count = os.cpu_count() or 2
+    # Desktop: utilise tous les CPUs disponibles
     if n_jobs is None:
-        n_jobs = max(1, cpu_count - 1)
+        n_jobs = _N_JOBS  # -1 → joblib détecte automatiquement
 
     # ==============================
     # Preprocessing
@@ -606,35 +609,32 @@ def train_regression_models(X, y, n_splits=5, progress_bar=None, n_jobs=None):
     ])
 
     # ==============================
-    # Models
+    # Models — paramètres optimisés pour machine locale puissante
     # ==============================
     models = {
         'Ridge': Ridge(alpha=1.0),
         'Lasso': Lasso(alpha=0.01),
         'ElasticNet': ElasticNet(alpha=0.01, l1_ratio=0.5),
 
-        # ⚡ n_estimators=100 suffisant, 2x plus rapide
         'RandomForest': RandomForestRegressor(
-            n_estimators=100,
-            max_depth=15,
+            n_estimators=300,
+            max_depth=None,       # pas de plafond → meilleure précision
             n_jobs=n_jobs,
-            random_state=1
+            random_state=1,
         ),
 
-        # ⚡ max_iter 100 suffisant
         'HistGradientBoosting': HistGradientBoostingRegressor(
-            max_iter=100,
-            random_state=1
+            max_iter=200,
+            random_state=1,
         ),
 
-        # ⚡ n_estimators 100 + num_leaves 63 → meilleur ratio perf/temps
         'LightGBM': LGBMRegressor(
-            n_estimators=100,
+            n_estimators=300,
             learning_rate=0.05,
             n_jobs=n_jobs,
-            num_leaves=63,
-            random_state=1
-        )
+            num_leaves=127,       # plus de feuilles → meilleure capacité
+            random_state=1,
+        ),
     }
 
     cv = KFold(n_splits=n_splits, shuffle=True, random_state=1)
