@@ -7890,7 +7890,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             f"High-confidence predictions (≥ {high_conf_threshold}): "
                             f"**{high_conf_pct:.1f}%** of samples"
                         )
-
+                        import plotly.express as px
                         fig_conf = px.histogram(
                             conf_clean,
                             nbins=30,
