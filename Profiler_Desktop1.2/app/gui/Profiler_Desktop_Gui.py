@@ -3703,14 +3703,37 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                 if c not in cols_exclude
                                                 and not str(c).endswith("_meta")
                                             ]
-                                            # ensure numeric and drop any col that still contains NaN (shouldn't happen)
+                                            # ensure numeric; fill residual NaN with 0
                                             features = data[feat_cols].select_dtypes(include=[np.number]).copy()
-                                            features = features.dropna(axis=1)
+                                            features = features.fillna(0)
                                             if features.shape[1] == 0:
-                                                st.warning("No numeric features available for Combat after dropping NaNs.")
+                                                st.warning("No numeric features available for Combat.")
                                             else:
-                                                combat = CombatModel()
-                                                corrected = combat.fit_transform(features, batch_labels)
+                                                # ── Séparer les colonnes à variance nulle (Combat échoue sur elles) ──
+                                                var_mask = features.var(axis=0) > 0
+                                                zero_var_cols = features.columns[~var_mask].tolist()
+                                                features_combat = features.loc[:, var_mask]
+                                                features_zero   = features.loc[:, ~var_mask]
+                                                if len(zero_var_cols) > 0:
+                                                    st.warning(
+                                                        f"Combat: {len(zero_var_cols)} zero-variance feature(s) excluded "
+                                                        f"(all-zero columns) — they will be kept as-is in the output."
+                                                    )
+                                                if features_combat.shape[1] == 0:
+                                                    st.warning("All features have zero variance — Combat skipped.")
+                                                else:
+                                                    combat = CombatModel()
+                                                    corrected_vals = combat.fit_transform(features_combat.values, batch_labels)
+                                                    corrected_df = pd.DataFrame(
+                                                        corrected_vals,
+                                                        columns=features_combat.columns,
+                                                        index=features_combat.index
+                                                    )
+                                                    # Réassembler features corrigées + colonnes zero-variance intactes
+                                                    features = pd.concat(
+                                                        [corrected_df, features_zero.reset_index(drop=True)],
+                                                        axis=1
+                                                    )[features.columns]  # restaure l'ordre original
                                                 # Rebuild: structural cols + _meta cols + corrected features
                                                 # Deduplicate: a _meta col selected as batch column
                                                 # is already in cols_exclude → adding it again via _keep_meta
@@ -3721,7 +3744,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                 _meta_col_list = [c for c in cols_exclude if c in data.columns] + _meta_extra
                                                 meta = data[_meta_col_list].reset_index(drop=True)
                                                 data = pd.concat(
-                                                    [meta, pd.DataFrame(corrected, columns=features.columns)],
+                                                    [meta, features.reset_index(drop=True)],
                                                     axis=1
                                                 )
                                                 st.success(f"✅ Combat correction applied using **{_cb_col}** as batch variable")
