@@ -1339,7 +1339,12 @@ def plot_heatmap_samples(data, class_colors, selected_features, custom_colors,
     mat_r = mat_z[np.ix_(col_ord, row_ord)]
     feat_r  = [features[i]     for i in row_ord]
     samp_r  = [class_labels[i] for i in col_ord]
-    file_r  = data["File"].astype(str).iloc[col_ord].tolist() if "File" in data.columns else samp_r
+    if "ID" in data.columns:
+        file_r = data["ID"].astype(str).iloc[col_ord].tolist()
+    elif "File" in data.columns:
+        file_r = data["File"].astype(str).iloc[col_ord].tolist()
+    else:
+        file_r = [f"sample_{i+1}" for i in col_ord]
 
     # ── Colour scale from custom_colors list ──────────────────────────────
     n_stops = len(custom_colors)
@@ -1611,6 +1616,11 @@ def plot_heatmap_samples(
     data[features] = data[features].replace([np.inf, -np.inf], np.nan)
     data[features] = data[features].fillna(data[features].mean())
 
+    # ── Save original meta columns BEFORE scaling overwrites them ────────────
+    meta_annotation_cols_safe = meta_annotation_cols or []
+    _meta_cols_present = [m for m in meta_annotation_cols_safe if m in data.columns]
+    data_meta_orig = data[_meta_cols_present].copy() if _meta_cols_present else None
+
     scaler = StandardScaler()
     Z = scaler.fit_transform(data[features])
     data[features] = Z
@@ -1622,14 +1632,8 @@ def plot_heatmap_samples(
     matrix = data[features].values   # (n_samples, n_features)
     if "ID" in data.columns:
         sample_labels = data["ID"].astype(str).tolist()
-    elif data.index.name and data.index.name != "index":
-        sample_labels = data.index.astype(str).tolist()
     else:
-        # Fallback: Class + position index for readability
-        sample_labels = [
-            f"{cls} #{i}"
-            for i, cls in enumerate(data["Class"].astype(str).tolist())
-        ]
+        sample_labels = [f"sample_{i+1}" for i in range(len(data))]
     class_labels = data["Class"].astype(str).tolist()
     n_samples, n_features = matrix.shape
 
@@ -1658,8 +1662,15 @@ def plot_heatmap_samples(
     # ── Resolve valid meta columns & build their colour mappings ─────────────
     _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
                  "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
+    # Palettes distinctes pour chaque méta numérique (évite le viridis uniforme)
+    _NUM_CMAPS = ["viridis", "plasma", "cividis", "magma", "inferno",
+                  "YlOrRd", "Blues", "Greens", "PuRd", "BuPu"]
     meta_annotation_cols = meta_annotation_cols or []
-    valid_meta = [m for m in meta_annotation_cols if m in data.columns]
+    # Use data_meta_orig (pre-scaling) for meta col values if available
+    _meta_src = data_meta_orig if data_meta_orig is not None else data
+    valid_meta = [m for m in meta_annotation_cols if m in _meta_src.columns]
+    # Compteur pour alterner les palettes numériques
+    _num_cmap_counter = [0]
 
     # Annotation strip labels: Class first, then meta columns
     ann_labels  = ["Class"] + valid_meta
@@ -1724,72 +1735,170 @@ def plot_heatmap_samples(
             ), row=strip_row, col=3)
 
             # Add class legend entries via invisible scatter
-            for cls_name in unique_cls:
+            for i_cls, cls_name in enumerate(unique_cls):
                 fig.add_trace(go.Scatter(
                     x=[None], y=[None], mode="markers",
                     marker=dict(size=10, color=class_colors.get(cls_name, "#aaa"),
                                 symbol="square"),
-                    name=f"Class: {cls_name}", legendgroup=f"cls_{cls_name}",
+                    name=cls_name,
+                    legendgroup="cls_group",
+                    legendgrouptitle=dict(
+                        text="<b>Class</b>",
+                        font=dict(size=11, color="black", family="Arial Black"),
+                    ) if i_cls == 0 else {},
                     showlegend=True,
                 ))
 
         else:
             # ── Meta strip ───────────────────────────────────────────────────
-            col_vals = data[ann_label].values
+            # Read from pre-scaling source so values are not corrupted by Z-score
+            col_vals = _meta_src[ann_label].values
             reordered = [col_vals[i] for i in col_order]
 
             import pandas as _pd_local
-            if _pd_local.api.types.is_numeric_dtype(data[ann_label]):
-                # Continuous → viridis gradient
-                z_meta = [[float(v) if v == v else 0.0 for v in reordered]]
+            import matplotlib.colors as _mc
+            if _pd_local.api.types.is_numeric_dtype(_meta_src[ann_label]):
+                # Continuous numeric → palette distincte par meta (pas toujours viridis)
+                _cmap_name = _NUM_CMAPS[_num_cmap_counter[0] % len(_NUM_CMAPS)]
+                _num_cmap_counter[0] += 1
+                _cmap_num = plt.cm.get_cmap(_cmap_name)
+
+                raw_vals = np.array([float(v) if (v is not None and v == v) else np.nan
+                                     for v in reordered])
+                _vmin = float(np.nanmin(raw_vals)) if not np.all(np.isnan(raw_vals)) else 0.0
+                _vmax = float(np.nanmax(raw_vals)) if not np.all(np.isnan(raw_vals)) else 1.0
+                _vrng = _vmax - _vmin if _vmax != _vmin else 1.0
+
+                # Closure explicite pour capturer _vmin/_vrng/_cmap_num correctement
+                def _make_hex(cmap_fn, vmin_c, vrng_c):
+                    def _num_to_hex(v):
+                        if np.isnan(v):
+                            return "#cccccc"
+                        t = (v - vmin_c) / vrng_c
+                        return _mc.to_hex(cmap_fn(np.clip(t, 0, 1)))
+                    return _num_to_hex
+
+                _num_to_hex = _make_hex(_cmap_num, _vmin, _vrng)
+                cell_colors = [_num_to_hex(v) for v in raw_vals]
+
+                z_meta = [[i for i in range(n_samples)]]
+                if n_samples > 1:
+                    disc_cs = []
+                    for i, hexc in enumerate(cell_colors):
+                        t0 = i / (n_samples - 1)
+                        t1 = (i + 1) / (n_samples - 1) if i < n_samples - 1 else 1.0
+                        disc_cs += [[t0, hexc], [min(t1, 1.0), hexc]]
+                else:
+                    disc_cs = [[0.0, cell_colors[0]], [1.0, cell_colors[0]]]
+
+                hover_num = [f"{v:.3g}" if not np.isnan(v) else "N/A" for v in raw_vals]
                 fig.add_trace(go.Heatmap(
                     z=z_meta, x=list(range(n_samples)), y=[ann_label],
-                    colorscale="Viridis", showscale=True,
-                    colorbar=dict(
-                        title=dict(text=ann_label, side="right"),
-                        thickness=8, len=ann_strip_frac * 4,
-                        y=1.0 - top_frac - ann_strip_frac * (ann_idx + 0.5),
-                        x=1.22, xanchor="left", tickfont=dict(size=8),
-                    ),
-                    hovertemplate=f"<b>{ann_label}:</b> %{{z:.2f}}<extra></extra>",
+                    colorscale=disc_cs,
+                    zmin=0, zmax=max(n_samples - 1, 1),
+                    showscale=False,
+                    text=[[f"<b>{ann_label}:</b> {hv}" for hv in hover_num]],
+                    hovertemplate="%{text}<extra></extra>",
                     xgap=0, ygap=0,
                 ), row=strip_row, col=3)
 
+                # Légende: min, mid, max swatches avec la bonne palette
+                for _label_val, _t in [
+                    (f"{ann_label} (min={_vmin:.2g})", 0.0),
+                    (f"{ann_label} (mid={(_vmin+_vmax)/2:.2g})", 0.5),
+                    (f"{ann_label} (max={_vmax:.2g})", 1.0),
+                ]:
+                    fig.add_trace(go.Scatter(
+                        x=[None], y=[None], mode="markers",
+                        marker=dict(
+                            size=10,
+                            color=_mc.to_hex(_cmap_num(_t)),
+                            symbol="square",
+                        ),
+                        name=_label_val,
+                        legendgroup=f"meta_{ann_label}",
+                        legendgrouptitle=dict(
+                            text=f"<b>{ann_label}</b>",
+                            font=dict(size=11, color="black", family="Arial Black"),
+                        ) if _t == 0.0 else {},
+                        showlegend=True,
+                    ))
+
             else:
-                # Categorical → discrete colours
-                uniq_vals = sorted(set(v for v in reordered if v == v))  # drop NaN
+                # Catégorique → couleurs discrètes
+                # Gérer correctement les NaN (ne pas les inclure dans uniq_vals)
+                uniq_vals = []
+                seen_vals = set()
+                for v in reordered:
+                    try:
+                        is_nan = (v is None) or (v != v)
+                    except Exception:
+                        is_nan = False
+                    sv = str(v) if not is_nan else None
+                    if not is_nan and sv not in seen_vals:
+                        uniq_vals.append(v)
+                        seen_vals.add(sv)
+                uniq_vals = sorted(uniq_vals, key=lambda x: str(x))
+
                 val_map = {v: _AUTO_PAL[i % len(_AUTO_PAL)]
                            for i, v in enumerate(uniq_vals)}
                 n_v = len(uniq_vals)
-                val_idx = {v: i for i, v in enumerate(uniq_vals)}
-                z_meta = [[val_idx.get(v, 0) for v in reordered]]
-
-                if n_v == 1:
-                    meta_cs = [[0.0, val_map[uniq_vals[0]]],
-                                [1.0, val_map[uniq_vals[0]]]]
+                if n_v == 0:
+                    fig.add_trace(go.Heatmap(
+                        z=[[0]*n_samples], x=list(range(n_samples)), y=[ann_label],
+                        colorscale=[[0, "#cccccc"], [1, "#cccccc"]],
+                        showscale=False, xgap=0, ygap=0,
+                    ), row=strip_row, col=3)
                 else:
-                    meta_cs = []
+                    def _val_to_idx(v):
+                        try:
+                            is_nan = (v is None) or (v != v)
+                        except Exception:
+                            is_nan = False
+                        if is_nan:
+                            return -1
+                        return next((i for i, uv in enumerate(uniq_vals) if str(uv) == str(v)), -1)
+
+                    z_indices = [_val_to_idx(v) for v in reordered]
+                    z_shifted = [idx + 1 if idx >= 0 else 0 for idx in z_indices]
+                    z_meta = [z_shifted]
+
+                    n_total = n_v + 1
+                    meta_cs = [[0.0, "#cccccc"], [1/n_total - 1e-9, "#cccccc"]]
                     for i, v in enumerate(uniq_vals):
-                        t0, t1 = i / n_v, (i + 1) / n_v
-                        meta_cs += [[t0, val_map[v]], [t1, val_map[v]]]
+                        t0 = (i + 1) / n_total
+                        t1 = (i + 2) / n_total
+                        meta_cs += [[t0, val_map[v]], [min(t1 - 1e-9, 1.0), val_map[v]]]
+                    meta_cs[-1][0] = 1.0
 
-                hover_meta = [f"<b>{ann_label}:</b> {v}" for v in reordered]
-                fig.add_trace(go.Heatmap(
-                    z=z_meta, x=list(range(n_samples)), y=[ann_label],
-                    colorscale=meta_cs, zmin=0, zmax=n_v, showscale=False,
-                    text=[hover_meta], hovertemplate="%{text}<extra></extra>",
-                    xgap=0, ygap=0,
-                ), row=strip_row, col=3)
+                    hover_meta = []
+                    for v in reordered:
+                        try:
+                            is_nan = (v is None) or (v != v)
+                        except Exception:
+                            is_nan = False
+                        hover_meta.append(f"<b>{ann_label}:</b> {'N/A' if is_nan else v}")
 
-                # Legend via invisible scatter
-                for v in uniq_vals:
-                    fig.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        marker=dict(size=10, color=val_map[v], symbol="square"),
-                        name=f"{ann_label}: {v}",
-                        legendgroup=f"meta_{ann_label}_{v}",
-                        showlegend=True,
-                    ))
+                    fig.add_trace(go.Heatmap(
+                        z=z_meta, x=list(range(n_samples)), y=[ann_label],
+                        colorscale=meta_cs, zmin=0, zmax=n_total,
+                        showscale=False,
+                        text=[hover_meta], hovertemplate="%{text}<extra></extra>",
+                        xgap=0, ygap=0,
+                    ), row=strip_row, col=3)
+
+                    for i_v, v in enumerate(uniq_vals):
+                        fig.add_trace(go.Scatter(
+                            x=[None], y=[None], mode="markers",
+                            marker=dict(size=10, color=val_map[v], symbol="square"),
+                            name=f"{v}",
+                            legendgroup=f"meta_{ann_label}",
+                            legendgrouptitle=dict(
+                                text=f"<b>{ann_label}</b>",
+                                font=dict(size=11, color="black", family="Arial Black"),
+                            ) if i_v == 0 else {},
+                            showlegend=True,
+                        ))
 
     # ── 3d. Main heatmap ──────────────────────────────────────────────────────
     hover_text = [
@@ -1813,12 +1922,19 @@ def plot_heatmap_samples(
             text=hover_text,
             hovertemplate="%{text}<extra></extra>",
             colorbar=dict(
-                title=dict(text="Z-score", side="right"),
-                thickness=12,
-                len=0.45,
+                title=dict(
+                    text="<b>Z-score</b>",
+                    side="right",
+                    font=dict(size=13, color="black", family="Arial Black"),
+                ),
+                thickness=14,
+                len=0.50,
                 x=1.25,
                 xanchor="left",
-                tickfont=dict(size=9),
+                tickfont=dict(size=11, color="black", family="Arial"),
+                tickcolor="black",
+                outlinecolor="black",
+                outlinewidth=1,
             ),
             xgap=0.4, ygap=0.4,
         ),
@@ -1845,7 +1961,7 @@ def plot_heatmap_samples(
         fig.update_xaxes(range=[-0.5, n_samples - 0.5],
                          showticklabels=False, row=strip_row, col=3)
         # Show the annotation label on y-axis (strip label)
-        fig.update_yaxes(showticklabels=True, tickfont=dict(size=8, color="black"),
+        fig.update_yaxes(showticklabels=True, tickfont=dict(size=10, color="black", family="Arial"),
                          showgrid=False, row=strip_row, col=3)
 
     # Main heatmap x: sample names
@@ -1854,7 +1970,7 @@ def plot_heatmap_samples(
         tickvals=list(range(n_samples)),
         ticktext=sample_labels_ord,
         tickangle=90,
-        tickfont=dict(size=8),
+        tickfont=dict(size=10, color="black", family="Arial"),
         showgrid=False, zeroline=False,
         range=[-0.5, n_samples - 0.5],
         row=heatmap_row, col=3,
@@ -1864,31 +1980,42 @@ def plot_heatmap_samples(
     fig.update_yaxes(
         tickmode="array",
         tickvals=list(range(n_features)),
-        ticktext=feature_labels_ord,
-        tickfont=dict(size=8),
+        ticktext=[f"<b>{f}</b>" for f in feature_labels_ord],
+        tickfont=dict(size=10, color="black", family="Arial"),
         showgrid=False, zeroline=False,
         range=[-0.5, n_features - 0.5],
         side="right",
         row=heatmap_row, col=3,
     )
 
-    # ── 5. Layout ─────────────────────────────────────────────────────────────
-    plot_height = max(550, min(2000, 220 + n_features * 20 + n_ann_rows * 30))
+    # ── 5. Layout — publication-ready ────────────────────────────────────────
+    # Square-ish sizing: each feature row ≈ 20 px, capped for readability
+    _px_per_feature = max(8, min(20, 700 // max(n_features, 1)))
+    _px_per_sample  = max(8, min(20, 700 // max(n_samples,  1)))
+    plot_height = max(550, min(2000, 220 + n_features * _px_per_feature + n_ann_rows * 32))
+    plot_width  = max(600, min(2400, 300 + n_samples  * _px_per_sample  + 250))
 
     fig.update_layout(
         height=plot_height,
-        margin=dict(l=10, r=220, t=20, b=10),
+        width=plot_width,
+        margin=dict(l=10, r=280, t=20, b=10),
         paper_bgcolor="white",
         plot_bgcolor="white",
-        font=dict(color="#222", family="Arial"),
+        font=dict(color="black", family="Arial", size=12),
         dragmode="zoom",
         hovermode="closest",
         showlegend=True,
         legend=dict(
-            x=1.28, y=1.0, xanchor="left", yanchor="top",
-            bgcolor="white", bordercolor="#ccc", borderwidth=1,
-            font=dict(size=9, color="black"),
+            x=1.02, y=1.0, xanchor="left", yanchor="top",
+            bgcolor="rgba(255,255,255,0.95)",
+            bordercolor="black", borderwidth=1,
+            font=dict(size=11, color="black", family="Arial"),
+            title=dict(
+                text="<b>Legend</b>",
+                font=dict(size=13, color="black", family="Arial Black"),
+            ),
             tracegroupgap=4,
+            itemsizing="constant",
         ),
     )
 
@@ -1905,7 +2032,11 @@ def plot_heatmap_samples(
     st.plotly_chart(fig, use_container_width=True, config={
         "scrollZoom": True,
         "displayModeBar": True,
-        "toImageButtonOptions": {"format": "png", "scale": 3},
+        "toImageButtonOptions": {
+            "format": "png",
+            "scale": 4,           # 4× → ~300 DPI equivalent at screen resolution
+            "filename": "heatmap",
+        },
     })
 
     # ── 7. Static PNG (exact original seaborn version) ────────────────────────
@@ -1918,6 +2049,7 @@ def plot_heatmap_samples(
         n_samples=n_samples,
         n_features=n_features,
         meta_annotation_cols=valid_meta,
+        data_meta_orig=data_meta_orig,
     )
 
     # Store plotly fig — two purposes:
@@ -1950,7 +2082,7 @@ def plot_heatmap_samples(
 def _build_static_png_original(
     data_orig, features, class_colors, custom_colors,
     show_sample_names, n_samples, n_features,
-    meta_annotation_cols=None,
+    meta_annotation_cols=None, data_meta_orig=None,
 ):
     import seaborn as sns
     from matplotlib.colors import LinearSegmentedColormap
@@ -1959,14 +2091,23 @@ def _build_static_png_original(
 
     _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
                  "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
+    # Palettes distinctes pour les méta numériques (pas que viridis)
+    _NUM_CMAPS_MPL = ["viridis", "plasma", "cividis", "magma", "inferno",
+                      "YlOrRd", "Blues", "Greens", "PuRd", "BuPu"]
 
-    cmap = LinearSegmentedColormap.from_list("custom_cmap", custom_colors)
+    # Publication-ready colormap — N=256 ensures smooth gradient identical to Plotly version
+    cmap = LinearSegmentedColormap.from_list("custom_cmap", custom_colors, N=256)
     vmin = data_orig[features].min().min()
     vmax = data_orig[features].max().max()
-    fontsize = max(9, 18 - max(n_samples, n_features) // 10)
+    # Font sizes scaled for readability at 300 DPI
+    fontsize       = max(10, 20 - max(n_samples, n_features) // 10)
+    label_fontsize = fontsize + 2   # axis / legend titles
+    tick_fontsize  = fontsize       # tick labels
 
     meta_annotation_cols = meta_annotation_cols or []
-    valid_meta = [m for m in meta_annotation_cols if m in data_orig.columns]
+    # Use data_meta_orig (pre-scaling) for meta col values if available
+    _meta_src = data_meta_orig if data_meta_orig is not None else data_orig
+    valid_meta = [m for m in meta_annotation_cols if m in _meta_src.columns]
 
     col_colors_list = [data_orig["Class"].map(class_colors).rename("Class")]
     legend_handles = [
@@ -1974,62 +2115,157 @@ def _build_static_png_original(
         for cls, c in class_colors.items()
         if cls in data_orig["Class"].unique()
     ]
+
+    _num_cmap_idx = 0  # compteur pour alterner les palettes numériques
+
     for m in valid_meta:
-        vals = data_orig[m]
+        vals = _meta_src[m]
         if vals.dtype.kind in "iuf":
-            norm = mcolors.Normalize(vmin=vals.min(), vmax=vals.max())
-            col_colors_list.append(
-                vals.map(lambda v: mcolors.to_hex(plt.cm.viridis(norm(v)))).rename(m)
-            )
+            # Numérique → palette distincte par variable
+            _cmap_name = _NUM_CMAPS_MPL[_num_cmap_idx % len(_NUM_CMAPS_MPL)]
+            _num_cmap_idx += 1
+            _cmap_fn = plt.cm.get_cmap(_cmap_name)
+            _vmin_m = vals.min()
+            _vmax_m = vals.max()
+            _norm = mcolors.Normalize(vmin=_vmin_m, vmax=_vmax_m)
+
+            # Closure explicite pour éviter le bug de capture tardive de la lambda
+            def _make_mapper(cmap_fn, norm_fn):
+                def _mapper(v):
+                    if pd.isna(v):
+                        return "#cccccc"
+                    return mcolors.to_hex(cmap_fn(norm_fn(v)))
+                return _mapper
+
+            _mapper = _make_mapper(_cmap_fn, _norm)
+            col_colors_list.append(vals.map(_mapper).rename(m))
+            legend_handles += [
+                mpatches.Patch(
+                    color=mcolors.to_hex(_cmap_fn(t)),
+                    label=f"{m}: {_vmin_m + t * (_vmax_m - _vmin_m):.2g}"
+                )
+                for t in [0.0, 0.5, 1.0]
+            ]
         else:
-            uniq = sorted(vals.dropna().unique())
+            # Catégorique → gérer NaN correctement
+            uniq = []
+            seen_str = set()
+            for v in vals.dropna():
+                sv = str(v)
+                if sv not in seen_str:
+                    uniq.append(v)
+                    seen_str.add(sv)
+            uniq = sorted(uniq, key=lambda x: str(x))
             m_map = {v: _AUTO_PAL[i % len(_AUTO_PAL)] for i, v in enumerate(uniq)}
-            col_colors_list.append(vals.map(m_map).rename(m))
-            legend_handles += [mpatches.Patch(color=c, label=f"{m}: {v}") for v, c in m_map.items()]
+
+            def _make_cat_mapper(vmap):
+                def _cat_mapper(v):
+                    if pd.isna(v):
+                        return "#cccccc"
+                    return vmap.get(v, "#cccccc")
+                return _cat_mapper
+
+            col_colors_list.append(vals.map(_make_cat_mapper(m_map)).rename(m))
+            legend_handles += [
+                mpatches.Patch(color=c, label=f"{m}: {v}")
+                for v, c in m_map.items()
+            ]
 
     import pandas as _pd_local
-    col_colors_df = _pd_local.concat(col_colors_list, axis=1) if len(col_colors_list) > 1 else col_colors_list[0]
+    # Reset index so all series align by position
+    col_colors_list_reset = [s.reset_index(drop=True) for s in col_colors_list]
+    col_colors_df = (_pd_local.concat(col_colors_list_reset, axis=1)
+                     if len(col_colors_list_reset) > 1
+                     else col_colors_list_reset[0])
+
+    # ── Figsize: near-square — limit per-cell to avoid extreme strip shapes ──
+    # Each sample column ≈ 0.30 in, each feature row ≈ 0.30 in (square cells).
+    _cell = 0.30   # inches per sample / per feature → square cells
+    _fig_w = max(12, min(32, n_samples * _cell + 5))
+    _fig_h = max(8,  min(28, n_features * _cell + 5))
 
     g = sns.clustermap(
         data_orig[features].T,
-        cmap=cmap, square=False,
+        cmap=cmap, square=True,
         col_cluster=True, row_cluster=True, center=0, z_score=None,
         col_colors=col_colors_df,
-        cbar_kws={"shrink": 0.6, "label": "Z-score"},
+        cbar_kws={
+            "shrink": 0.5, "label": "Z-score",
+            "format": "%.1f",
+        },
         yticklabels=True if n_features <= 60 else False,
         xticklabels=False, vmin=vmin, vmax=vmax,
-        figsize=(max(12, n_samples * 0.35), max(8, n_features * 0.25)),
+        figsize=(_fig_w, _fig_h),
+        dendrogram_ratio=(0.12, 0.12),
+        colors_ratio=0.03,
+        linewidths=0,
     )
 
+    # ── Colorbar font — large black text ──────────────────────────────────────
+    try:
+        cbar = g.ax_cbar
+        cbar.tick_params(labelsize=label_fontsize, labelcolor="black", color="black")
+        cbar.set_ylabel("Z-score", fontsize=label_fontsize, color="black", fontweight="bold")
+    except Exception:
+        pass
+
+    # ── Sample name labels on x-axis ─────────────────────────────────────────
     if show_sample_names and n_samples <= 50:
         col_order = g.dendrogram_col.reordered_ind
-        ordered_labels = data_orig["File"].iloc[col_order].values if "File" in data_orig.columns             else data_orig.index[col_order]
+        if "ID" in data_orig.columns:
+            ordered_labels = data_orig["ID"].astype(str).iloc[col_order].values
+        elif "File" in data_orig.columns:
+            ordered_labels = data_orig["File"].astype(str).iloc[col_order].values
+        else:
+            ordered_labels = [f"sample_{i+1}" for i in col_order]
         g.ax_heatmap.set_xticks(np.arange(len(ordered_labels)) + 0.5)
-        g.ax_heatmap.set_xticklabels(ordered_labels, rotation=45, ha="right", fontsize=max(7, fontsize-2))
+        g.ax_heatmap.set_xticklabels(
+            ordered_labels, rotation=45, ha="right",
+            fontsize=tick_fontsize, color="black",
+        )
 
+    # ── Feature (y-axis) tick labels ──────────────────────────────────────────
     if n_features <= 60:
         g.ax_heatmap.set_yticklabels(
             [lbl.get_text() for lbl in g.ax_heatmap.get_yticklabels()],
-            fontsize=fontsize, color="black",
+            fontsize=tick_fontsize, color="black", fontweight="bold",
         )
 
+    # ── Annotation strip labels ───────────────────────────────────────────────
     try:
         ann_axes = g.ax_col_colors if isinstance(g.ax_col_colors, list) else [g.ax_col_colors]
         for ax_ann, lbl in zip(ann_axes, ["Class"] + valid_meta):
-            ax_ann.set_ylabel(lbl, fontsize=fontsize, rotation=0,
-                              labelpad=50, va="center", ha="right", color="black")
+            ax_ann.set_ylabel(
+                lbl, fontsize=label_fontsize, fontweight="bold",
+                rotation=0, labelpad=55, va="center", ha="right", color="black",
+            )
             ax_ann.yaxis.set_label_position("left")
     except Exception:
         pass
 
+    # ── Légende — éviter les chevauchements avec ncol adaptatif ─────────────
     if legend_handles:
-        g.ax_heatmap.legend(handles=legend_handles, loc="upper left",
-                            bbox_to_anchor=(1.18, 1.0), frameon=True,
-                            fontsize=max(8, fontsize-1), title="Legend",
-                            title_fontsize=fontsize)
+        n_cols = max(1, len(legend_handles) // 12)
+        leg = g.ax_heatmap.legend(
+            handles=legend_handles,
+            loc="upper left",
+            bbox_to_anchor=(1.05, 1.02),
+            frameon=True,
+            fontsize=max(8, label_fontsize - 1),
+            title="Legend",
+            title_fontsize=label_fontsize,
+            ncol=n_cols,
+            columnspacing=0.8,
+            handlelength=1.2,
+            borderpad=0.5,
+        )
+        leg.get_title().set_color("black")
+        leg.get_title().set_fontweight("bold")
+        for text in leg.get_texts():
+            text.set_color("black")
 
     buf = io.BytesIO()
-    g.fig.savefig(buf, format="png", bbox_inches="tight", dpi=200)
+    g.fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
     buf.seek(0)
     plt.close(g.fig)
     return buf.getvalue()
