@@ -19,6 +19,17 @@ Links:
 """
 
 
+# ── Silence TensorFlow / CUDA warnings ───────────────────────────────────────
+# Must be set BEFORE any import that transitively loads TensorFlow or Keras.
+# On CPU-only machines (no CUDA GPU) TF emits a flood of "Could not load
+# dynamic library 'cudartXX.dll'" warnings — these env-vars suppress them.
+import os as _os_tf_silence
+_os_tf_silence.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")   # 3 = ERROR only
+_os_tf_silence.environ.setdefault("TF_ENABLE_ONEDNN_OPTS",  "0") # suppress oneDNN info
+_os_tf_silence.environ.setdefault("CUDA_VISIBLE_DEVICES",   "-1") # no GPU → skip CUDA probe
+_os_tf_silence.environ.setdefault("TF_KERAS_DEFAULT_DTYPE", "float32")  # no mixed_float16 warning
+del _os_tf_silence  # keep namespace clean
+
 # ── Standard library ─────────────────────────────────────────────────────────
 import os
 import sys
