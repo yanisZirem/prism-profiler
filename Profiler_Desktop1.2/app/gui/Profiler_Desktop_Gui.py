@@ -4259,7 +4259,11 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             data_use = st.session_state.get('preprocessed_data') if source=='Preprocessed' else st.session_state.get('final_data', st.session_state.get('data'))
                             if data_use is None: st.error("No valid data"); st.stop()
                             progress = st.progress(0)
-                            st.session_state['oversampled_data'] = apply_sampling(data_use, technique.lower(), _progress_bar=progress)
+                            _id_col_over = data_use["ID"].reset_index(drop=True) if "ID" in data_use.columns else None
+                            _sampled = apply_sampling(data_use, technique.lower(), _progress_bar=progress)
+                            if _id_col_over is not None and "ID" not in _sampled.columns:
+                                _sampled.insert(0, "ID", [f"sample_{i+1}" for i in range(len(_sampled))])
+                            st.session_state['oversampled_data'] = _sampled
                             # Desktop: session_state only
                             st.success("✅ Oversampling successful")
                         except Exception as e: st.error(f"Oversampling error: {e}")
@@ -4277,7 +4281,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             X = data_use.drop([c for c in data_use.columns if c in _NON_FEATURE_COLS or str(c).endswith('_meta')], axis=1, errors='ignore').select_dtypes(include='number'); y = data_use['Class']
                             if technique=='RandomUnderSampler': from imblearn.under_sampling import RandomUnderSampler; X_res, y_res = RandomUnderSampler(random_state=1).fit_resample(X,y)
                             elif technique=='NearMiss': from imblearn.under_sampling import NearMiss; X_res, y_res = NearMiss(version=1).fit_resample(X,y)
-                            st.session_state['undersampled_data'] = pd.concat([X_res, y_res], axis=1)
+                            _under_df = pd.concat([X_res, y_res], axis=1)
+                            if "ID" not in _under_df.columns:
+                                _under_df.insert(0, "ID", [f"sample_{i+1}" for i in range(len(_under_df))])
+                            st.session_state['undersampled_data'] = _under_df
                             # Desktop: session_state only
                             st.write(st.session_state['undersampled_data']['Class'].value_counts())
                             st.success("✅ Undersampling successful")
@@ -6186,41 +6193,44 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     st.warning("Please select features to display the Volcano Plot.")
                 else:
                     try:
-                        with st.spinner("Generating Volcano Plot..."):
+                        _vol_placeholder = st.empty()
+                        with _vol_placeholder.container():
+                            with st.spinner("Generating Volcano Plot..."):
 
-                            method_map = {
-                                "FDR (Benjamini–Hochberg)": "fdr_bh",
-                                "Bonferroni": "bonferroni",
-                                "None": "none"
-                            }
+                                method_map = {
+                                    "FDR (Benjamini–Hochberg)": "fdr_bh",
+                                    "Bonferroni": "bonferroni",
+                                    "None": "none"
+                                }
 
-                            volcano_data = calculate_volcano_data(
-                                data_vol, class_column, selected_features, p_value_threshold,
-                                correction_method=method_map[correction_method],
-                                control_class=st.session_state.get("volcano_control_class")
-                            )
+                                volcano_data = calculate_volcano_data(
+                                    data_vol, class_column, selected_features, p_value_threshold,
+                                    correction_method=method_map[correction_method],
+                                    control_class=st.session_state.get("volcano_control_class")
+                                )
 
-                            # Apply fold change filter
-                            filtered_volcano_data = volcano_data[
-                                (volcano_data['Log2 Fold Change'] >= fold_change_threshold) |
-                                (volcano_data['Log2 Fold Change'] <= -fold_change_threshold)
-                            ]
+                                # Apply fold change filter
+                                filtered_volcano_data = volcano_data[
+                                    (volcano_data['Log2 Fold Change'] >= fold_change_threshold) |
+                                    (volcano_data['Log2 Fold Change'] <= -fold_change_threshold)
+                                ]
 
-                            # Plot
-                            volcano_plot = plot_volcano(
-                                filtered_volcano_data,
-                                highlight_features,
-                                p_value_threshold,
-                                fold_change_threshold,capture_name="volcano_fig",
-                            )
+                                # Générer et stocker — ne pas afficher ici
+                                volcano_plot = plot_volcano(
+                                    filtered_volcano_data,
+                                    highlight_features,
+                                    p_value_threshold,
+                                    fold_change_threshold, capture_name="volcano_fig",
+                                )
 
-                            # Store results first, then rerun so the persistent block renders
-                            st.session_state["volcano_data"] = filtered_volcano_data
-                            st.session_state["volcano_all_data"] = volcano_data  # full unfiltered (for stats table)
-                            st.session_state["show_volcano"] = True
-                            st.session_state["volcano_fig"] = volcano_plot
-                            st.session_state["volcano_correction_method"] = correction_method
-                            st.rerun()
+                                # Stocker pour le bloc persistent
+                                st.session_state["volcano_data"] = filtered_volcano_data
+                                st.session_state["volcano_all_data"] = volcano_data
+                                st.session_state["show_volcano"] = True
+                                st.session_state["volcano_fig"] = volcano_plot
+                                st.session_state["volcano_correction_method"] = correction_method
+
+                        _vol_placeholder.empty()  # effacer le spinner, laisser le persistent afficher
 
                     except Exception as e:
                         st.error(f"Error generating Volcano Plot: {e}")
@@ -6619,11 +6629,25 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 if data_heat is None:
                     st.warning("Please select a valid data source.")
                     st.stop()
-                # Déterminer les features sélectionnées
+                # ── Colonnes _meta : sauvegarde AVANT toute modification ──────
+                # Les colonnes _meta ne doivent JAMAIS entrer dans selected_features
+                # ni subir pd.to_numeric — elles sont transmises séparément comme
+                # annotations de couleur et doivent conserver leurs valeurs d'origine
+                # (catégories textuelles ou numériques non-transformées).
+                _meta_cols_in_data = [c for c in data_heat.columns if str(c).endswith('_meta')]
+                _meta_backup = data_heat[_meta_cols_in_data].copy() if _meta_cols_in_data else None
+
+                # Déterminer les features sélectionnées (hors _meta, hors colonnes structurelles)
+                _EXCL_COLS = {'Class', 'File', 'RT', 'Sum', 'ID', 'Original_Index', 'Original_index'}
                 if select_all_features:
-                    selected_features = [col for col in data_heat.columns if col not in ['Class', 'File', 'RT', 'Sum']]
+                    selected_features = [
+                        col for col in data_heat.columns
+                        if col not in _EXCL_COLS and not str(col).endswith('_meta')
+                    ]
                 else:
                     selected_features = [f.strip() for f in features_input.split(',')] if features_input else []
+                    # Retirer silencieusement les _meta si l'utilisateur les a saisi par erreur
+                    selected_features = [f for f in selected_features if not str(f).endswith('_meta')]
                     if not selected_features:
                         st.warning("Please select features for the heatmap.")
                         st.stop()
@@ -6632,10 +6656,15 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 if not selected_features:
                     st.error("No valid features found in the dataset. Please check your selection.")
                     st.stop()
-                # Forcer la conversion numérique des colonnes features (évite str/int TypeError)
+                # Forcer la conversion numérique des colonnes features uniquement
+                # (les colonnes _meta sont exclues — elles restent intactes)
                 data_heat = data_heat.copy()
                 for _f in selected_features:
                     data_heat[_f] = pd.to_numeric(data_heat[_f], errors='coerce')
+                # Restaurer les valeurs _meta d'origine (protège contre toute coercition amont)
+                if _meta_backup is not None:
+                    for _mc in _meta_cols_in_data:
+                        data_heat[_mc] = _meta_backup[_mc].values
                 # Appliquer log2 sur tout le DataFrame si demandé (évite NaN/-inf)
                 if perform_stat_test and data_type == 'Log2':
                     data_heat[selected_features] = np.log2(data_heat[selected_features].clip(lower=1e-6))
@@ -6664,21 +6693,29 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     selected_features = significant_features
 
                 if average_by_class:
-                    data_heat = data_heat.groupby("Class").mean().reset_index()
+                    data_heat = data_heat.groupby("Class").mean(numeric_only=True).reset_index()
+                    data_heat.insert(0, "ID", data_heat["Class"].astype(str))
                 st.markdown(f"**{len(selected_features)} feature(s)** selected for clustering.")
                 if perform_stat_test:
                     st.markdown(f"P-value threshold: `{p_value_threshold}` on `{data_type}` data")
-                # Affichage heatmap
-                with st.spinner("Generating heatmap..."):
-                    plot_heatmap_samples(
-                        data_heat,
-                        st.session_state['class_colors'],
-                        selected_features,
-                        custom_colors,
-                        show_sample_names=show_sample_names,
-                        capture_name="heatmap_fig",
-                        meta_annotation_cols=meta_annotation_cols,
-                    )
+                # Garantir que la colonne ID est présente pour les labels du heatmap
+                if "ID" not in data_heat.columns:
+                    data_heat.insert(0, "ID", [f"sample_{i+1}" for i in range(len(data_heat))])
+
+                # Générer et stocker — l'affichage est délégué au bloc persistent ci-dessous
+                _hm_placeholder = st.empty()
+                with _hm_placeholder.container():
+                    with st.spinner("Generating heatmap..."):
+                        plot_heatmap_samples(
+                            data_heat,
+                            st.session_state['class_colors'],
+                            selected_features,
+                            custom_colors,
+                            show_sample_names=show_sample_names,
+                            capture_name="heatmap_fig",
+                            meta_annotation_cols=meta_annotation_cols,
+                        )
+                _hm_placeholder.empty()  # effacer l'affichage intermédiaire
                 st.markdown("**Overexpressed Features by Class**")
                 if average_by_class:
                     df_for_overexpr = data_heat.set_index("Class")
@@ -6740,14 +6777,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     st.session_state["heatmap_significant_features"] = significant_features
                     st.session_state["heatmap_data_source_df"]       = data_source_df
 
-                for var in ["data_heat", "data_source_df", "selected_features",
-                            "custom_colors", "_df_for_over", "_over_df_rows"]:
-                    try: del locals()[var]
-                    except: pass
                 gc.collect()
-                # Hand off to the persistent display block below (avoids
-                # double-render and ensures all reruns show the heatmap).
-                st.rerun()
 
             except Exception as e:
                 import traceback
