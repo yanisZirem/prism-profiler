@@ -28,6 +28,19 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+# ── Silence TensorFlow / CUDA warnings BEFORE spawning the Streamlit process ─
+# These env-vars are inherited by the child process, so TF never prints the
+# "Could not load dynamic library 'cudart64_110.dll'" family of warnings
+# on machines without a CUDA-capable GPU.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")        # 0=DEBUG 1=INFO 2=WARNING 3=ERROR
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")       # avoids a separate oneDNN info line
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")        # tell TF there is no GPU → skip CUDA probe
+os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")  # suppress allocator warnings
+
+# Keras / TF mixed-precision: force float32 so the mixed_float16 slow-GPU
+# warning is never triggered on CPU-only machines.
+os.environ.setdefault("TF_KERAS_DEFAULT_DTYPE", "float32")
+
 # --- Ensure project root is on sys.path so all app.* imports resolve ---------
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
@@ -99,7 +112,9 @@ def _run_streamlit(port: int) -> subprocess.Popen:
         "--server.maxUploadSize=10240",
     ]
 
-    return subprocess.Popen(cmd, creationflags=creationflags)
+    # Pass the current environment (which already contains TF_CPP_MIN_LOG_LEVEL
+    # and CUDA_VISIBLE_DEVICES set above) to the child process.
+    return subprocess.Popen(cmd, creationflags=creationflags, env=os.environ.copy())
 
 
 def _wait_for_streamlit(url: str, proc: subprocess.Popen,
