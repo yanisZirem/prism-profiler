@@ -94,9 +94,11 @@ def _sanitise_gene_list(genes: list) -> list:
 
 
 def _sanitise_ranked_series(series: pd.Series) -> pd.Series:
-    """Sanitise index (feature names) to ASCII and drop duplicates."""
+    """Sanitise index (feature names) to pure ASCII strings and drop duplicates.
+    Forces index to str first — guards against numpy.int64 / float index values
+    that would cause gseapy to crash with 'has no attribute isupper'."""
     s = series.copy()
-    s.index = [_ascii_safe(i) for i in s.index]
+    s.index = [_ascii_safe(str(i)) for i in s.index]
     s = s[~s.index.duplicated(keep="first")]
     return s
 
@@ -155,6 +157,7 @@ def _layout(fig, title: str = "", height: int = 500) -> go.Figure:
     return fig
 
 
+@st.cache_data(show_spinner=False)
 def load_gene_sets() -> dict:
     gene_sets = gp.get_library_name()
     cats = {
@@ -661,6 +664,11 @@ def perform_gsea(gene_lists, class_names, gene_set, organism, num_pathways):
         st.warning("No enrichment results found."); return
     combined  = pd.concat(results, ignore_index=True)
     color_map = st.session_state.get("class_colors", {})
+    # ── Persist results so they survive download-button reruns ───────────────
+    st.session_state["_ora_last_combined"]     = combined
+    st.session_state["_ora_last_gene_mapping"] = gene_mapping
+    st.session_state["_ora_last_gene_set"]     = gene_set
+    st.session_state["_ora_last_class_names"]  = class_names
     _render_ora_results(combined, gene_mapping, gene_set, color_map, class_names)
     del results, combined, gene_mapping; gc.collect()
 
@@ -723,6 +731,11 @@ def perform_gsea_offline(gene_lists, class_names, gene_set_path, organism, num_p
     color_map = st.session_state.get("class_colors", {})
     label = (getattr(gene_set_path, "name", None)
              or Path(_resolved_gmt).name)
+    # ── Persist results so they survive download-button reruns ───────────────
+    st.session_state["_ora_last_combined"]     = combined
+    st.session_state["_ora_last_gene_mapping"] = gene_mapping
+    st.session_state["_ora_last_gene_set"]     = label
+    st.session_state["_ora_last_class_names"]  = class_names
     _render_ora_results(combined, gene_mapping, label, color_map, class_names)
     del results, combined, gene_mapping
     if _tmp_gmt_file is not None:
@@ -897,34 +910,48 @@ def _build_ranked_heatmap(sel_cls: str):
 
 def _run_gsea_prerank(ranked_series, gene_set, run_label,
                       num_pathways, min_size, max_size, permutation_num, seed):
+    """Run GSEA prerank. Returns True on success, False on failure."""
+    import os, shutil, sys
+
     # Sanitise to ASCII before passing to gseapy
     ranked_clean = _sanitise_ranked_series(ranked_series)
 
     rnk = ranked_clean.reset_index()
     rnk.columns = ["gene", "score"]
+    # Force gene names to plain Python str — gseapy calls .isupper() on them
+    # and crashes if they are numpy.int64 or any other non-string type.
+    rnk["gene"] = rnk["gene"].astype(str)
+    rnk["score"] = pd.to_numeric(rnk["score"], errors="coerce").fillna(0.0)
     rnk = rnk.sort_values("score", ascending=False).drop_duplicates("gene")
 
     with st.spinner(f"Running GSEA prerank — {len(rnk)} features, "
                     f"{permutation_num} permutations…"):
+        # Pass outdir=None so gseapy never touches the filesystem at all.
+        # This avoids WinError 267 on Windows where gseapy's internal log
+        # writer chokes on long/special temp paths regardless of our outdir.
         try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                pre    = gp.prerank(
-                    rnk=rnk, gene_sets=gene_set,
-                    min_size=min_size, max_size=max_size,
-                    permutation_num=permutation_num, seed=seed,
-                    outdir=tmpdir, verbose=False,
-                )
-                res_df = pre.res2d.copy() if hasattr(pre, "res2d") else pd.DataFrame()
+            pre    = gp.prerank(
+                rnk=rnk, gene_sets=gene_set,
+                min_size=min_size, max_size=max_size,
+                permutation_num=permutation_num, seed=seed,
+                outdir=None, verbose=False,
+            )
+            res_df = pre.res2d.copy() if hasattr(pre, "res2d") else pd.DataFrame()
         except Exception as e:
-            st.error(f"GSEA error: {e}"); return
+            st.error(f"GSEA error: {e}")
+            return False   # ← signale l'échec
 
     if res_df.empty:
         st.warning("No results returned. Try relaxing min/max size or verify "
-                   "that feature names match the gene set library."); return
+                   "that feature names match the gene set library.")
+        return False   # ← signale l'échec
 
     st.session_state[f"gsea_res_{run_label.replace(' ','_')}"] = res_df
+    st.session_state["_gsea_last_res_df"]    = res_df.head(num_pathways * 3)
+    st.session_state["_gsea_last_run_label"] = run_label
     _render_gsea_results(res_df.head(num_pathways * 3), run_label)
     gc.collect()
+    return True   # ← signale le succès
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1154,6 +1181,7 @@ def render_enrichment_tab():
 
             if st.button("▶ Run ORA", key="run_ora_btn", type="primary",
                          disabled=bool(missing), use_container_width=True):
+                st.session_state["_ora_just_ran"] = True
                 with st.spinner("Running ORA…"):
                     if "Offline" in ora_db_source:
                         perform_gsea_offline(gene_lists, class_names,
@@ -1164,6 +1192,22 @@ def render_enrichment_tab():
                 st.success("✅ ORA completed!")
         else:
             st.info("👆 Select a source and confirm gene lists above to enable the Run button.")
+
+        # ── Always re-display persisted ORA results (survives download reruns) ─
+        # Skip if Run was just clicked (results already rendered inside perform_gsea*)
+        if not st.session_state.get("_ora_just_ran", False):
+            _ora_cached = st.session_state.get("_ora_last_combined")
+            if _ora_cached is not None:
+                color_map = st.session_state.get("class_colors", {})
+                _render_ora_results(
+                    _ora_cached,
+                    st.session_state.get("_ora_last_gene_mapping", []),
+                    st.session_state.get("_ora_last_gene_set", ""),
+                    color_map,
+                    st.session_state.get("_ora_last_class_names", []),
+                )
+        # Reset flag after this render pass
+        st.session_state["_ora_just_ran"] = False
 
     # ══════════════════════════════════════════════════════════════════════════
     # ② GSEA TAB  (fully outside any form)
@@ -1338,7 +1382,8 @@ def render_enrichment_tab():
         if st.button("▶ Run GSEA", key="run_gsea_btn",
                      type="primary", disabled=not gsea_ready,
                      use_container_width=True):
-            _run_gsea_prerank(
+            st.session_state["_gsea_just_ran"] = True
+            gsea_ok = _run_gsea_prerank(
                 ranked_series   = ranked_series,
                 gene_set        = gsea_gene_set,
                 run_label       = str(gsea_lbl),
@@ -1348,5 +1393,17 @@ def render_enrichment_tab():
                 permutation_num = int(gsea_perm),
                 seed            = int(gsea_seed),
             )
-            st.success("✅ GSEA completed!")
+            if gsea_ok:
+                st.success("✅ GSEA completed!")
         _section_end()
+
+        # ── Always re-display persisted GSEA results (survives download reruns) ─
+        if not st.session_state.get("_gsea_just_ran", False):
+            _gsea_cached = st.session_state.get("_gsea_last_res_df")
+            if _gsea_cached is not None:
+                _render_gsea_results(
+                    _gsea_cached,
+                    st.session_state.get("_gsea_last_run_label", "GSEA"),
+                )
+        # Reset flag after this render pass
+        st.session_state["_gsea_just_ran"] = False
