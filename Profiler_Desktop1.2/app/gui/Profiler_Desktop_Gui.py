@@ -3440,10 +3440,36 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     st.warning("No valid m/z columns found for binning.")
                                     bin_width, mass_range_min, mass_range_max = 0.1, 0.0, 0.0
 
+                            # ------------------ Peak Picking / Centroid (MS1 only) ------------------
+                            apply_peak_picking = st.checkbox(
+                                "Peak Picking / Centroid (MS1 m/z data)",
+                                value=False,
+                                key="apply_peak_picking",
+                                help="Only relevant for MS1 ion spectra. Detects local maxima per spectrum "
+                                     "(centroiding): keeps only m/z features whose intensity is a local maximum "
+                                     "among their immediate neighbours. Zeros are ignored. "
+                                     "Not applicable to proteomics, transcriptomics or other non-spectral data."
+                            )
+                            peak_picking_window = 1
+                            peak_picking_threshold = 0.0
+                            if apply_peak_picking:
+                                peak_picking_window = st.number_input(
+                                    "Local neighbourhood window (number of m/z bins each side)",
+                                    min_value=1, max_value=20, value=1, step=1,
+                                    help="A feature is kept if it is the maximum within ±window bins. "
+                                         "Window=1 = strict local max among direct neighbours."
+                                )
+                                peak_picking_threshold = st.number_input(
+                                    "Minimum absolute intensity threshold (0 = no threshold)",
+                                    min_value=0.0, value=0.0, step=1.0, format="%.1f",
+                                    help="Peaks below this absolute intensity are discarded even if they are local maxima."
+                                )
+
+
                             # ------------------ Normalization ------------------
                             normalization_type = st.selectbox(
                                 "Normalization Type",
-                                ['None', 'Log2', 'RMS', 'BasePeak', 'QNorm', 'Log1p', 'Log10', 'Median of Ratios (Deseq2-like)', 'TMM', 'CPM', 'logCPM', 'VST', 'Total Intensity', 'Median', 'Mean'],
+                                ['None', 'Log2', 'RMS', 'BasePeak', 'QNorm', 'Log1p', 'Log10', 'Median of Ratios (Deseq2-like)', 'TMM', 'CPM', 'logCPM', 'VST', 'Total Intensity', 'Median', 'Mean', 'MinMax'],
                                 key="normalization_type"
                             )
 
@@ -3541,9 +3567,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 try:
                                     numeric_cols = get_numeric_features(data)  # recalc after filtering
                                     if imputation_method != 'None' and numeric_cols:
-                                        st.info(f"Applying {imputation_method}...")
                                         rng = np.random.default_rng()
-
                                         if imputation_method in ['Mean Imputation', 'Median Imputation']:
                                             _agg = 'mean' if imputation_method == 'Mean Imputation' else 'median'
                                             if impute_by_class and 'Class' in data.columns:
@@ -3631,7 +3655,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     st.stop()
                                 else:
                                     progress.progress(40)
-                                    st.success("✅ Imputation completed")
+                                    if imputation_method != 'None' and numeric_cols:
+                                        st.success(f"✅ {imputation_method} applied")
 
                                 # ------------------ Remove features still entirely missing in some class ------------------
                                 try:
@@ -3681,6 +3706,35 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     if apply_binning_option:
                                         st.success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
 
+                                
+                                    # ── Peak Picking / Centroid ──────────────────────────────────────
+                                    if apply_peak_picking:
+                                        try:
+                                            _feat_cols = get_numeric_features(data)
+                                            _feat_arr  = data[_feat_cols].values.astype(np.float32)
+                                            _w         = int(peak_picking_window)
+                                            _thr       = float(peak_picking_threshold)
+                                            # For each sample (row), zero out non-local-maxima
+                                            _picked = np.zeros_like(_feat_arr)
+                                            for _r in range(_feat_arr.shape[0]):
+                                                row = _feat_arr[_r]
+                                                for _c in range(len(row)):
+                                                    lo = max(0, _c - _w)
+                                                    hi = min(len(row), _c + _w + 1)
+                                                    if row[_c] > 0 and row[_c] >= row[lo:hi].max() and row[_c] >= _thr:
+                                                        _picked[_r, _c] = row[_c]
+                                            data[_feat_cols] = _picked.astype(np.float32)
+                                            # Drop columns that became all-zero after peak picking
+                                            _zero_cols = [c for c, col_arr in zip(_feat_cols, _picked.T) if col_arr.max() == 0]
+                                            if _zero_cols:
+                                                data.drop(columns=_zero_cols, inplace=True)
+                                            st.success(f"Peak picking applied (window=±{_w}, threshold={_thr:.1f}). "
+                                                       f"Removed {len(_zero_cols)} all-zero m/z features.")
+                                            del _feat_arr, _picked, _zero_cols
+                                            gc.collect()
+                                        except Exception as _e:
+                                            st.warning(f"Peak picking skipped: {_e}")        
+
                                 # ------------------ Normalization ------------------
                                 try:
                                     if normalization_type != 'None':
@@ -3691,8 +3745,6 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     progress.progress(85)
                                     if normalization_type != 'None':
                                         st.success(f"{normalization_type} normalization applied")
-                                    else:
-                                        st.info("No normalization applied")
 
                                 # ------------------ Combat Batch Correction ------------------
                                 try:
@@ -4636,6 +4688,18 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 icon="ℹ️",
             )
             with st.form("venn_upset_form"):
+                zeros_as_exclusive = st.checkbox(
+                    "Treat zero-value features as absent (exclusive)",
+                    value=False,
+                    help=(
+                        "When checked, features with a value of 0 are treated as **not detected** "
+                        "for that class, identical to missing (NaN) values. "
+                        "Useful when your data uses 0 to encode absence rather than a true zero measurement "
+                        "(e.g. label-free proteomics after Raw Data import). "
+                        "Has no effect when a preprocessed source is selected, since zeros are already "
+                        "replaced by NaN during preprocessing."
+                    ),
+                )
                 col1_v, col2_v = st.columns(2)
                 with col1_v:
                     show_venn = st.form_submit_button("Show Venn Diagram")
@@ -4650,7 +4714,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     if show_venn:
                         if num_classes <= 6:
                             fig = plot_venn_diagram(venn_data, 'Class', st.session_state['class_colors'],
-                                _cmp_source_name, capture_name="venn_diagram_plot")
+                                _cmp_source_name, capture_name="venn_diagram_plot",
+                                zeros_as_exclusive=zeros_as_exclusive)
                             del fig
                         else:
                             st.error("⚠️ Too many classes (>6). Only UpSet plot is available.")
@@ -4658,20 +4723,25 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         if num_classes > 1:
                             fig = plot_upset(venn_data, 'Class', _cmp_source_name,
                                 capture_name="upset_plot",
-                                class_colors=st.session_state.get('class_colors', {}))
+                                class_colors=st.session_state.get('class_colors', {}),
+                                zeros_as_exclusive=zeros_as_exclusive)
                             del fig
                         else:
                             st.warning("⚠️ At least 2 classes are required for UpSet plot.")
 
                     # ── Compute exclusive & shared features ───────────────
                     relevant_cols = [c for c in venn_data.columns if c != 'Class']
+                    _venn_data_for_exc = venn_data.copy()
+                    if zeros_as_exclusive:
+                        _venn_data_for_exc[relevant_cols] = _venn_data_for_exc[relevant_cols].replace(0, np.nan)
                     _cls_feats = {}
                     for _cls in classes:
-                        _mask = venn_data['Class'] == _cls
+                        _mask = _venn_data_for_exc['Class'] == _cls
                         _cls_feats[_cls] = set(
-                            venn_data.loc[_mask, relevant_cols]
-                            .columns[venn_data.loc[_mask, relevant_cols].notnull().any()]
+                            _venn_data_for_exc.loc[_mask, relevant_cols]
+                            .columns[_venn_data_for_exc.loc[_mask, relevant_cols].notnull().any()]
                         )
+                    del _venn_data_for_exc
                     _all_feats = set.union(*_cls_feats.values()) if _cls_feats else set()
                     _shared    = set.intersection(*_cls_feats.values()) if len(_cls_feats) > 1 else set()
                     _exclusive = {cls: feats - set.union(*(_cls_feats[c] for c in classes if c != cls))
@@ -4699,13 +4769,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     unsafe_allow_html=True
                                 )
                                 if _exc:
-                                    st.code(", ".join(_exc[:30]) + ("..." if len(_exc) > 30 else ""), language=None)
+                                    st.code(", ".join(str(f) for f in _exc[:30]) + ("..." if len(_exc) > 30 else ""), language=None)
                                 else:
                                     st.caption("No exclusive features")
 
                         if _shared:
                             st.markdown(f"**Shared by all classes:** {len(_shared)} features")
-                            st.code(", ".join(sorted(_shared)[:30]) + ("..." if len(_shared) > 30 else ""), language=None)
+                            st.code(", ".join(str(f) for f in sorted(_shared, key=lambda x: str(x))[:30]) + ("..." if len(_shared) > 30 else ""), language=None)
 
                         st.info(
                             "💡 Exclusive features are now **directly available** in the "
