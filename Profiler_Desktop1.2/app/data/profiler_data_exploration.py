@@ -361,13 +361,22 @@ def _circle_points(cx, cy, r, n=300):
 
 
 _VENN_LAYOUTS = {
-    2: [(-0.35, 0),  (0.35, 0)],
-    3: [(0, 0.30),   (-0.30, -0.20), (0.30, -0.20)],
-    4: [(-0.30, 0.25),(0.30, 0.25),  (-0.30,-0.25),(0.30,-0.25)],
-    5: [(0, 0.40),(0.38, 0.12),(0.24,-0.35),(-0.24,-0.35),(-0.38, 0.12)],
-    6: [(0, 0.42),(0.37, 0.21),(0.37,-0.21),(0,-0.42),(-0.37,-0.21),(-0.37, 0.21)],
+    2: [(-0.28, 0),   (0.28, 0)],
+    3: [(0, 0.24),    (-0.22, -0.16),  (0.22, -0.16)],
+    4: [(-0.22, 0.18),(0.22, 0.18),    (-0.22,-0.18),(0.22,-0.18)],
+    5: [(0, 0.30),(0.29, 0.09),(0.18,-0.26),(-0.18,-0.26),(-0.29, 0.09)],
+    6: [(0, 0.32),(0.28, 0.16),(0.28,-0.16),(0,-0.32),(-0.28,-0.16),(-0.28, 0.16)],
 }
-_VENN_RADIUS = {2: 0.55, 3: 0.48, 4: 0.40, 5: 0.36, 6: 0.32}
+_VENN_RADIUS = {2: 0.52, 3: 0.42, 4: 0.34, 5: 0.28, 6: 0.24}
+
+# Pre-computed outward unit vectors for class label placement (one per slot)
+_VENN_LABEL_OFFSETS = {
+    2: [(-1, 0), (1, 0)],
+    3: [(0, 1), (-0.87, -0.5), (0.87, -0.5)],
+    4: [(-0.71, 0.71), (0.71, 0.71), (-0.71, -0.71), (0.71, -0.71)],
+    5: [(0, 1), (0.95, 0.31), (0.59, -0.81), (-0.59, -0.81), (-0.95, 0.31)],
+    6: [(0, 1), (0.87, 0.5), (0.87, -0.5), (0, -1), (-0.87, -0.5), (-0.87, 0.5)],
+}
 
 
 def _compute_set_intersections(detected_features):
@@ -386,8 +395,9 @@ def _compute_set_intersections(detected_features):
     return result
 
 
-def plot_venn_diagram(data, class_column, color_palette, source=None, capture_name=None):
-    if source != "Raw Data":
+def plot_venn_diagram(data, class_column, color_palette, source=None, capture_name=None,
+                      zeros_as_exclusive=False):
+    if zeros_as_exclusive:
         data = data.replace(0, np.nan)
 
     # ⚡ Vectorized: compute notna mask once, then slice per class
@@ -441,27 +451,25 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
         font=dict(family="Arial"),
     )
 
-    # ── Pre-compute label positions with anti-overlap nudging ─────────────────
-    def _label_pos(members_list, positions, radius, all_classes):
+    # ── Pre-compute intersection label positions (centroid of member circles) ──
+    def _intersection_label_pos(members_list, positions, all_classes):
         idxs = [all_classes.index(c) for c in members_list]
         cx = float(np.mean([positions[i][0] for i in idxs]))
         cy = float(np.mean([positions[i][1] for i in idxs]))
-        if len(members_list) == 1:
-            angle = np.arctan2(cy, cx)
-            cx += np.cos(angle) * radius * 0.45
-            cy += np.sin(angle) * radius * 0.45
         return cx, cy
 
     label_data = []
     for members, feats in intersections.items():
         if not feats:
             continue
-        cx, cy = _label_pos(list(members), positions, radius, classes)
+        cx, cy = _intersection_label_pos(list(members), positions, classes)
         label_data.append((members, feats, cx, cy))
 
-    # Iterative repulsion to separate overlapping labels
-    MIN_DIST = 0.13
-    for _ in range(60):
+    # Iterative repulsion — only move labels that are truly too close
+    MIN_DIST = 0.15
+    BOUND_XY = 0.88
+    for _ in range(80):
+        moved = False
         for i in range(len(label_data)):
             m_i, f_i, xi, yi = label_data[i]
             dx_total, dy_total = 0.0, 0.0
@@ -471,14 +479,19 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
                 _, _, xj, yj = label_data[j]
                 dist = np.hypot(xi - xj, yi - yj) + 1e-9
                 if dist < MIN_DIST:
-                    push = (MIN_DIST - dist) / dist * 0.4
+                    push = (MIN_DIST - dist) / dist * 0.35
                     dx_total += (xi - xj) * push
                     dy_total += (yi - yj) * push
-            label_data[i] = (m_i, f_i,
-                             float(np.clip(xi + dx_total, -0.95, 0.95)),
-                             float(np.clip(yi + dy_total, -0.88, 0.88)))
+                    moved = True
+            if dx_total or dy_total:
+                label_data[i] = (m_i, f_i,
+                                 float(np.clip(xi + dx_total, -BOUND_XY, BOUND_XY)),
+                                 float(np.clip(yi + dy_total, -BOUND_XY, BOUND_XY)))
+        if not moved:
+            break
 
     # ── Draw filled circles + class labels ───────────────────────────────────
+    _label_offsets = _VENN_LABEL_OFFSETS[num_classes]
     for i, (cls, (cx, cy)) in enumerate(zip(classes, positions)):
         color      = color_palette.get(cls, "#888888")
         fill_color = _hex_to_rgba(color, alpha=0.28)
@@ -492,12 +505,12 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
             legendgroup=cls,
             hoverinfo="skip", showlegend=True,
         ))
-        # Class label outside circle — same legendgroup so it hides with the circle
-        lx = float(np.clip(cx * 1.55, -0.95, 0.95))
-        ly = float(np.clip(cy * 1.55, -0.88, 0.88))
+        # Class label — placed inside circle at the top (slight upward offset)
         n_feat = len(detected_features[cls])
+        _lx_in = float(np.clip(cx, -0.95, 0.95))
+        _ly_in = float(np.clip(cy + radius * 0.62, -0.88, 0.88))
         fig.add_trace(go.Scatter(
-            x=[lx], y=[ly],
+            x=[_lx_in], y=[_ly_in],
             mode="text",
             text=[f"<b>{cls}</b><br><span style='font-size:11px'>{n_feat} features</span>"],
             textfont=dict(size=13, color=color, family="Arial"),
@@ -513,10 +526,10 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
         dominant = max(list(members), key=lambda c: len(detected_features[c]))
 
         label_lines = [
-            f"<b>{'  ∩  '.join(sorted(members))}</b>",
+            f"<b>{'  ∩  '.join(sorted(str(m) for m in members))}</b>",
             f"<b>{len(feats)} features</b>",
             "─────────",
-        ] + sorted(feats)[:20]
+        ] + [str(f) for f in sorted(feats, key=lambda x: str(x))][:20]
         if len(feats) > 20:
             label_lines.append(f"… +{len(feats)-20} more")
 
@@ -620,9 +633,10 @@ def _venn_capture_static(data, class_column, color_palette, source, capture_name
 # UPSET PLOT — interactive Plotly
 # ─────────────────────────────────────────────────────────────────────────────
 
-def plot_upset(data, class_column, source=None, capture_name=None, class_colors=None):
+def plot_upset(data, class_column, source=None, capture_name=None, class_colors=None,
+               zeros_as_exclusive=False):
     try:
-        if source != "Raw Data":
+        if zeros_as_exclusive:
             data = data.replace(0, np.nan)
 
         clean_data = data.drop(columns=["File", "RT", "Sum"], errors="ignore")
