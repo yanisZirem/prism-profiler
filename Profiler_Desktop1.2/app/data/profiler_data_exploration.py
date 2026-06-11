@@ -397,7 +397,7 @@ def _compute_set_intersections(detected_features):
 
 def plot_venn_diagram(data, class_column, color_palette, source=None, capture_name=None,
                       zeros_as_exclusive=False):
-    if zeros_as_exclusive:
+    if source != "Raw Data" or zeros_as_exclusive:
         data = data.replace(0, np.nan)
 
     # ⚡ Vectorized: compute notna mask once, then slice per class
@@ -505,12 +505,13 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
             legendgroup=cls,
             hoverinfo="skip", showlegend=True,
         ))
-        # Class label — placed inside circle at the top (slight upward offset)
+        # Class label — placed outside circle via precomputed unit offset
+        _ox, _oy = _label_offsets[i]
+        lx = float(np.clip(cx + _ox * (radius * 1.30 + 0.08), -0.95, 0.95))
+        ly = float(np.clip(cy + _oy * (radius * 1.30 + 0.08), -0.88, 0.88))
         n_feat = len(detected_features[cls])
-        _lx_in = float(np.clip(cx, -0.95, 0.95))
-        _ly_in = float(np.clip(cy + radius * 0.62, -0.88, 0.88))
         fig.add_trace(go.Scatter(
-            x=[_lx_in], y=[_ly_in],
+            x=[lx], y=[ly],
             mode="text",
             text=[f"<b>{cls}</b><br><span style='font-size:11px'>{n_feat} features</span>"],
             textfont=dict(size=13, color=color, family="Arial"),
@@ -636,7 +637,7 @@ def _venn_capture_static(data, class_column, color_palette, source, capture_name
 def plot_upset(data, class_column, source=None, capture_name=None, class_colors=None,
                zeros_as_exclusive=False):
     try:
-        if zeros_as_exclusive:
+        if source != "Raw Data" or zeros_as_exclusive:
             data = data.replace(0, np.nan)
 
         clean_data = data.drop(columns=["File", "RT", "Sum"], errors="ignore")
