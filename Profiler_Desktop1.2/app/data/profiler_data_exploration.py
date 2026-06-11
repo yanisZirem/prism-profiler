@@ -397,7 +397,7 @@ def _compute_set_intersections(detected_features):
 
 def plot_venn_diagram(data, class_column, color_palette, source=None, capture_name=None,
                       zeros_as_exclusive=False):
-    if source != "Raw Data" or zeros_as_exclusive:
+    if zeros_as_exclusive:
         data = data.replace(0, np.nan)
 
     # ⚡ Vectorized: compute notna mask once, then slice per class
@@ -490,7 +490,7 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
         if not moved:
             break
 
-    # ── Draw filled circles + class labels ───────────────────────────────────
+    # ── Draw filled circles + class labels (inside each circle) ─────────────
     _label_offsets = _VENN_LABEL_OFFSETS[num_classes]
     for i, (cls, (cx, cy)) in enumerate(zip(classes, positions)):
         color      = color_palette.get(cls, "#888888")
@@ -505,15 +505,17 @@ def plot_venn_diagram(data, class_column, color_palette, source=None, capture_na
             legendgroup=cls,
             hoverinfo="skip", showlegend=True,
         ))
-        # Class label — placed outside circle via precomputed unit offset
+        # Class label — placed at 55% of the way from the circle center toward
+        # the outer rim (inside the circle, away from the intersection core).
         _ox, _oy = _label_offsets[i]
-        lx = float(np.clip(cx + _ox * (radius * 1.30 + 0.08), -0.95, 0.95))
-        ly = float(np.clip(cy + _oy * (radius * 1.30 + 0.08), -0.88, 0.88))
+        inner_scale = radius * 0.55
+        lx = float(np.clip(cx + _ox * inner_scale, -0.95, 0.95))
+        ly = float(np.clip(cy + _oy * inner_scale, -0.88, 0.88))
         n_feat = len(detected_features[cls])
         fig.add_trace(go.Scatter(
             x=[lx], y=[ly],
             mode="text",
-            text=[f"<b>{cls}</b><br><span style='font-size:11px'>{n_feat} features</span>"],
+            text=[f"<b>{cls}</b><br><span style='font-size:11px'>{n_feat}</span>"],
             textfont=dict(size=13, color=color, family="Arial"),
             textposition="middle center",
             legendgroup=cls,
@@ -637,7 +639,7 @@ def _venn_capture_static(data, class_column, color_palette, source, capture_name
 def plot_upset(data, class_column, source=None, capture_name=None, class_colors=None,
                zeros_as_exclusive=False):
     try:
-        if source != "Raw Data" or zeros_as_exclusive:
+        if zeros_as_exclusive:
             data = data.replace(0, np.nan)
 
         clean_data = data.drop(columns=["File", "RT", "Sum"], errors="ignore")
@@ -708,7 +710,7 @@ def plot_upset(data, class_column, source=None, capture_name=None, class_colors=
         for key, count in subsets:
             members  = [classes[i] for i, v in enumerate(key) if v]
             feats    = feature_map.get(key, [])
-            feat_preview = ", ".join(sorted(feats)[:10])
+            feat_preview = ", ".join(sorted(str(f) for f in feats)[:10])
             if len(feats) > 10:
                 feat_preview += f" … +{len(feats)-10} more"
             hover_texts.append(
