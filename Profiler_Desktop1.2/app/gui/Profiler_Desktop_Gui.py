@@ -3,8 +3,8 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 30/04/2026
-Version: 1.2.3
+Last Updated: 16/06/2026
+Version: 1.2.7
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
 It is designed for archiving on Zenodo and integration into GitHub releases.
@@ -278,7 +278,7 @@ def _load_page_icon():
     return "data:image/svg+xml;base64," + base64.b64encode(_svg.encode()).decode()
 
 st.set_page_config(
-    page_title="Profiler Desktop — Omics Analysis",
+    page_title="Profiler Desktop v1.2.7",
     page_icon=_load_page_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
@@ -286,7 +286,7 @@ st.set_page_config(
         'Get Help': 'https://github.com/yanisZirem/Profiler_v1_requests_datatests',
         'Report a bug': 'mailto:yanis.zirem@univ-lille.fr',
         'About': """
-**Profiler v1.2** — Open Omics Analysis Platform *(Desktop Edition)*
+**Profiler v1.2.7** Open Omics Analysis Platform *(Desktop Edition)*
 
 Developed at **PRISM INSERM U1192**, Université de Lille.
 
@@ -958,7 +958,7 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--tex
   <p class="subtitle">Open multi-omics analysis platform — PRISM U1192 / INSERM</p>
   <div class="meta-bar">
     <span>📅 Generated: {now}</span>
-    <span>🔢 Profiler v1.2</span>
+    <span>🔢 Profiler v1.2.7</span>
 
   </div>
 </header>
@@ -1992,7 +1992,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                 <h1 style="margin:0;font-size:1.8rem;font-weight:900;color:#fff;">Profiler</h1>
                 <span style="background:rgba(49,140,231,0.3);color:#93c5fd;font-size:0.7rem;
-                font-weight:700;padding:2px 9px;border-radius:20px;border:1px solid rgba(49,140,231,0.5);">v1.2</span>
+                font-weight:700;padding:2px 9px;border-radius:20px;border:1px solid rgba(49,140,231,0.5);">v1.2.7</span>
             </div>
             <p style="color:#7ea8cc;font-size:0.78rem;margin:0 0 6px;">PRISM U1192 · INSERM · Université de Lille</p>
             <p style="color:#a8c8e8;font-size:0.88rem;margin:0 0 12px;max-width:580px;line-height:1.6;">
@@ -3341,7 +3341,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         data_to_preprocess = df_overview.copy()
 
                         apply_binning_option = st.checkbox(
-                            "Shrink mass range or apply Binning?",
+                            "Shrink mass range, apply Binning or Peak picking?",
                             key="apply_binning_option",
                             help="Only relevant for ion spectra (MS1 data)."
                         )
@@ -6639,10 +6639,35 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     help="Enter a comma-separated list of features to include in the Heatmap."
                 )
 
-            show_sample_names = st.checkbox(
-                "Show sample names on heatmap",
+            # ── Sample label column selector ──────────────────────────
+            _hm_df_for_cols = {
+                'Raw data': st.session_state.get('data'),
+                'Preprocessed': st.session_state.get('preprocessed_data'),
+                'Oversampled': st.session_state.get('oversampled_data'),
+                'Undersampled': st.session_state.get('undersampled_data'),
+            }.get(data_source)
+            _candidate_label_cols = [
+                c for c in (["ID", "File", "Class"] + (
+                    [c for c in _hm_df_for_cols.columns if str(c).endswith("_meta")]
+                    if _hm_df_for_cols is not None else []
+                ))
+                if _hm_df_for_cols is None or c in _hm_df_for_cols.columns
+            ]
+            if not _candidate_label_cols:
+                _candidate_label_cols = ["ID"]
+            sample_label_col = st.selectbox(
+                "Sample label column (X-axis)",
+                options=_candidate_label_cols,
+                index=0,
+                key="heatmap_sample_label_col",
+                help="Choose which column to display as sample names on the heatmap X-axis (ID, Class, File or any metadata column)."
+            )
+
+            show_feature_names = st.checkbox(
+                "Show feature names on heatmap",
                 value=True,
-                help="Display sample names on the heatmap if dataset is small."
+                key="heatmap_show_feature_names",
+                help="Display feature labels on the Y-axis. Uncheck when there are many features to keep the heatmap readable."
             )
 
             # ── Meta annotation bars ──────────────────────────────────
@@ -6792,7 +6817,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             st.session_state['class_colors'],
                             selected_features,
                             custom_colors,
-                            show_sample_names=show_sample_names,
+                            sample_label_col=sample_label_col,
+                            show_feature_names=show_feature_names,
                             capture_name="heatmap_fig",
                             meta_annotation_cols=meta_annotation_cols,
                         )
@@ -6850,10 +6876,11 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     for _feat, _score in _diff[_diff > 0].sort_values(ascending=False).items():
                         _over_df_rows.append({"Class": _cls, "Feature": _feat, "Overexpression Score": round(_score, 4)})
                 st.session_state["heatmap_over_df"] = pd.DataFrame(_over_df_rows) if _over_df_rows else pd.DataFrame()
-                st.session_state["heatmap_n_features"]   = len(selected_features)
-                st.session_state["heatmap_p_threshold"]  = p_value_threshold if perform_stat_test else None
-                st.session_state["heatmap_avg_by_class"] = average_by_class
-                st.session_state["heatmap_class_labels"] = list(classes)
+                st.session_state["heatmap_n_features"]      = len(selected_features)
+                st.session_state["heatmap_p_threshold"]     = p_value_threshold if perform_stat_test else None
+                st.session_state["heatmap_avg_by_class"]    = average_by_class
+                st.session_state["heatmap_class_labels"]    = list(classes)
+                st.session_state["heatmap_show_feat_names"] = show_feature_names
                 if perform_stat_test and 'significant_features' in locals():
                     st.session_state["heatmap_significant_features"] = significant_features
                     st.session_state["heatmap_data_source_df"]       = data_source_df
@@ -7003,7 +7030,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     st.info(f"**{cls1} ∩ {cls2}** ({len(inter)} features): " + ", ".join(sorted(inter)))
                                 else:
                                     st.info(f"**{cls1} ∩ {cls2}**: None")
-                
+
+            # ── Dendrogramme persistant — sélection de branche + export ─────
+            render_heatmap_dendrogram_widget(capture_name="heatmap_fig")
+
         gc.collect()
 
 
