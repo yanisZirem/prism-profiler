@@ -1,23 +1,7 @@
 """
 profiler_imports.py — Profiler Desktop · app/utils/
 =====================================================
-Imports centralisés pour la version Desktop (offline).
-
-Stratégie :
-- Modules légers / omniprésents → import direct (numpy, pandas, sklearn courant, plotly…)
-- Modules lourds au démarrage  → lazy import (tensorflow, umap, fastcluster,
-  pyopenms, lifelines) : chargés UNE SEULE FOIS via une fonction helper,
-  uniquement quand l'onglet qui en a besoin est activé.
-  Gain typique : −3 à 5 s au démarrage sur machine locale.
-
-Usage dans les modules Profiler :
-    # Au lieu de : import tensorflow as tf
-    # Faire :      tf = lazy_tensorflow()
-    #
-    # Au lieu de : import umap.umap_ as umap
-    # Faire :      umap = lazy_umap()
-
-License: IDDN FR2.0013.0300044.0005.S6.C7.20258.0009.312301
+Bulk imports for the desktop version (offline).
 """
 
 # ── Standard library ──────────────────────────────────────────────────────────
@@ -232,7 +216,7 @@ from app.analysis.profiler_features_importance import (
     violinplot_significant_features, plot_heatmap_samples, eli5_format_to_dataframe,
     calculate_volcano_data, plot_volcano, detect_peaks,
     barplot_significant_features, plot_significant_features,
-    _resolve_features,
+    _resolve_features, render_heatmap_dendrogram_widget
 )
 from app.analysis.profiler_genes_enrichment import (
     perform_gsea, perform_gsea_offline,
