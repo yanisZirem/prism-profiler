@@ -2305,6 +2305,157 @@ def plot_heatmap_samples(
 # Exact replica of the original seaborn static output
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+def _build_static_png_fast(
+    matrix_ord, raw_ord,
+    feature_labels_ord, sample_labels_ord, class_labels_ord,
+    class_colors, custom_colors,
+    data_meta_orig=None, meta_cols=None, col_order=None,
+):
+    """
+    Fast matplotlib PNG from already-ordered numpy arrays.
+    Works directly on pre-computed matrix_ord (Z-scores) and raw_ord.
+    Avoids re-running clustering or copying large DataFrames.
+    """
+    import io
+    from matplotlib.colors import LinearSegmentedColormap
+    import matplotlib.gridspec as gridspec
+    import matplotlib.patches as mpatches
+
+    meta_cols = meta_cols or []
+    n_samples, n_features = matrix_ord.shape
+
+    cmap = LinearSegmentedColormap.from_list("custom", custom_colors, N=256)
+    vmin, vmax = float(matrix_ord.min()), float(matrix_ord.max())
+
+    # Cap cell size to keep figure manageable
+    _cell = max(0.12, min(0.28, 800 / max(n_samples, n_features) / 72))
+    fig_w = max(10, min(28, n_samples * _cell + 4))
+    fig_h = max(8,  min(24, n_features * _cell + 2 + len(meta_cols) * 0.3))
+
+    _n_ann = 1 + len(meta_cols)   # Class + meta strips
+    _h_ratios = [0.08] * _n_ann + [1.0]
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=150)
+    gs  = gridspec.GridSpec(
+        _n_ann + 1, 1,
+        height_ratios=_h_ratios,
+        hspace=0.01,
+        figure=fig,
+    )
+
+    _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
+                 "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
+
+    legend_handles = []
+
+    # ── Annotation strips ─────────────────────────────────────────────────────
+    for ann_idx, ann_label in enumerate(["Class"] + meta_cols):
+        ax_ann = fig.add_subplot(gs[ann_idx])
+
+        if ann_label == "Class":
+            uniq_cls = list(dict.fromkeys(class_labels_ord))
+            cls_idx  = {c: i for i, c in enumerate(uniq_cls)}
+            cls_cs   = LinearSegmentedColormap.from_list(
+                "cls", [class_colors.get(c, "#aaa") for c in uniq_cls],
+                N=len(uniq_cls)
+            )
+            z_cls = np.array([[cls_idx[c] for c in class_labels_ord]])
+            ax_ann.imshow(z_cls, aspect="auto", interpolation="none",
+                          cmap=cls_cs, vmin=0, vmax=len(uniq_cls))
+            ax_ann.set_yticks([0]); ax_ann.set_yticklabels(["Class"], fontsize=7)
+            legend_handles += [
+                mpatches.Patch(color=class_colors.get(c, "#aaa"), label=f"Class: {c}")
+                for c in uniq_cls
+            ]
+        else:
+            if data_meta_orig is not None and ann_label in data_meta_orig.columns:
+                raw_vals = data_meta_orig[ann_label].values
+                if col_order is not None:
+                    raw_vals = raw_vals[col_order]
+            else:
+                raw_vals = np.zeros(n_samples)
+
+            if np.issubdtype(raw_vals.dtype, np.number):
+                _vmin_m = float(np.nanmin(raw_vals))
+                _vmax_m = float(np.nanmax(raw_vals))
+                import matplotlib.colors as _mc
+                _norm = _mc.Normalize(vmin=_vmin_m, vmax=_vmax_m)
+                _cmap_m = plt.cm.get_cmap("viridis")
+                z_m = np.array([[float(v) if not np.isnan(v) else _vmin_m for v in raw_vals]])
+                ax_ann.imshow(z_m, aspect="auto", interpolation="none",
+                              cmap=_cmap_m, vmin=_vmin_m, vmax=_vmax_m)
+                legend_handles += [
+                    mpatches.Patch(color=_mc.to_hex(_cmap_m(t)),
+                                   label=f"{ann_label}: {_vmin_m + t*(_vmax_m-_vmin_m):.2g}")
+                    for t in [0.0, 0.5, 1.0]
+                ]
+            else:
+                uniq_v = list(dict.fromkeys(str(v) for v in raw_vals))
+                v_map  = {v: i for i, v in enumerate(uniq_v)}
+                palette_cs = LinearSegmentedColormap.from_list(
+                    "meta", [_AUTO_PAL[i % len(_AUTO_PAL)] for i in range(len(uniq_v))],
+                    N=len(uniq_v)
+                )
+                z_v = np.array([[v_map.get(str(v), 0) for v in raw_vals]])
+                ax_ann.imshow(z_v, aspect="auto", interpolation="none",
+                              cmap=palette_cs, vmin=0, vmax=len(uniq_v))
+                legend_handles += [
+                    mpatches.Patch(color=_AUTO_PAL[i % len(_AUTO_PAL)], label=f"{ann_label}: {v}")
+                    for i, v in enumerate(uniq_v)
+                ]
+                ax_ann.set_yticks([0]); ax_ann.set_yticklabels([ann_label], fontsize=7)
+
+        ax_ann.set_xticks([]); ax_ann.set_yticks([0])
+        if ann_label == "Class":
+            ax_ann.set_yticklabels(["Class"], fontsize=7)
+        else:
+            ax_ann.set_yticklabels([ann_label], fontsize=7)
+
+    # ── Main heatmap ──────────────────────────────────────────────────────────
+    ax_hm = fig.add_subplot(gs[_n_ann])
+    im = ax_hm.imshow(
+        matrix_ord.T,    # (n_features, n_samples)
+        aspect="auto",
+        interpolation="none",
+        cmap=cmap,
+        vmin=vmin, vmax=vmax,
+        origin="lower",
+    )
+    plt.colorbar(im, ax=ax_hm, fraction=0.015, pad=0.01, label="Z-score")
+
+    # Feature labels (Y-axis)
+    _show_feat_ticks = n_features <= 200
+    if _show_feat_ticks:
+        ax_hm.set_yticks(range(n_features))
+        ax_hm.set_yticklabels(feature_labels_ord, fontsize=max(4, min(9, 180 // n_features)))
+    else:
+        ax_hm.set_yticks([])
+
+    # Sample labels (X-axis)
+    _show_samp_ticks = n_samples <= 200
+    if _show_samp_ticks:
+        ax_hm.set_xticks(range(n_samples))
+        ax_hm.set_xticklabels(sample_labels_ord, rotation=90,
+                               fontsize=max(4, min(8, 150 // n_samples)))
+    else:
+        ax_hm.set_xticks([])
+        ax_hm.set_xlabel(f"{n_samples} samples", fontsize=9)
+
+    # Legend
+    if legend_handles:
+        fig.legend(handles=legend_handles, loc="upper right",
+                   bbox_to_anchor=(1.0, 1.0), fontsize=7,
+                   framealpha=0.9, ncol=1)
+
+    plt.tight_layout(pad=0.5)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
 def _build_static_png_original(
     data_orig, features, class_colors, custom_colors,
     show_sample_names, n_samples, n_features,
@@ -2783,27 +2934,24 @@ def _render_dendrogram_click_widget(row_dend, row_link, n_features, feature_labe
 
 def _export_branch_excel(
     branch_features: list,
-    data_original: pd.DataFrame,
+    data_original,          # np.ndarray (n_samples, n_features) in dend order, OR pd.DataFrame (legacy)
     feature_labels_ord: list,
     matrix_z: np.ndarray,
     sample_labels_ord: list,
     class_labels_ord: list,
 ):
     """
-    Génère un fichier Excel avec :
-      - Feuille 1 "Branch_Summary" : Z-score moyen ± SD par classe pour chaque feature
-      - Feuille 2 "Branch_Raw"     : valeurs Z-scores individuelles par sample
-      - Feuille 3 "Branch_Data"    : données originales (non standardisées) des features
-
-    Retourne les bytes du fichier Excel.
+    Generate Excel with:
+      - Sheet 1 "Branch_Summary" : mean ± SD Z-score per class per feature
+      - Sheet 2 "Branch_Zscores": individual Z-scores per sample
+      - Sheet 3 "Branch_RawData": original (unscaled) values
+    Accepts data_original as numpy array (ordered) or legacy DataFrame.
     """
-    # Index des features de la branche dans l'ordre du dendrogramme
-    branch_idx = [i for i, f in enumerate(feature_labels_ord) if f in set(branch_features)]
+    branch_idx    = [i for i, f in enumerate(feature_labels_ord) if f in set(branch_features)]
     feats_ordered = [feature_labels_ord[i] for i in branch_idx]
-
     unique_classes = list(dict.fromkeys(class_labels_ord))
 
-    # ── Feuille 1 : Summary par classe ───────────────────────────────────────
+    # ── Sheet 1: Summary per class ────────────────────────────────────────────
     summary_rows = []
     for feat in feats_ordered:
         row = {"Feature": feat}
@@ -2812,35 +2960,40 @@ def _export_branch_excel(
             cls_mask = [i for i, c in enumerate(class_labels_ord) if c == cls]
             if cls_mask:
                 vals = matrix_z[np.ix_(cls_mask, [feat_col_idx])][:, 0]
-                row[f"{cls}_mean_zscore"] = float(np.nanmean(vals))
-                row[f"{cls}_sd_zscore"]   = float(np.nanstd(vals))
+                row[f"{cls}_mean_zscore"] = round(float(np.nanmean(vals)), 4)
+                row[f"{cls}_sd_zscore"]   = round(float(np.nanstd(vals)),  4)
             else:
                 row[f"{cls}_mean_zscore"] = np.nan
                 row[f"{cls}_sd_zscore"]   = np.nan
         summary_rows.append(row)
     df_summary = pd.DataFrame(summary_rows)
 
-    # ── Feuille 2 : Z-scores individuels ─────────────────────────────────────
-    raw_rows = []
-    for s_idx, (sample, cls) in enumerate(zip(sample_labels_ord, class_labels_ord)):
-        row = {"Sample": sample, "Class": cls}
-        for feat in feats_ordered:
-            feat_col_idx = feature_labels_ord.index(feat)
-            row[feat] = float(matrix_z[s_idx, feat_col_idx])
-        raw_rows.append(row)
-    df_raw = pd.DataFrame(raw_rows)
+    # ── Sheet 2: Individual Z-scores ──────────────────────────────────────────
+    feat_indices = [feature_labels_ord.index(f) for f in feats_ordered]
+    z_branch = matrix_z[:, feat_indices]   # (n_samples, n_branch)
+    df_raw = pd.DataFrame(z_branch, columns=feats_ordered)
+    df_raw.insert(0, "Class",  class_labels_ord)
+    df_raw.insert(0, "Sample", sample_labels_ord)
 
-    # ── Feuille 3 : données originales ───────────────────────────────────────
-    orig_cols = [f for f in branch_features if f in data_original.columns]
-    meta_cols = [c for c in ["ID", "Class", "File"] if c in data_original.columns]
-    df_orig = data_original[meta_cols + orig_cols].copy()
+    # ── Sheet 3: Raw (unscaled) values ────────────────────────────────────────
+    if isinstance(data_original, np.ndarray):
+        # data_original is already ordered (n_samples, n_features) in dend order
+        raw_branch = data_original[:, feat_indices]
+        df_orig = pd.DataFrame(raw_branch, columns=feats_ordered)
+        df_orig.insert(0, "Class",  class_labels_ord)
+        df_orig.insert(0, "Sample", sample_labels_ord)
+    else:
+        # Legacy: full DataFrame
+        orig_cols = [f for f in branch_features if f in data_original.columns]
+        meta_cols = [c for c in ["ID", "Class", "File"] if c in data_original.columns]
+        df_orig = data_original[meta_cols + orig_cols].copy()
 
-    # ── Écriture Excel ────────────────────────────────────────────────────────
+    # ── Write Excel ───────────────────────────────────────────────────────────
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df_summary.to_excel(writer, sheet_name="Branch_Summary", index=False)
-        df_raw.to_excel(writer, sheet_name="Branch_Zscores", index=False)
-        df_orig.to_excel(writer, sheet_name="Branch_RawData", index=False)
+        df_summary.to_excel(writer, sheet_name="Branch_Summary",  index=False)
+        df_raw.to_excel(writer,     sheet_name="Branch_Zscores",  index=False)
+        df_orig.to_excel(writer,    sheet_name="Branch_RawData",  index=False)
 
         # Mise en forme basique (largeur colonnes)
         for sheet_name in ["Branch_Summary", "Branch_Zscores", "Branch_RawData"]:
@@ -2873,13 +3026,17 @@ def plot_heatmap_samples(
     meta_annotation_cols: list = None,
 ):
     """
-    Heatmap Plotly hiérarchique avec :
-      • sample_label_col : colonne à afficher sur l'axe X (ID, Class, File, _meta…)
-      • Paramètre show_feature_names pour afficher/masquer les noms des features (axe Y)
-      • Dendrogramme des features cliquable → export Excel + CSV de branche (style Perseus)
+    Memory-efficient hierarchical heatmap with:
+      • sample_label_col: column displayed on X-axis (ID, Class, File, _meta…)
+      • show_feature_names: toggle feature labels on Y-axis
+      • Persistent dendrogram branch-selection widget (via render_heatmap_dendrogram_widget)
+    Performance notes:
+      - Only feature columns are copied (not the full dataframe)
+      - Clustering uses fastcluster when available, falls back to scipy
+      - For large datasets (>300 features or >500 samples), hover is disabled
+        and the static PNG is generated on demand only
     """
-    # ── 1. Data prep ──────────────────────────────────────────────────────────
-    data = data.copy()
+    # ── 1. Data prep (minimal copies) ────────────────────────────────────────
     data.columns = data.columns.astype(str)
     selected_features = [str(f) for f in selected_features]
     selected_features = _resolve_features(data, selected_features)
@@ -2890,49 +3047,79 @@ def plot_heatmap_samples(
         return
 
     features = list(selected_features)
-    data[features] = data[features].replace([np.inf, -np.inf], np.nan)
-    data[features] = data[features].fillna(data[features].mean())
 
-    # Save original meta columns BEFORE scaling
+    # Copy only what we need — avoid full dataframe duplication
     meta_annotation_cols_safe = meta_annotation_cols or []
     _meta_cols_present = [m for m in meta_annotation_cols_safe if m in data.columns]
-    data_meta_orig = data[_meta_cols_present].copy() if _meta_cols_present else None
-    data_original_unscaled = data.copy()  # ← conserve données brutes pour export
+    _keep_cols = list(dict.fromkeys(["Class"] + features + _meta_cols_present +
+                                    [c for c in ["ID", "File"] if c in data.columns]))
+    df = data[_keep_cols].copy()
+
+    # Save meta and raw feature values BEFORE scaling
+    data_meta_orig = df[_meta_cols_present].copy() if _meta_cols_present else None
+    _raw_features  = df[features].values.copy()  # for export — float64 numpy array only
+
+    df[features] = df[features].replace([np.inf, -np.inf], np.nan)
+    _col_means = df[features].mean()
+    df[features] = df[features].fillna(_col_means)
 
     scaler = StandardScaler()
-    Z = scaler.fit_transform(data[features])
-    data[features] = Z
+    Z = scaler.fit_transform(df[features].values)
 
     if np.isnan(Z).any() or np.isinf(Z).any():
         st.error("Missing/infinite values after preprocessing.")
         return
 
-    matrix = data[features].values   # (n_samples, n_features)
+    matrix = Z  # (n_samples, n_features) — float32 cast to save memory
+    matrix = matrix.astype(np.float32)
+
     # Build sample labels from the chosen column
-    _label_candidates = ["ID", "File", "Class"] + [c for c in data.columns if str(c).endswith("_meta")]
-    _label_col = sample_label_col if sample_label_col in data.columns else (
-        next((c for c in _label_candidates if c in data.columns), None)
+    _label_candidates = ["ID", "File", "Class"] + [c for c in df.columns if str(c).endswith("_meta")]
+    _label_col = sample_label_col if sample_label_col in df.columns else (
+        next((c for c in _label_candidates if c in df.columns), None)
     )
-    if _label_col:
-        sample_labels = data[_label_col].astype(str).tolist()
-    else:
-        sample_labels = [f"sample_{i+1}" for i in range(len(data))]
-    class_labels = data["Class"].astype(str).tolist()
+    sample_labels = df[_label_col].astype(str).tolist() if _label_col else [
+        f"sample_{i+1}" for i in range(len(df))
+    ]
+    class_labels = df["Class"].astype(str).tolist()
     n_samples, n_features = matrix.shape
 
-    # ── 2. Hierarchical clustering ────────────────────────────────────────────
-    col_link = linkage(pdist(matrix,   metric="euclidean"), method="ward")
-    col_dend = dendrogram(col_link,  no_plot=True)
+    _large_dataset = (n_features > 300) or (n_samples > 500)
+
+    # ── 2. Hierarchical clustering (fast path) ────────────────────────────────
+    # Use fastcluster if available (10-50× faster for large matrices)
+    try:
+        import fastcluster as _fc
+        _ward = lambda X: _fc.linkage(X, method="ward", metric="euclidean")
+    except ImportError:
+        _ward = lambda X: linkage(X, method="ward", metric="euclidean")
+
+    # For very large feature sets, reduce dimensions before clustering
+    # (clustering >1000 features with pdist is O(n²) memory)
+    _MAX_FEAT_CLUST = 800
+    if n_features > _MAX_FEAT_CLUST:
+        from sklearn.decomposition import TruncatedSVD
+        _svd = TruncatedSVD(n_components=min(50, n_samples - 1), random_state=0)
+        matrix_for_row_clust = _svd.fit_transform(matrix.T)
+    else:
+        matrix_for_row_clust = matrix.T  # (n_features, n_samples)
+
+    col_link = _ward(matrix)
+    col_dend = dendrogram(col_link, no_plot=True)
     col_order = col_dend["leaves"]
 
-    row_link = linkage(pdist(matrix.T, metric="euclidean"), method="ward")
-    row_dend = dendrogram(row_link,  no_plot=True)
+    row_link = _ward(matrix_for_row_clust)
+    row_dend = dendrogram(row_link, no_plot=True)
     row_order = row_dend["leaves"]
 
+    # Reorder using numpy advanced indexing (no Python loops)
     matrix_ord         = matrix[np.ix_(col_order, row_order)]
     sample_labels_ord  = [sample_labels[i] for i in col_order]
     class_labels_ord   = [class_labels[i]  for i in col_order]
     feature_labels_ord = [features[i]      for i in row_order]
+
+    # Build a lightweight export object — only what's needed, no full df copy
+    _export_raw_ord = _raw_features[np.ix_(col_order, row_order)]
 
     # ── 3. Build figure ───────────────────────────────────────────────────────
     colorscale = _make_plotly_colorscale(custom_colors)
@@ -3153,26 +3340,35 @@ def plot_heatmap_samples(
                         ))
 
     # 3d. Main heatmap
-    hover_text = [
-        [
-            f"<b>Sample:</b> {sample_labels_ord[j]}<br>"
-            f"<b>Class:</b>  {class_labels_ord[j]}<br>"
-            f"<b>Feature:</b> {feature_labels_ord[i]}<br>"
-            f"<b>Z-score:</b> {matrix_ord[j, i]:.3f}"
-            for j in range(n_samples)
+    # For large datasets disable hover (too slow to build & render)
+    if _large_dataset:
+        _heatmap_kwargs = dict(hovertemplate="%{z:.3f}<extra></extra>")
+    else:
+        # Vectorized hover text — avoid n_features × n_samples Python loops
+        _samp_arr = np.array(sample_labels_ord)   # (n_samples,)
+        _cls_arr  = np.array(class_labels_ord)    # (n_samples,)
+        _feat_arr = np.array(feature_labels_ord)  # (n_features,)
+        # Build as (n_features, n_samples) array via broadcasting
+        _zscore_str = np.round(matrix_ord.T, 3).astype(str)  # (n_features, n_samples)
+        hover_text = [
+            [
+                f"<b>Sample:</b> {_samp_arr[j]}<br>"
+                f"<b>Class:</b> {_cls_arr[j]}<br>"
+                f"<b>Feature:</b> {_feat_arr[i]}<br>"
+                f"<b>Z-score:</b> {_zscore_str[i, j]}"
+                for j in range(n_samples)
+            ]
+            for i in range(n_features)
         ]
-        for i in range(n_features)
-    ]
+        _heatmap_kwargs = dict(text=hover_text, hovertemplate="%{text}<extra></extra>")
 
     fig.add_trace(
         go.Heatmap(
-            z=matrix_ord.T.tolist(),
+            z=matrix_ord.T,          # pass numpy array directly — no .tolist()
             x=list(range(n_samples)),
             y=list(range(n_features)),
             colorscale=colorscale,
-            zmin=vmin, zmax=vmax,
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
+            zmin=float(matrix_ord.min()), zmax=float(matrix_ord.max()),
             colorbar=dict(
                 title=dict(
                     text="<b>Z-score</b>",
@@ -3185,7 +3381,9 @@ def plot_heatmap_samples(
                 tickcolor="black",
                 outlinecolor="black", outlinewidth=1,
             ),
-            xgap=0.4, ygap=0.4,
+            xgap=0.3 if not _large_dataset else 0,
+            ygap=0.3 if not _large_dataset else 0,
+            **_heatmap_kwargs,
         ),
         row=heatmap_row, col=3,
     )
@@ -3282,43 +3480,76 @@ def plot_heatmap_samples(
         },
     })
 
-    # ── 7. Static PNG download ─────────────────────────────────────────────────
-    img_bytes = _build_static_png_original(
-        data_orig=data,
-        features=features,
-        class_colors=class_colors,
-        custom_colors=custom_colors,
-        show_sample_names=True,
-        n_samples=n_samples,
-        n_features=n_features,
-        meta_annotation_cols=valid_meta,
-        data_meta_orig=data_meta_orig,
-    )
+    # ── 7. Static PNG download (lazy — built only when button clicked) ──────────
+    # For large datasets, avoid blocking the main render with a heavy matplotlib call.
+    # We store everything needed in session_state and generate PNG on demand.
+    _png_key   = f"dl_heatmap_png_{capture_name or 'heatmap'}"
+    _bytes_key = f"{capture_name}_png_bytes" if capture_name else None
 
     if capture_name:
         st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
-        st.session_state[capture_name] = fig
-        st.session_state[f"{capture_name}_png_bytes"] = img_bytes
+        st.session_state[capture_name]               = fig
 
-    st.download_button(
-        label="📥 Download Heatmap as PNG",
-        data=img_bytes,
-        file_name="heatmap.png",
-        mime="image/png",
-        key=f"dl_heatmap_png_{capture_name or 'heatmap'}",
-    )
+    if _large_dataset:
+        # Lazy: build PNG only when user clicks
+        if st.button("📥 Generate & Download Heatmap PNG", key=f"gen_png_{capture_name or 'hm'}",
+                     help="For large datasets PNG generation may take a few seconds."):
+            with st.spinner("Building high-resolution PNG…"):
+                img_bytes = _build_static_png_fast(
+                    matrix_ord=matrix_ord,
+                    raw_ord=_export_raw_ord,
+                    feature_labels_ord=feature_labels_ord,
+                    sample_labels_ord=sample_labels_ord,
+                    class_labels_ord=class_labels_ord,
+                    class_colors=class_colors,
+                    custom_colors=custom_colors,
+                    data_meta_orig=data_meta_orig,
+                    meta_cols=valid_meta,
+                    col_order=col_order,
+                )
+                if _bytes_key:
+                    st.session_state[_bytes_key] = img_bytes
+                st.download_button(
+                    label="📥 Download PNG",
+                    data=img_bytes,
+                    file_name="heatmap.png",
+                    mime="image/png",
+                    key=f"{_png_key}_dl",
+                )
+    else:
+        img_bytes = _build_static_png_fast(
+            matrix_ord=matrix_ord,
+            raw_ord=_export_raw_ord,
+            feature_labels_ord=feature_labels_ord,
+            sample_labels_ord=sample_labels_ord,
+            class_labels_ord=class_labels_ord,
+            class_colors=class_colors,
+            custom_colors=custom_colors,
+            data_meta_orig=data_meta_orig,
+            meta_cols=valid_meta,
+            col_order=col_order,
+        )
+        if _bytes_key:
+            st.session_state[_bytes_key] = img_bytes
+        st.download_button(
+            label="📥 Download Heatmap as PNG",
+            data=img_bytes,
+            file_name="heatmap.png",
+            mime="image/png",
+            key=_png_key,
+        )
 
     gc.collect()
 
-    # ── Stocker les données du dendrogramme en session_state pour le widget persistant ──
+    # ── Store dendrogram data in session_state for the persistent widget ──────
     if capture_name:
         st.session_state[f"{capture_name}_dend_data"] = {
-            "row_dend":          row_dend,
-            "row_link":          row_link,
-            "n_features":        n_features,
+            "row_dend":           row_dend,
+            "row_link":           row_link,
+            "n_features":         n_features,
             "feature_labels_ord": feature_labels_ord,
-            "matrix_ord":        matrix_ord,
-            "sample_labels_ord": sample_labels_ord,
-            "class_labels_ord":  class_labels_ord,
-            "data_original":     data_original_unscaled,
+            "matrix_ord":         matrix_ord,
+            "sample_labels_ord":  sample_labels_ord,
+            "class_labels_ord":   class_labels_ord,
+            "data_original":      _export_raw_ord,   # raw values (not full df)
         }
