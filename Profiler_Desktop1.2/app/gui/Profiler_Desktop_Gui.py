@@ -107,7 +107,7 @@ for _p in (_PROJECT_ROOT, _APP_DIR):
 
 # ── Profiler package imports ──────────────────────────────────────────────────
 from app.utils.profiler_imports import *
-from app.analysis.profiler_features_importance import _resolve_features
+from app.analysis.profiler_features_importance import _resolve_features, render_heatmap_dendrogram_widget
 
 # ─── Helper: build feature matrix (excludes Class, ID, File, RT, Sum, _meta) ──
 _NON_FEATURE_COLS = {'Class', 'ID', 'File', 'RT', 'Sum', 'Original_index'}
