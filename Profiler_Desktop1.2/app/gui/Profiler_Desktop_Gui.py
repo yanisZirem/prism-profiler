@@ -3,7 +3,7 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 16/06/2026
+Last Updated: 08/07/2026
 Version: 1.2.7
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
@@ -86,6 +86,8 @@ from statsmodels.stats.multitest import multipletests
 
 # ── Third-party: domain ───────────────────────────────────────────────────────
 from neurocombat_sklearn import CombatModel
+from lifelines import KaplanMeierFitter, CoxPHFitter
+from lifelines.statistics import logrank_test
 
 # ── Performance: pandas Copy-on-Write (pandas 2+) ────────────────────────────
 try:
