@@ -425,6 +425,17 @@ def _plot_gene_pct(gene_mapping, color_map, combined_df=None):
 
 
 def _plot_dot(combined, gene_mapping, color_map):
+    """
+    Dot plot — clusterProfiler `compareCluster` style.
+
+    Class-disambiguation is triple-redundant so a pathway's class is never
+    ambiguous, even with many overlapping classes:
+      - x position  = Class (each class is its own column)
+      - marker shape = Class (cycled symbol set)
+      - marker border color = Class (from color_map)
+      - marker fill color   = Combined Score (continuous colorbar)
+      - marker size         = Gene Ratio (detected / total unique genes in class)
+    """
     gm  = pd.DataFrame(gene_mapping).copy()
     gm["Gene Count"] = gm["Genes"].apply(len)
     total_per_class  = (
@@ -438,27 +449,47 @@ def _plot_dot(combined, gene_mapping, color_map):
     dot["Gene Count"] = dot["Gene Count"].fillna(0).astype(int)
     dot["GeneRatio"]  = dot.apply(
         lambda r: r["Gene Count"] / max(total_per_class.get(r["Class"],1),1), axis=1)
-    dot = dot.sort_values("Combined Score", ascending=True)
-    max_count = max(dot["Gene Count"].max(), 1)
-    sizeref   = 2.0 * max_count / (40.0**2)
+
+    # Order pathways top-to-bottom by their best Combined Score across classes
+    term_order = (
+        dot.groupby("Term")["Combined Score"].max()
+        .sort_values(ascending=True).index.tolist()
+    )
+    # Preserve first-seen class order (matches legend/order elsewhere)
+    classes = list(dict.fromkeys(dot["Class"].tolist()))
+
+    _SYMBOLS = ["circle", "square", "diamond", "triangle-up", "triangle-down",
+                "star", "hexagon", "pentagon", "cross", "x"]
+    symbol_map = {cls: _SYMBOLS[i % len(_SYMBOLS)] for i, cls in enumerate(classes)}
+
+    max_ratio = max(dot["GeneRatio"].max(), 1e-6)
+    sizeref   = 2.0 * max_ratio / (34.0**2)   # 34px = max marker diameter
+    cmin, cmax = dot["Combined Score"].min(), dot["Combined Score"].max()
+
     fig = go.Figure()
-    for cls in dot["Class"].unique():
+    for i, cls in enumerate(classes):
         sub = dot[dot["Class"] == cls]
+        border_color = color_map.get(cls, "#334155")
+        marker_kwargs = dict(
+            symbol=symbol_map[cls],
+            size=sub["GeneRatio"].clip(lower=0.02),
+            sizemode="area", sizeref=sizeref, sizemin=6,
+            color=sub["Combined Score"], colorscale="RdYlBu_r",
+            cmin=cmin, cmax=cmax,
+            showscale=(i == 0),
+            line=dict(width=2, color=border_color),
+            opacity=0.88,
+        )
+        if i == 0:
+            marker_kwargs["colorbar"] = dict(
+                title=dict(text="Combined Score", font=_AXIS_TITLE),
+                tickfont=_TICK_FONT,
+                thickness=16, len=0.65, x=1.01,
+            )
         fig.add_trace(go.Scatter(
-            x=sub["GeneRatio"], y=sub["Term"],
+            x=[cls] * len(sub), y=sub["Term"],
             mode="markers", name=cls,
-            marker=dict(
-                size=sub["Gene Count"].clip(lower=3)*4,
-                sizemode="area", sizeref=sizeref,
-                color=sub["Combined Score"], colorscale="RdYlBu_r",
-                showscale=True,
-                colorbar=dict(
-                    title=dict(text="Combined Score", font=_AXIS_TITLE),
-                    tickfont=_TICK_FONT,
-                    thickness=16, len=0.65, x=1.01,
-                ),
-                line=dict(width=0.8, color="white"), opacity=0.85,
-            ),
+            marker=dict(**marker_kwargs),
             customdata=np.stack([sub["Combined Score"], sub["Gene Count"],
                                  sub["GeneRatio"], sub["Class"]], axis=1),
             hovertemplate=(
@@ -468,14 +499,17 @@ def _plot_dot(combined, gene_mapping, color_map):
                 "Gene Ratio: %{customdata[2]:.3f}<extra></extra>"
             ),
         ))
+
     n   = dot["Term"].nunique()
-    fig = _layout(fig, "Dot Plot — Enrichment (clusterProfiler style)",
+    fig = _layout(fig, "Dot Plot — Enrichment by Class",
                   height=max(500, n*28+150))
-    fig.update_yaxes(autorange="reversed", tickfont=dict(size=12), title_text="Pathway")
-    fig.update_xaxes(title_text="Gene Ratio", tickformat=".2f")
+    fig.update_yaxes(categoryorder="array", categoryarray=term_order,
+                     tickfont=dict(size=12), title_text="Pathway")
+    fig.update_xaxes(categoryorder="array", categoryarray=classes,
+                     title_text="Class", tickangle=30 if len(classes) > 4 else 0)
     fig.add_annotation(
         xref="paper", yref="paper", x=1.13, y=0.02,
-        text="● size = gene count", showarrow=False,
+        text="● size = gene ratio · shape/border = class", showarrow=False,
         font=dict(family=_FONT_FAMILY, size=11, color="#374151"),
     )
     return fig
