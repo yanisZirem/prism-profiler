@@ -404,6 +404,250 @@ def plot_confusion_matrix(model_result: dict) -> "go.Figure":
     return fig
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Classification report as a colour-coded figure instead of a plain table
+# ─────────────────────────────────────────────────────────────────────────────
+def plot_classification_report(combined_df, capture_name=None):
+    """
+    Render a classification_report DataFrame (one row per class, plus
+    accuracy / macro avg / weighted avg with a blank separator row before
+    them — exactly what the caller already builds for the table view) as a
+    compact, colour-coded heatmap: precision / recall / f1-score on a 0-1
+    red→green scale so the best/worst classes jump out at a glance, with
+    the exact value printed in each cell and the support (n) folded into
+    the row label since it isn't a 0-1 score and wouldn't belong on the
+    same colour scale.
+    """
+    metrics = [c for c in ['precision', 'recall', 'f1-score'] if c in combined_df.columns]
+    if not metrics:
+        return None
+
+    rows = list(combined_df.index)
+    z = combined_df[metrics].apply(pd.to_numeric, errors='coerce').to_numpy(dtype=float, copy=True)
+    support_col = (pd.to_numeric(combined_df['support'], errors='coerce')
+                   if 'support' in combined_df.columns else None)
+
+    # sklearn's classification_report stores 'accuracy' as a single scalar
+    # (not a per-metric dict); once reshaped into this table it gets
+    # broadcast across precision/recall/f1-score identically. Mask
+    # precision/recall on that row and keep the single accuracy value only
+    # under the last (f1-score) column — the same convention sklearn's own
+    # printed text report uses — instead of implying accuracy==precision.
+    if 'f1-score' in metrics:
+        f1_idx = metrics.index('f1-score')
+        for i, r in enumerate(rows):
+            if str(r).strip().lower() == 'accuracy':
+                for j in range(len(metrics)):
+                    if j != f1_idx:
+                        z[i, j] = np.nan
+
+    text = np.where(np.isnan(z), "", np.vectorize(lambda v: f"{v:.3f}")(np.nan_to_num(z)))
+    row_labels = []
+    # For the true total-sample count, prefer 'weighted avg' support (sklearn
+    # sets it to n_samples) over the 'accuracy' row's own (broadcast, wrong) value.
+    _total_support = None
+    if support_col is not None:
+        for i, r in enumerate(rows):
+            if str(r).strip().lower() == 'weighted avg' and pd.notna(support_col.iloc[i]):
+                _total_support = int(support_col.iloc[i])
+                break
+
+    for i, r in enumerate(rows):
+        if np.all(np.isnan(z[i])):
+            # Blank separator row inserted by the caller between per-class
+            # rows and the accuracy/macro/weighted-avg summary rows.
+            row_labels.append('')
+            continue
+        r_str = str(r).strip()
+        if r_str.lower() == 'accuracy':
+            row_labels.append(f"{r_str}  (n={_total_support})" if _total_support is not None else r_str)
+            continue
+        sup = None
+        if support_col is not None and pd.notna(support_col.iloc[i]):
+            sup = int(support_col.iloc[i])
+        row_labels.append(f"{r_str}  (n={sup})" if sup is not None else r_str)
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=[m.replace('-', ' ').title() for m in metrics],
+        y=row_labels,
+        colorscale=[[0.0, '#d73027'], [0.5, '#ffffbf'], [1.0, '#1a9850']],
+        zmin=0, zmax=1,
+        text=text,
+        texttemplate="<b>%{text}</b>",
+        textfont=dict(size=14, color="black", family="Arial Black"),
+        hovertemplate="%{y}<br>%{x}: %{z:.4f}<extra></extra>",
+        xgap=3, ygap=3,
+        colorbar=dict(
+            title=dict(text="Score", font=dict(size=12, color="black", family="Arial")),
+            tickfont=dict(size=11, color="black", family="Arial"),
+            thickness=14, len=0.6, x=1.02, xanchor="left",
+        ),
+    ))
+    fig.update_layout(
+        title=dict(text="<b>Classification Report</b>",
+                   font=dict(size=20, color="black", family="Arial Black"), x=0.5, xanchor="center"),
+        xaxis=dict(side="top", tickfont=dict(size=14, color="black", family="Arial Black"),
+                   showgrid=False, zeroline=False),
+        yaxis=dict(tickfont=dict(size=13, color="black", family="Arial"),
+                   autorange="reversed", showgrid=False, zeroline=False),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color="black", family="Arial"),
+        height=max(320, 70 + 42 * len(rows)),
+        width=620,
+        margin=dict(l=210, r=90, t=95, b=20),
+    )
+    if capture_name:
+        try:
+            st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
+        except Exception:
+            pass
+    return fig
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LDA projection — "smart" class-separability view for classification tasks
+# ─────────────────────────────────────────────────────────────────────────────
+def plot_lda_projection(X, y_true, y_pred=None, class_names=None, capture_name=None,
+                         custom_colors=None):
+    """
+    Linear-Discriminant-Analysis view of how separable the classes are,
+    independent of which model the user actually picked in the report:
+
+      - Projects the (imputed + scaled) feature matrix onto its LDA axes —
+        the axes that maximize between-class separation. 2 axes for 3+
+        classes, a single axis (shown as a 1-D strip) for binary problems.
+      - Colours every point by its TRUE class, using the app's own
+        per-class colour map (custom_colors) when supplied, so this plot
+        matches every other class-coloured plot in the app (PCA, UMAP…).
+      - Marks samples the selected model got wrong with a larger red "✕",
+        so misclassifications that sit deep inside another class's cluster
+        (real confusion) are visually distinct from ones near the boundary
+        (expected, borderline cases) — this is what makes the plot useful
+        beyond a plain confusion matrix, and why it is shown for every
+        model (not just an actual LinearDiscriminantAnalysis model): LDA
+        is used here purely as a supervised projection technique to give a
+        consistent "class map" against which any model's errors can be
+        read, the same way PCA is used as a projection technique that has
+        nothing to do with which classifier was trained.
+      - Axis titles show the % of between-class variance each LD axis
+        captures, the same convention as the PCA plot's "PC1 (xx%)" labels.
+
+    Returns None (instead of raising) if LDA cannot be fit (e.g. too few
+    samples per class) — callers should treat that as "not available".
+    """
+    try:
+        X_arr = X.values if hasattr(X, 'values') else np.asarray(X)
+        imputer = SimpleImputer(strategy='constant', fill_value=0)
+        scaler = StandardScaler()
+        X_proc = scaler.fit_transform(imputer.fit_transform(X_arr))
+
+        y_true = np.asarray(y_true)
+        classes = np.unique(y_true)
+        n_classes = len(classes)
+        if n_classes < 2:
+            return None
+        n_comp = min(2, n_classes - 1, X_proc.shape[1])
+        if n_comp < 1:
+            return None
+
+        lda = LinearDiscriminantAnalysis(n_components=n_comp)
+        proj = lda.fit_transform(X_proc, y_true)
+    except Exception:
+        return None
+
+    evr = getattr(lda, 'explained_variance_ratio_', None)
+
+    def _ld_label(i):
+        if evr is not None and i < len(evr):
+            return f"LD{i+1} ({evr[i] * 100:.1f}% of between-class variance)"
+        return f"LD{i+1}"
+
+    names = list(class_names) if class_names is not None else [str(c) for c in classes]
+
+    def _to_name(v):
+        try:
+            return names[int(v)]
+        except Exception:
+            return str(v)
+
+    df = pd.DataFrame({'LD1': proj[:, 0]})
+    df['LD2'] = proj[:, 1] if n_comp == 2 else np.random.RandomState(0).uniform(-0.15, 0.15, size=len(proj))
+    df['True class'] = [_to_name(v) for v in y_true]
+
+    if y_pred is not None and len(y_pred) == len(y_true):
+        y_pred = np.asarray(y_pred)
+        df['Predicted class'] = [_to_name(v) for v in y_pred]
+        df['Result'] = np.where(y_true == y_pred, 'Correct', 'Misclassified')
+        hover_cols = ['Predicted class']
+    else:
+        df['Result'] = 'Correct'
+        hover_cols = None
+
+    # Match the app's own per-class colours (same palette as PCA/UMAP/t-SNE)
+    color_map = None
+    if custom_colors:
+        color_map = {n: custom_colors.get(n) for n in df['True class'].unique() if custom_colors.get(n)}
+        color_map = color_map or None
+
+    fig = px.scatter(
+        df, x='LD1', y='LD2', color='True class',
+        color_discrete_map=color_map,
+        hover_data=hover_cols,
+        title="Class Separability" 
+    )
+    fig.update_traces(marker=dict(size=9, opacity=0.85, line=dict(width=1, color='black')))
+
+    # Overlay misclassified points with a red "×" drawn at the *exact* same
+    # coordinates, sliced straight from the same df used above — this
+    # guarantees the marker sits perfectly on its point (rather than relying
+    # on Plotly's own trace-splitting when symbol was mapped together with
+    # color, which could visually offset it) and keeps the class-colour dot
+    # visible underneath instead of replacing it.
+    if 'Result' in df.columns:
+        mis = df[df['Result'] == 'Misclassified']
+        if len(mis):
+            fig.add_trace(go.Scatter(
+                x=mis['LD1'], y=mis['LD2'],
+                mode='markers',
+                marker=dict(symbol='x-thin', size=16, color='red',
+                            line=dict(width=3, color='red')),
+                name='Misclassified',
+                showlegend=True,
+                hovertemplate="<b>Misclassified</b><br>LD1=%{x:.3f}<br>LD2=%{y:.3f}<extra></extra>",
+            ))
+
+    _axis_style = dict(
+        title_font=dict(size=15, color="black", family="Arial Black"),
+        tickfont=dict(size=12, color="black", family="Arial"),
+        showgrid=True, gridcolor="#ececec", zeroline=False,
+        showline=True, linecolor="black", linewidth=1.5, mirror=True,
+    )
+    fig.update_layout(
+        xaxis=dict(title=_ld_label(0), **_axis_style),
+        yaxis=dict(title=(_ld_label(1) if n_comp == 2 else "spread (visual jitter only)"), **_axis_style),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color="black", family="Arial", size=13),
+        legend=dict(font=dict(size=12, color="black"), bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor="black", borderwidth=1,
+                    x=1.03, y=1, xanchor="left", yanchor="top"),
+        title=dict(font=dict(color="black")),
+        height=560, width=700,
+        margin=dict(l=70, r=170, t=70, b=65),
+    )
+    if n_comp == 1:
+        fig.update_yaxes(showticklabels=False, zeroline=False, showgrid=False)
+        fig.add_vline(x=0, line_dash="dot", line_color="gray")
+
+    if capture_name:
+        try:
+            st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
+        except Exception:
+            pass
+    return fig
+
+
 from sklearn.model_selection import StratifiedKFold, learning_curve
 
 def plot_learning_curve(model, X, y, n_splits=5):
