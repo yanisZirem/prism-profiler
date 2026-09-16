@@ -6,7 +6,7 @@ Module name : data_exploration
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 23/10/2025
+Last Updated: 16/19/2026
 Version: 1.0.0
 
 Context:
@@ -33,24 +33,10 @@ import gc
 from upsetplot import UpSet, from_memberships
 import pandas as pd
 
-def _capture_matplotlib(fig, key: str):
-    """Convert a Matplotlib figure to base64 PNG and store for the HTML report."""
-    if fig is not None:
-        try:
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', bbox_inches='tight', dpi=130)
-            buf.seek(0)
-            st.session_state[f"_report_{key}"] = ("b64", base64.b64encode(buf.read()).decode())
-        except Exception:
-            pass
 
 
 
 
-def _capture_plotly(fig, key: str):
-    """Store a Plotly figure in session_state for the HTML report."""
-    if fig is not None:
-        st.session_state[f"_report_{key}"] = ("plotly", fig)
 
 
 def plot_feature_distribution(data, feature, class_colors, histfunc='sum', capture_name=None):
@@ -73,26 +59,7 @@ def plot_feature_distribution(data, feature, class_colors, histfunc='sum', captu
             color_discrete_map=class_colors
         )
 
-    # fig.update_layout(
-    #     title_font_size=22,
-    #     font=dict(color="black", size=18),
-    #     legend=dict(
-    #         title_font=dict(size=18, color='black'),
-    #         font=dict(size=16, color='black')
-    #     ),
-    #     xaxis=dict(
-    #         title='Class',
-    #         titlefont=dict(size=20, color='black'),
-    #         tickfont=dict(size=16, color='black')
-    #     ),
-    #     yaxis=dict(
-    #         title='Intensity' if feature != 'Class' else 'Count',
-    #         titlefont=dict(size=20, color='black'),
-    #         tickfont=dict(size=16, color='black')
-    #     ),
-    #     plot_bgcolor='white',
-    #     paper_bgcolor='white'
-    # )
+
     fig.update_layout(
         title=dict(
             text=fig.layout.title.text,
@@ -118,8 +85,6 @@ def plot_feature_distribution(data, feature, class_colors, histfunc='sum', captu
     if capture_name:
         _capture_plotly(fig, capture_name)
     return fig
-
-
 
 
 
