@@ -1,26 +1,3 @@
-"""
-Software Name: Profiler
-Author: Yanis Zirem
-Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
-Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
-
-Context:
-This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
-It is designed for archiving on Zenodo and integration into GitHub releases.
-
-License: l’Agence pour la Protection des Programmes IDDN (InterDeposit Digital Number) : FR2 .0013 .0300044 .0005 .S6 .C7 .20258 .0009 .312301
-Citation:
-If Profiler or this module (a part of Profiler) is used in a publication, please cite:
-Zirem, Y. (2025). Profiler: an open web platform for multi-omics analysis. Journal of Bioinformatics. [DOI or Zenodo/GitHub link available in the article].
-
-Links:
-- GitHub temporary Repository: https://github.com/yanisZirem/Profiler_v1_requests_datatests
-"""
-
-
-
 import pandas as pd 
 import streamlit as st
 from scipy.stats import ttest_ind, shapiro, kstest
@@ -34,52 +11,6 @@ def diagnose_normality(p_value):
 
 
 
-def display_class_info(data):
-    if 'Class' in data.columns:
-
-        COLUMNS_TO_EXCLUDE = {'Class', 'ID', 'File', 'RT', 'Sum'}
-        class_counts = data['Class'].value_counts()
-        class_percentages = (class_counts / len(data)) * 100
-        imbalance_ratio = class_counts.max() / class_counts.min()
-
-        class_info_df = pd.DataFrame({
-            "Class": class_counts.index,
-            "Count": class_counts.values,
-            "Percentage (%)": class_percentages.round(2).values
-        })
-        st.markdown("**Class Distribution Summary**")
-        st.dataframe(class_info_df, use_container_width=True)
-
-        color_map = {cls: st.session_state.get('class_colors', {}).get(cls, '#CCCCCC')
-                     for cls in class_counts.index}
-        fig = px.pie(
-            names=class_counts.index, values=class_counts.values,
-            color=class_counts.index, color_discrete_map=color_map,
-            title="Class Proportion"
-        )
-        fig.update_traces(textposition='inside', textinfo='percent+label',
-                          textfont_size=16)
-        fig.update_layout(
-            legend_title_text='Class',
-            legend=dict(font=dict(size=14)),
-            title=dict(font=dict(size=16)),
-            margin=dict(l=10, r=10, t=50, b=10),
-            height=380,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        # Capture for HTML report
-        st.session_state["_report_class_proportion"] = ("plotly", fig)
-
-        st.markdown("**Interpretation**")
-        if imbalance_ratio > 2:
-            st.warning("⚠️ The dataset is imbalanced. Consider using over or undersampling techniques.")
-        else:
-            st.success("✅ The class distribution appears reasonably balanced.")
-
-        return True
-    else:
-        st.warning("⚠️ No 'Class' column found in the dataset.")
-        return False
 
 def calculate_missing_values(data):
     COLUMNS_TO_EXCLUDE = {'Class', 'ID', 'File', 'RT', 'Sum'}
@@ -156,175 +87,130 @@ def display_distribution(data, relevant_columns):
 
 
 
-# def display_class_info(data):
-#     if 'Class' not in data.columns:
-#         st.warning("⚠️ No 'Class' column found in the dataset.")
-#         return False
-
-#     # Colonnes à exclure pour le comptage des features
-#     COLUMNS_TO_EXCLUDE = ['Class', 'File', 'RT', 'Sum']
-#     num_features = len([col for col in data.columns if col not in COLUMNS_TO_EXCLUDE])
-
-#     # Comptage des classes
-#     class_counts = data['Class'].value_counts()
-#     class_percentages = (class_counts / len(data)) * 100
-#     imbalance_ratio = class_counts.max() / class_counts.min()
-
-#     # Tableau de distribution
-#     class_info_df = pd.DataFrame({
-#         "Class": class_counts.index,
-#         "Count": class_counts.values,
-#         "Percentage (%)": class_percentages.round(2).values
-#     })
-#     st.markdown("**Class Distribution Summary**")
-#     st.dataframe(class_info_df, use_container_width=True)
-
-#     # Pie chart interactif avec Plotly
-#     st.markdown("**Class Proportion**")
-#     colors = [st.session_state['class_colors'].get(cls, '#CCCCCC') for cls in class_counts.index]  # fallback gris
-
-#     import plotly.express as px
-#     fig = px.pie(
-#         names=class_counts.index,
-#         values=class_counts.values,
-#         color=class_counts.index,
-#         color_discrete_map={cls: color for cls, color in zip(class_counts.index, colors)},
-#         title="Class Proportion"
-#     )
-#     fig.update_traces(textposition='inside', textinfo='percent+label')
-#     fig.update_layout(
-#         legend_title_text='Class',
-#         legend=dict(font=dict(size=14)),
-#         title=dict(font=dict(size=20))
-#     )
-#     st.plotly_chart(fig, use_container_width=True)
-
-#     # Interprétation automatique
-#     st.markdown("**Interpretation**")
-#     if imbalance_ratio > 2:
-#         st.warning("⚠️ The dataset is imbalanced. Consider using over or undersampling techniques.")
-#     else:
-#         st.success("✅ The class distribution appears reasonably balanced. No major concern regarding imbalance.")
-
-#     return True
-
-
 def display_class_info(data):
+    """Render class-balance information without Plotly/Streamlit overlap.
+
+    The Dataset Balance tab displays the class summary, the class-proportion
+    pie chart, and its interpretation as independent vertical blocks. Fixed
+    Plotly dimensions and explicit margins prevent the pie chart from
+    colliding with the following density plot or interpretation text.
+    """
     if 'Class' not in data.columns:
         st.warning("⚠️ No 'Class' column found in the dataset.")
         return False
 
-    # Colonnes à exclure pour le comptage des features
     COLUMNS_TO_EXCLUDE = {'Class', 'ID', 'File', 'RT', 'Sum'}
-    num_features = len([col for col in data.columns if col not in COLUMNS_TO_EXCLUDE and not str(col).endswith('_meta')])
+    num_features = len([
+        col for col in data.columns
+        if col not in COLUMNS_TO_EXCLUDE and not str(col).endswith('_meta')
+    ])
 
-    # Comptage des classes
     class_counts = data['Class'].value_counts()
     class_percentages = (class_counts / len(data)) * 100
-    imbalance_ratio = class_counts.max() / class_counts.min()
+    imbalance_ratio = (
+        class_counts.max() / class_counts.min()
+        if len(class_counts) and class_counts.min() > 0 else 1.0
+    )
 
-    # Tableau de distribution
     class_info_df = pd.DataFrame({
         "Class": class_counts.index,
         "Count": class_counts.values,
         "Percentage (%)": class_percentages.round(2).values
     })
-    st.markdown("**Class Distribution Summary**")
-    st.dataframe(class_info_df, use_container_width=True)
 
-    # Pie chart interactif avec Plotly
-    # st.markdown("**Class Proportion**")
-    colors = [st.session_state['class_colors'].get(cls, '#CCCCCC') for cls in class_counts.index]  # fallback gris
+    # ---- Block 1: table -------------------------------------------------
+    st.markdown(
+        "<div style='margin-top:8px;margin-bottom:8px;'>"
+        "<strong>Class Distribution Summary</strong></div>",
+        unsafe_allow_html=True,
+    )
+    st.dataframe(
+        class_info_df,
+        use_container_width=True,
+        hide_index=True,
+    )
 
+    # ---- Block 2: pie chart ---------------------------------------------
+    st.markdown(
+        "<div style='margin-top:20px;margin-bottom:4px;'>"
+        "<strong>Class Proportion</strong></div>",
+        unsafe_allow_html=True,
+    )
+
+    colors = [
+        st.session_state.get('class_colors', {}).get(cls, '#CCCCCC')
+        for cls in class_counts.index
+    ]
+
+    import plotly.express as px
     fig = px.pie(
-        names=class_counts.index,
+        names=class_counts.index.astype(str),
         values=class_counts.values,
-        color=class_counts.index,
-        color_discrete_map={cls: color for cls, color in zip(class_counts.index, colors)},
-        title="Class Proportion"
+        color=class_counts.index.astype(str),
+        color_discrete_map={str(cls): color for cls, color in zip(class_counts.index, colors)},
     )
     fig.update_traces(
         textposition='inside',
         textinfo='percent+label',
-        textfont_size=20  # <-- taille du texte pourcentage + label
+        textfont=dict(size=14),
+        hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Proportion: %{percent}<extra></extra>',
     )
     fig.update_layout(
+        height=430,
+        margin=dict(l=30, r=30, t=25, b=25),
+        paper_bgcolor='white',
+        plot_bgcolor='white',
         legend_title_text='Class',
-        legend=dict(font=dict(size=18)),   # <-- taille de la légende
-        title=dict(font=dict(size=18))     # <-- taille du titre
+        legend=dict(
+            font=dict(size=13),
+            orientation='v',
+            yanchor='middle',
+            y=0.5,
+            xanchor='left',
+            x=1.02,
+        ),
+        uniformtext=dict(minsize=11, mode='hide'),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'responsive': True,
+        },
+    )
 
-    # Interprétation automatique
-    st.markdown("**Interpretation**")
+    # Explicit vertical separation before the interpretation block.
+    st.markdown(
+        "<div style='height:16px;'></div>",
+        unsafe_allow_html=True,
+    )
+
+    # ---- Block 3: interpretation ---------------------------------------
+    st.markdown(
+        "<div style='margin:4px 0 8px 0;'><strong>Interpretation</strong></div>",
+        unsafe_allow_html=True,
+    )
     if imbalance_ratio > 2:
-        st.warning("⚠️ The dataset is imbalanced. Consider using over or undersampling techniques.")
+        st.warning(
+            "⚠️ The dataset is imbalanced. Consider using over or undersampling techniques."
+        )
     else:
-        st.success("✅ The class distribution appears reasonably balanced. No major concern regarding imbalance.")
+        st.success(
+            "✅ The class distribution appears reasonably balanced. "
+            "No major concern regarding imbalance."
+        )
+
+    # Keep the next Dataset Balance element visually separated from this block.
+    st.markdown(
+        "<div style='height:22px;border-bottom:1px solid #e5e7eb;"
+        "margin-bottom:24px;'></div>",
+        unsafe_allow_html=True,
+    )
 
     return True
 
-# def display_class_info(data):
-#     if 'Class' not in data.columns:
-#         st.warning("⚠️ No 'Class' column found in the dataset.")
-#         return False
-
-#     # Colonnes à exclure pour le comptage des features
-#     COLUMNS_TO_EXCLUDE = ['Class', 'File', 'RT', 'Sum']
-#     num_features = len([col for col in data.columns if col not in COLUMNS_TO_EXCLUDE])
-
-#     # Comptage des classes
-#     class_counts = data['Class'].value_counts()
-#     class_percentages = (class_counts / len(data)) * 100
-#     imbalance_ratio = class_counts.max() / class_counts.min()
-
-#     # Tableau de distribution
-#     class_info_df = pd.DataFrame({
-#         "Class": class_counts.index,
-#         "Count": class_counts.values,
-#         "Percentage (%)": class_percentages.round(2).values
-#     })
-#     st.markdown("**Class Distribution Summary**")
-#     st.dataframe(class_info_df, use_container_width=True)
-
-#     # ✅ Utilisation directe du mapping global depuis session_state
-#     color_map = st.session_state.get("class_colors", {})
-#     # fallback si jamais une classe n'a pas de couleur attribuée
-#     color_map = {cls: color_map.get(cls, "#CCCCCC") for cls in class_counts.index}
-
-#     import plotly.express as px
-#     fig = px.pie(
-#         names=class_counts.index,
-#         values=class_counts.values,
-#         color=class_counts.index,
-#         color_discrete_map=color_map,  # 👈 mapping central appliqué ici
-#         title="Class Proportion"
-#     )
-#     fig.update_traces(
-#         textposition='inside',
-#         textinfo='percent+label',
-#         textfont_size=20
-#     )
-#     fig.update_layout(
-#         legend_title_text='Class',
-#         legend=dict(font=dict(size=18)),
-#         title=dict(font=dict(size=18))
-#     )
-#     st.plotly_chart(fig, use_container_width=True)
-
-#     # Interprétation automatique
-#     st.markdown("**Interpretation**")
-#     if imbalance_ratio > 2:
-#         st.warning("⚠️ The dataset is imbalanced. Consider using over or undersampling techniques.")
-#     else:
-#         st.success("✅ The class distribution appears reasonably balanced. No major concern regarding imbalance.")
-
-#     return True
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PUBLICATION-READY MISSING VALUE & ZERO-INFLATION PLOTS
-# ─────────────────────────────────────────────────────────────────────────────
 import plotly.graph_objects as go
 import numpy as np
 
@@ -398,6 +284,7 @@ def plot_missing_per_class(data):
         return None
 
     class_colors = st.session_state.get('class_colors', {})
+    import plotly.express as px
     palette = px.colors.qualitative.Plotly
 
     rows = []
@@ -412,6 +299,7 @@ def plot_missing_per_class(data):
     if not rows:
         return None
 
+    import pandas as pd
     df_plot = pd.DataFrame(rows)
     color_map = {cls: class_colors.get(cls, palette[i % len(palette)])
                  for i, cls in enumerate(df_plot['Class'].unique())}
@@ -444,7 +332,9 @@ def plot_zero_inflation_per_class(data):
         return None
 
     class_colors = st.session_state.get('class_colors', {})
+    import plotly.express as px
     palette = px.colors.qualitative.Plotly
+    import pandas as pd
 
     sub = data[feat_cols].fillna(0)
     zero_pct = (sub == 0).mean(axis=1) * 100
@@ -480,6 +370,7 @@ def plot_feature_completeness_rank(data, top_n: int = 40):
     Horizontal bar: features ranked by completeness (% non-missing).
     Shows worst and best features. Publication-ready.
     """
+    import pandas as pd
     COLUMNS_TO_EXCLUDE = {'Class', 'ID', 'File', 'RT', 'Sum'}
     feat_cols = [c for c in data.columns if c not in COLUMNS_TO_EXCLUDE and not str(c).endswith('_meta') and pd.api.types.is_numeric_dtype(data[c])]
     if not feat_cols:

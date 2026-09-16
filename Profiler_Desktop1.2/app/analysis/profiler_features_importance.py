@@ -1161,82 +1161,134 @@ def calculate_volcano_data(
 
 
 
-def plot_volcano(volcano_data, highlight_features=True, p_value_threshold=0.05, fold_change_threshold=2.0, capture_name=None):
-    color_map = {
-        'Upregulated': 'red',
-        'Downregulated': 'blue',
-        'Non-Significant': 'gray'
-    }
+# ── Thème graphique partagé (profiler_plot_theme) ───────────────────────────
+# Import tolérant : si le module n'est pas déployé, on retombe sur un template
+# Plotly standard au lieu de casser l'application.
+try:
+    import profiler_plot_theme as _theme          # enregistre le template
+    _PROFILER_TEMPLATE = "profiler"
+except Exception:                                  # pragma: no cover
+    _theme = None
+    _PROFILER_TEMPLATE = "plotly_white"
 
-    # Create a unique color for each comparison if there are multiple classes
-    if 'Upregulated' not in volcano_data['Color_Group'].values:
-        unique_comparisons = volcano_data['Comparison'].unique()
-        color_map.update({
-            comp: px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]
-            for i, comp in enumerate(unique_comparisons)
-        })
 
-    fig = px.scatter(
-        volcano_data, 
-        x='Log2 Fold Change', 
-        y='-Log10 P-Value',
-        text='Feature' if highlight_features else None,
-        color='Color_Group',
-        title='Volcano Plot',
-        hover_data=['Feature', 'Comparison', 'Regulation Type'],
-        labels={
-            'Log2 Fold Change': 'Log2 Fold Change',
-            '-Log10 P-Value': '-Log10 P-Value'
-        },
-        color_discrete_map=color_map
-    )
+PALETTE_VOLCANO = ["#0072B2", "#D55E00", "#009E73", "#CC79A7",
+                   "#E69F00", "#56B4E9", "#F0E442", "#8172B3"]
 
-    # Customize points
-    fig.update_traces(marker=dict(size=10, line=dict(width=0.5, color='black')))
-    
-    # Add significance cutoffs
-    fig.add_hline(
-        y=-np.log10(p_value_threshold),
-        line_dash="dash", 
-        annotation_text=f"p={p_value_threshold}",
-        annotation_position="top left",
-        annotation_font=dict(color="black", size=14)
-    )
-    fig.add_vline(
-        x=fold_change_threshold, 
-        line_dash="dash", 
-        annotation_text=f"{fold_change_threshold}-fold",
-        annotation_position="top right",
-        annotation_font=dict(color="black", size=14)
-    )
-    fig.add_vline(
-        x=-fold_change_threshold, 
-        line_dash="dash", 
-        annotation_text=f"-{fold_change_threshold}-fold",
-        annotation_position="top left",
-        annotation_font=dict(color="black", size=14)
-    )
 
-    # Adjust text labels for features
+def plot_volcano(volcano_data, highlight_features=True, p_value_threshold=0.05,
+                 fold_change_threshold=2.0, capture_name=None,
+                 max_labels=15, label_features=None):
+    """
+    Volcano plot rapide et lisible.
+
+    Changements par rapport à la version précédente :
+      • Les étiquettes ne sont plus posées sur TOUS les points. Avec 5 000
+        features, Plotly devait placer 5 000 textes → plusieurs secondes de
+        rendu et un nuage illisible. On n'étiquette que les `max_labels`
+        points les plus significatifs (ou la liste `label_features` fournie).
+      • Rendu WebGL au-delà de ~1 200 points : le SVG sature vers 3 000
+        marqueurs, la WebGL encaisse des centaines de milliers.
+      • Les non-significatifs sont dessinés en premier, en gris translucide
+        et sans contour : ils deviennent un fond, pas du bruit visuel.
+      • Style unifié via le template `profiler`.
+
+    `highlight_features=False` supprime toute étiquette.
+    """
+    import plotly.graph_objects as _go
+
+    df = volcano_data.copy()
+    df = df[np.isfinite(df["Log2 Fold Change"]) & np.isfinite(df["-Log10 P-Value"])]
+    if df.empty:
+        st.warning("No finite values to display in the volcano plot.")
+        return None
+
+    binary = "Upregulated" in df["Color_Group"].values
+    if binary:
+        color_map = {"Upregulated": "#D55E00",
+                     "Downregulated": "#0072B2",
+                     "Non-Significant": "#BDBDBD"}
+    else:
+        color_map = {"Non-Significant": "#BDBDBD"}
+        for i, comp in enumerate(df["Comparison"].unique()):
+            color_map[comp] = PALETTE_VOLCANO[i % len(PALETTE_VOLCANO)]
+
+    n_pts = len(df)
+    scatter_cls = _go.Scattergl if n_pts >= 1200 else _go.Scatter
+    marker_size = 9 if n_pts < 500 else (6 if n_pts < 5000 else 4)
+
+    fig = _go.Figure()
+
+    # Non-significatifs d'abord → ils passent sous les points d'intérêt
+    order = sorted(df["Color_Group"].unique(),
+                   key=lambda g: 0 if g == "Non-Significant" else 1)
+    for grp in order:
+        sub = df[df["Color_Group"] == grp]
+        is_ns = (grp == "Non-Significant")
+        fig.add_trace(scatter_cls(
+            x=sub["Log2 Fold Change"], y=sub["-Log10 P-Value"],
+            mode="markers", name=str(grp),
+            marker=dict(size=marker_size if not is_ns else marker_size * 0.8,
+                        color=color_map.get(grp, "#888"),
+                        opacity=0.35 if is_ns else 0.85,
+                        line=dict(width=0)),
+            # customdata = le nom de la feature seulement : les deux autres
+            # champs étaient constants par trace et triplaient le JSON envoyé
+            # au navigateur pour rien.
+            customdata=sub["Feature"].astype(str).values,
+            hovertemplate=("<b>%{customdata}</b><br>"
+                           "log2FC = %{x:.3f}<br>"
+                           "-log10 p = %{y:.3f}"
+                           "<extra>%{fullData.name}</extra>"),
+        ))
+
+    # ── Étiquettes : uniquement les plus significatives ─────────────────────
     if highlight_features:
-        fig.update_traces(textposition='top center', textfont=dict(color='black', size=12))
+        if label_features:
+            lab = df[df["Feature"].astype(str).isin([str(f) for f in label_features])]
+        else:
+            sig = df[(df["P-Value"] < p_value_threshold)
+                     & (df["Log2 Fold Change"].abs() >= np.log2(fold_change_threshold))]
+            pool = sig if not sig.empty else df
+            score = pool["-Log10 P-Value"] * pool["Log2 Fold Change"].abs()
+            lab = pool.loc[score.nlargest(min(max_labels, len(pool))).index]
+        if not lab.empty:
+            fig.add_trace(_go.Scatter(
+                x=lab["Log2 Fold Change"], y=lab["-Log10 P-Value"],
+                mode="text", text=lab["Feature"].astype(str),
+                textposition="top center",
+                textfont=dict(size=10, color="#111", family="Arial"),
+                hoverinfo="skip", showlegend=False, cliponaxis=False,
+            ))
 
+    # ── Seuil de significativité ─────────────────────────────────────────────
+    # Afficher uniquement le seuil de p-value.
+    # Aucun seuil graphique de fold-change n'est tracé afin d'éviter toute
+    # ligne oblique/indésirable sur le volcano plot.
+    y_thr = -np.log10(p_value_threshold)
+    fig.add_hline(y=y_thr, line_dash="dot", line_color="#777", line_width=1)
+    fig.add_annotation(x=float(df["Log2 Fold Change"].min()), y=y_thr,
+                       text=f"p = {p_value_threshold}", showarrow=False,
+                       xanchor="left", yanchor="bottom",
+                       font=dict(size=10, color="#777"))
 
-
+    # ── Mise en forme ────────────────────────────────────────────────────────
+    xmax = float(np.nanmax(np.abs(df["Log2 Fold Change"]))) * 1.08 or 1.0
     fig.update_layout(
-        title=dict(font=dict(size=24, color="black")),
-        font=dict(size=20, color="black"),
-        legend=dict(font=dict(size=18, color="black")),
-        xaxis=dict(title_font=dict(size=22, color="black"), tickfont=dict(size=18, color="black")),
-        yaxis=dict(title_font=dict(size=22, color="black"), tickfont=dict(size=18, color="black")),
-        plot_bgcolor="white",
-        autosize=True
+        template=_PROFILER_TEMPLATE,
+        title=dict(text="<b>Volcano plot</b>"),
+        xaxis=dict(title_text="log<sub>2</sub> fold change",
+                   range=[-xmax, xmax], zeroline=True, zerolinecolor="#DDD"),
+        yaxis=dict(title_text="-log<sub>10</sub> p-value", rangemode="tozero"),
+        legend=dict(title=dict(text="<b>Regulation</b>"),
+                    orientation="v", x=1.01, xanchor="left", y=1, yanchor="top"),
+        hovermode="closest",
+        margin=dict(l=70, r=160, t=55, b=60),
+        height=620,
     )
-
 
     if capture_name:
         _capture_plotly(fig, capture_name)
-
     return fig
 
 
@@ -1273,224 +1325,6 @@ def detect_peaks(data, intensity_threshold, show_stats=True):
         ) if r is not None
     ]
     return peak_features
-
-
-
-
-
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-import streamlit as st
-import base64
-
-def plot_heatmap_samples(data, class_colors, selected_features, custom_colors,
-                         show_sample_names=True, caption=None, capture_name=None):
-    """
-    Fully Plotly-native interactive heatmap with hierarchical clustering.
-    • Dendrograms on both axes (scipy fastcluster)
-    • Class colour bar at top
-    • Stored in st.session_state as ("plotly", fig) for HTML report embedding
-    • Download as interactive HTML or static PNG
-    """
-    import numpy as np
-    import pandas as pd
-    import plotly.graph_objects as go
-    import plotly.express as px
-    from scipy.spatial.distance import pdist, squareform
-    from scipy.cluster.hierarchy import linkage, dendrogram, leaves_list
-    from sklearn.preprocessing import StandardScaler
-    import streamlit as st
-
-    # ── Validate ───────────────────────────────────────────────────────────
-    data = data.copy()
-    data.columns = data.columns.astype(str)
-    selected_features = [str(f) for f in selected_features]
-    selected_features = _resolve_features(data, selected_features)
-    missing = [f for f in selected_features if f not in data.columns]
-    if missing:
-        st.error(f"Invalid features: {', '.join(missing[:8])}")
-        return
-
-    features = list(selected_features)
-    mat = data[features].replace([np.inf, -np.inf], np.nan)
-    mat = mat.fillna(mat.mean())
-    scaler = StandardScaler()
-    mat_z = scaler.fit_transform(mat.values.astype("float32"))   # (n_samples, n_feat)
-
-    n_samp, n_feat = mat_z.shape
-    class_labels = data["Class"].astype(str).tolist()
-
-    # ── Hierarchical clustering ────────────────────────────────────────────
-    def _linkage(m, axis=0):
-        if m.shape[axis] < 2:
-            return None, list(range(m.shape[axis]))
-        X_ = m if axis == 0 else m.T
-        try:
-            import fastcluster as fc
-            Z = fc.linkage(X_, method="ward", metric="euclidean")
-        except Exception:
-            Z = linkage(X_, method="ward", metric="euclidean")
-        order = leaves_list(Z)
-        return Z, order
-
-    Z_col, col_ord = _linkage(mat_z, axis=0)   # samples
-    Z_row, row_ord = _linkage(mat_z, axis=1)   # features
-
-    mat_r = mat_z[np.ix_(col_ord, row_ord)]
-    feat_r  = [features[i]     for i in row_ord]
-    samp_r  = [class_labels[i] for i in col_ord]
-    if "ID" in data.columns:
-        file_r = data["ID"].astype(str).iloc[col_ord].tolist()
-    elif "File" in data.columns:
-        file_r = data["File"].astype(str).iloc[col_ord].tolist()
-    else:
-        file_r = [f"sample_{i+1}" for i in col_ord]
-
-    # ── Colour scale from custom_colors list ──────────────────────────────
-    n_stops = len(custom_colors)
-    colorscale = [[i / (n_stops - 1), c] for i, c in enumerate(custom_colors)]
-
-    # ── Main heatmap ───────────────────────────────────────────────────────
-    hover = np.round(mat_r, 3)
-    hovertext = [[
-        f"<b>Sample:</b> {file_r[ci]}<br>"
-        f"<b>Class:</b>  {samp_r[ci]}<br>"
-        f"<b>Feature:</b> {feat_r[ri]}<br>"
-        f"<b>Z-score:</b> {hover[ci, ri]}"
-        for ri in range(n_feat)] for ci in range(n_samp)]
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Heatmap(
-        z=mat_r,
-        x=feat_r,
-        y=file_r if show_sample_names else [str(i) for i in range(n_samp)],
-        colorscale=colorscale,
-        zmid=0,
-        colorbar=dict(
-            title=dict(text="Z-score", font=dict(size=12, family="Arial")),
-            tickfont=dict(size=11, family="Arial"),
-            len=0.7, x=1.01,
-        ),
-        hovertext=hovertext,
-        hoverinfo="text",
-        xgap=0.5, ygap=0.5,
-    ))
-
-    # ── Class colour annotation bar (top) ─────────────────────────────────
-    if class_colors:
-        unique_cls = list(dict.fromkeys(samp_r))
-        cls_y      = [0] * n_samp
-        cls_colors = [class_colors.get(c, "#aaaaaa") for c in samp_r]
-
-        fig.add_trace(go.Bar(
-            x=feat_r,
-            y=[1] * n_feat,
-            marker_color=cls_colors[0],   # placeholder — overridden below
-            showlegend=False,
-            visible=False,
-        ))
-
-        # One invisible scatter per class for the legend
-        seen = set()
-        for cls in samp_r:
-            if cls not in seen:
-                seen.add(cls)
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None],
-                    mode="markers",
-                    marker=dict(size=10, color=class_colors.get(cls, "#aaa"),
-                                symbol="square"),
-                    name=cls,
-                    showlegend=True,
-                ))
-
-    # ── Layout ────────────────────────────────────────────────────────────
-    show_x_ticks = n_feat  <= 80
-    show_y_ticks = n_samp  <= 60
-
-    fig.update_layout(
-        title=dict(
-            text="<b>Sample × Feature Heatmap</b>",
-            font=dict(size=20, color="black", family="Arial Black"),
-            x=0.5, xanchor="center",
-        ),
-        xaxis=dict(
-            title="<b>Features</b>" if show_x_ticks else "",
-            titlefont=dict(size=14, color="black", family="Arial Black"),
-            tickfont=dict(size=max(8, 13 - n_feat // 20), color="black", family="Arial"),
-            showticklabels=show_x_ticks,
-            tickangle=-45 if n_feat > 20 else 0,
-            showgrid=False, showline=True, linecolor="black", mirror=True,
-        ),
-        yaxis=dict(
-            title="<b>Samples</b>" if show_y_ticks else "",
-            titlefont=dict(size=14, color="black", family="Arial Black"),
-            tickfont=dict(size=max(8, 13 - n_samp // 15), color="black", family="Arial"),
-            showticklabels=show_y_ticks,
-            showgrid=False, showline=True, linecolor="black", mirror=True,
-            autorange="reversed",
-        ),
-        legend=dict(
-            title=dict(text="<b>Class</b>", font=dict(size=12, family="Arial Black")),
-            font=dict(size=12, family="Arial"),
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="black", borderwidth=1,
-        ),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        height=max(500, min(2000, 160 + n_samp * 22 + 50)),
-        width=max(600, min(2200, 200 + n_feat * 18)),
-        margin=dict(l=130, r=80, t=80, b=120),
-    )
-
-    if caption:
-        fig.add_annotation(
-            text=caption,
-            xref="paper", yref="paper",
-            x=0.5, y=-0.12,
-            showarrow=False,
-            font=dict(size=11, color="#555", family="Arial"),
-            xanchor="center",
-        )
-
-    # ── Display & store ───────────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Store for report
-    key = capture_name or "heatmap_samples"
-    st.session_state[f"_report_{key}"] = ("plotly", fig)
-
-    # ── Download buttons ──────────────────────────────────────────────────
-    col1, col2 = st.columns(2)
-    with col1:
-        html_bytes = fig.to_html(full_html=True, include_plotlyjs="cdn").encode("utf-8")
-        st.download_button(
-            "📥 Download Interactive HTML",
-            html_bytes,
-            file_name="heatmap.html",
-            mime="text/html",
-        )
-    with col2:
-        try:
-            img_bytes = fig.to_image(format="png", scale=2)
-            st.download_button(
-                "📥 Download PNG (2×)",
-                img_bytes,
-                file_name="heatmap.png",
-                mime="image/png",
-            )
-        except Exception:
-            st.info("Install `kaleido` for PNG export: `pip install kaleido`")
-
-    gc.collect()
-
-
 def plot_significant_features(data, mz_values, class_colors=None, test='Kruskal', 
                               plot_type='box', show_scatter=False, use_log2=False, 
                               pval_correction='None', significance_dict=None, capture_name=None):
@@ -1548,757 +1382,416 @@ from sklearn.preprocessing import StandardScaler
 from matplotlib.colors import LinearSegmentedColormap, to_hex
 import matplotlib.pyplot as plt
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _make_plotly_colorscale(custom_colors: list, n=256):
-    cmap = LinearSegmentedColormap.from_list("cc", custom_colors, N=n)
-    return [[i / (n - 1), to_hex(cmap(i / (n - 1)))] for i in range(n)]
-
-
-def _dend_to_traces(dend, n_leaves, orientation="top", color="#555"):
-    """
-    Convert scipy dendrogram icoord/dcoord to Plotly Scatter traces.
-    orientation="top"  → sample dendrogram: x=leaf, y=height
-    orientation="left" → feature dendrogram: x=-height (mirrored), y=leaf
-    """
-    traces = []
-    icoord = np.array(dend["icoord"])
-    dcoord = np.array(dend["dcoord"])
-
-    def norm(x):
-        # scipy places leaves at 5, 15, 25 … → map to 0, 1, 2 …
-        return (x - 5) / 10
-
-    for xs, ys in zip(icoord, dcoord):
-        xs_n = [norm(v) for v in xs]
-        if orientation == "top":
-            traces.append(go.Scatter(
-                x=xs_n, y=list(ys),
-                mode="lines",
-                line=dict(color=color, width=1),
-                hoverinfo="skip", showlegend=False,
-            ))
-        else:
-            # Mirror height on x so the tree opens toward the heatmap (root at left)
-            traces.append(go.Scatter(
-                x=[-v for v in ys], y=xs_n,
-                mode="lines",
-                line=dict(color=color, width=1),
-                hoverinfo="skip", showlegend=False,
-            ))
-    return traces
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main public function
+# WIDGET DE SÉLECTION DE BRANCHE — dendrogramme des FEATURES (vertical, gauche)
+# et dendrogramme des ÉCHANTILLONS (horizontal, haut).
+# Les deux panneaux partagent les mêmes helpers de rendu et d'export.
 # ─────────────────────────────────────────────────────────────────────────────
 
-
-def render_heatmap_dendrogram_widget(capture_name: str = "heatmap_fig"):
+def _branch_options(dend, link, labels):
     """
-    Persistent feature dendrogram branch-selection widget.
-    Call from the GUI inside the show_heatmap block (outside plot_heatmap_samples).
-    Reads dendrogram data stored by plot_heatmap_samples from session_state.
-    The dendrogram uses the same left-orientation as in the heatmap (x=-height, y=leaf).
+    Liste des nœuds internes du dendrogramme :
+    [{idx, leaves, names, height, center}, …] + icoord/dcoord normalisés.
     """
-    dend_data = st.session_state.get(f"{capture_name}_dend_data")
-    if dend_data is None:
-        return
-
-    row_dend           = dend_data["row_dend"]
-    row_link           = dend_data["row_link"]
-    n_features         = dend_data["n_features"]
-    feature_labels_ord = dend_data["feature_labels_ord"]
-    matrix_ord         = dend_data["matrix_ord"]
-    sample_labels_ord  = dend_data["sample_labels_ord"]
-    class_labels_ord   = dend_data["class_labels_ord"]
-    data_original      = dend_data["data_original"]
-
-    st.markdown("---")
-    # st.markdown("*🌿 Feature dendrogram — branch selection*")
-
-    st.markdown(
-        "*🌿 Feature dendrogram — branch selection* — select a branch to retrieve the "
-        "up/down-regulated features within it, and download the corresponding statistics."
-    )
+    icoord = np.asarray(dend["icoord"], dtype=float)
+    dcoord = np.asarray(dend["dcoord"], dtype=float)
+    n = len(labels)
+    opts = []
+    for k in range(len(icoord)):
+        leaves = _leaves_of_subtree(link, n + k, n)
+        opts.append({
+            "idx": k,
+            "leaves": leaves,
+            "names": [labels[l] for l in leaves],
+            "height": float(dcoord[k][1]),
+            "center": (float(icoord[k][1]) + float(icoord[k][2])) / 2.0,
+        })
+    return opts, icoord, dcoord
 
 
-    # ── Feature dendrogram — same left-orientation as in the heatmap ─────────
-    # x = -height (root at left, leaves at right), y = leaf position
-    icoord   = np.array(row_dend["icoord"])
-    dcoord   = np.array(row_dend["dcoord"])
-    n_leaves = n_features
+def _branch_dend_figure(opts, icoord, dcoord, labels, orientation,
+                        title, line_color, unit_label="items"):
+    """
+    Dendrogramme cliquable/survolable — 2 traces seulement
+    (1 pour toutes les branches, 1 pour tous les nœuds).
+    orientation="left" → arbre vertical (features, racine à gauche)
+    orientation="top"  → arbre horizontal (échantillons, racine en haut)
+    """
+    n_leaves = len(labels)
+    leaf = (icoord - 5.0) / 10.0
+    nan_col = np.full((leaf.shape[0], 1), np.nan)
+    a = np.hstack([leaf, nan_col]).ravel()
+    b = np.hstack([dcoord, nan_col]).ravel()
 
-    def norm(x):
-        return (x - 5) / 10   # scipy: leaves at 5, 15, 25 … → 0, 1, 2 …
+    fig = go.Figure()
+    if orientation == "left":
+        fig.add_trace(go.Scatter(x=-b, y=a, mode="lines",
+                                 line=dict(color=line_color, width=1.6),
+                                 hoverinfo="skip", showlegend=False,
+                                 connectgaps=False))
+    else:
+        fig.add_trace(go.Scatter(x=a, y=b, mode="lines",
+                                 line=dict(color=line_color, width=1.6),
+                                 hoverinfo="skip", showlegend=False,
+                                 connectgaps=False))
 
-    fig_dend = go.Figure()
+    node_pos, node_h, node_hover = [], [], []
+    for o in opts:
+        node_pos.append((o["center"] - 5.0) / 10.0)
+        node_h.append(o["height"])
+        preview = ", ".join(o["names"][:5])
+        if len(o["names"]) > 5:
+            preview += f" … (+{len(o['names']) - 5})"
+        node_hover.append(f"<b>{len(o['names'])} {unit_label}</b><br>{preview}")
 
-    # Branch lines — same as _dend_to_traces(orientation="left")
-    for xs, ys in zip(icoord, dcoord):
-        xs_n = [norm(v) for v in xs]
-        fig_dend.add_trace(go.Scatter(
-            x=[-v for v in ys], y=xs_n,   # x = -height so root is at left
-            mode="lines",
-            line=dict(color="#2c5f8a", width=2),
-            hoverinfo="skip", showlegend=False,
-        ))
+    if orientation == "left":
+        nx, ny = [-h for h in node_h], node_pos
+    else:
+        nx, ny = node_pos, node_h
 
-    # Internal nodes (orange dots) with hover preview
-    node_x, node_y, node_hover = [], [], []
-    for merge_idx, (xs, ys) in enumerate(zip(icoord, dcoord)):
-        cy_norm = norm((xs[1] + xs[2]) / 2)   # leaf-axis position of this merge
-        height  = ys[1]                         # Ward distance at this merge
-        leaves  = _leaves_of_subtree(row_link, n_leaves + merge_idx, n_leaves)
-        names   = [feature_labels_ord[l] for l in leaves]
-        preview = ", ".join(names[:5]) + (f" … (+{len(names)-5})" if len(names) > 5 else "")
-        node_x.append(-height)      # same x as branch lines
-        node_y.append(cy_norm)
-        node_hover.append(f"<b>{len(names)} features</b><br>{preview}")
-
-    fig_dend.add_trace(go.Scatter(
-        x=node_x, y=node_y,
-        mode="markers",
-        marker=dict(size=11, color="#e05f2e", symbol="circle",
-                    line=dict(color="white", width=1.5)),
-        hovertext=node_hover,
-        hovertemplate="%{hovertext}<extra></extra>",
+    fig.add_trace(go.Scatter(
+        x=nx, y=ny, mode="markers",
+        marker=dict(size=9, color="#e05f2e", symbol="circle",
+                    line=dict(color="white", width=1.2)),
+        hovertext=node_hover, hovertemplate="%{hovertext}<extra></extra>",
         showlegend=False,
     ))
 
-    leaf_y = [norm(5 + 10 * i) for i in range(n_features)]
-    _max_h  = float(dcoord.max()) if len(dcoord) else 1.0
+    leaf_pos = [i for i in range(n_leaves)]
+    max_h = float(dcoord.max()) if dcoord.size else 1.0
+    show_labels = n_leaves <= 120
 
-    fig_dend.update_layout(
-        height=max(300, min(900, n_features * 18 + 60)),
-        width=500,
-        margin=dict(l=160, r=20, t=40, b=40),
+    axis_dist = dict(title="Ward distance", showgrid=True, gridcolor="#eee",
+                     zeroline=False, tickfont=dict(size=9, family="Arial"))
+    axis_leaf = dict(tickmode="array", tickvals=leaf_pos,
+                     ticktext=labels if show_labels else [""] * n_leaves,
+                     tickfont=dict(size=9, color="#111", family="Arial"),
+                     showticklabels=show_labels, showgrid=False, zeroline=False)
+
+    if orientation == "left":
+        axis_dist.update(range=[-max_h * 1.05, 0],
+                         tickvals=[-v for v in np.linspace(0, max_h, 6)],
+                         ticktext=[f"{v:.1f}" for v in np.linspace(0, max_h, 6)])
+        axis_leaf.update(side="right")
+        height = max(300, min(900, n_leaves * 16 + 90))
+        layout_axes = dict(xaxis=axis_dist, yaxis=axis_leaf)
+        margin = dict(l=20, r=150, t=40, b=45)
+    else:
+        axis_dist.update(range=[0, max_h * 1.05])
+        axis_leaf.update(tickangle=90)
+        height = max(300, min(700, 260 + (90 if show_labels else 0)))
+        layout_axes = dict(xaxis=axis_leaf, yaxis=axis_dist)
+        margin = dict(l=55, r=20, t=40, b=150 if show_labels else 40)
+
+    fig.update_layout(
+        height=height, margin=margin,
         paper_bgcolor="white", plot_bgcolor="white",
-        title=dict(
-            text="<b>Feature dendrogram</b>",
-            font=dict(size=13, color="#2c5f8a", family="Arial Black"), x=0.5,
-        ),
-        # x = -height → leftmost = max distance (root), rightmost = 0 (leaves)
-        xaxis=dict(
-            title="Ward distance",
-            range=[-_max_h * 1.05, 0],   # root at left, leaves at right
-            showgrid=True, gridcolor="#eee",
-            zeroline=False, titlefont=dict(size=11),
-            tickvals=[-v for v in np.linspace(0, _max_h, 6)],
-            ticktext=[f"{v:.1f}" for v in np.linspace(0, _max_h, 6)],
-        ),
-        # y = leaf position, feature labels on the RIGHT (same as heatmap Y-axis)
-        yaxis=dict(
-            tickmode="array",
-            tickvals=leaf_y,
-            ticktext=feature_labels_ord,
-            tickfont=dict(size=9, color="black"),
-            side="right",
-            showgrid=False, zeroline=False,
-        ),
-        hovermode="closest",
+        title=dict(text=f"<b>{title}</b>",
+                   font=dict(size=13, color=line_color, family="Arial"), x=0.5),
+        hovermode="closest", font=dict(family="Arial", color="#111"),
+        **layout_axes,
     )
-    st.plotly_chart(fig_dend, use_container_width=True,
-                    config={"displayModeBar": False},
-                    key=f"{capture_name}_dend_viz")
+    return fig
 
-    # ── Branch selectbox ──────────────────────────────────────────────────────
-    node_options = []
-    for merge_idx, (xs, ys) in enumerate(zip(icoord, dcoord)):
-        leaves    = _leaves_of_subtree(row_link, n_leaves + merge_idx, n_leaves)
-        feat_names = [feature_labels_ord[l] for l in leaves]
-        preview   = ", ".join(feat_names[:4]) + (f" … +{len(feat_names)-4}" if len(feat_names) > 4 else "")
-        node_options.append((f"{len(feat_names)} features — {preview}", feat_names))
-    node_options.sort(key=lambda x: -len(x[1]))
 
-    selected_label = st.selectbox(
-        "🌿 Select a branch",
-        options=["— Select a branch —"] + [o[0] for o in node_options],
-        index=0,
-        key=f"{capture_name}_dend_branch_selectbox",
-        help="Each entry is an internal node of the feature dendrogram, sorted by branch size (largest first).",
+def _branch_selectbox(opts, unit_label, key, max_options=400):
+    """Selectbox des branches, triées par taille décroissante."""
+    entries = sorted(opts, key=lambda o: -len(o["names"]))[:max_options]
+    labels_opt = []
+    for o in entries:
+        preview = ", ".join(o["names"][:4])
+        if len(o["names"]) > 4:
+            preview += f" … +{len(o['names']) - 4}"
+        labels_opt.append(f"{len(o['names'])} {unit_label} — {preview}")
+
+    choice = st.selectbox(
+        f"🌿 Select a branch ({unit_label})",
+        options=["— Select a branch —"] + labels_opt,
+        index=0, key=key,
+        help="Each entry is an internal node of the dendrogram, "
+             "sorted by branch size (largest first).",
     )
+    if choice == "— Select a branch —":
+        return None
+    return entries[labels_opt.index(choice)]
 
-    branch_features = None
-    if selected_label != "— Select a branch —":
-        match = next((o for o in node_options if o[0] == selected_label), None)
-        if match:
-            branch_features = match[1]
 
-    if branch_features is None:
+# ─────────────────────────────────────────────────────────────────────────────
+# Panneau 1 — branche de FEATURES (dendrogramme vertical)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _feature_branch_panel(dd, capture_name):
+    row_dend = dd["row_dend"]
+    row_link = dd["row_link"]
+    feature_labels_ord = dd["feature_labels_ord"]
+    matrix_ord = dd["matrix_ord"]
+    sample_labels_ord = dd["sample_labels_ord"]
+    class_labels_ord = dd["class_labels_ord"]
+    data_original = dd["data_original"]
+
+    st.caption("Select a branch to retrieve the up/down-regulated features it "
+               "contains, and download the corresponding statistics.")
+
+    opts, icoord, dcoord = _branch_options(row_dend, row_link, feature_labels_ord)
+    fig = _branch_dend_figure(opts, icoord, dcoord, feature_labels_ord,
+                              orientation="left",
+                              title="Feature dendrogram (vertical)",
+                              line_color="#2c5f8a", unit_label="features")
+    st.plotly_chart(fig, use_container_width=True, key=f"{capture_name}_dend_viz_feat",
+                    config={"displayModeBar": True, "displaylogo": False,
+                            "scrollZoom": True,
+                            "toImageButtonOptions": {"format": "png", "scale": 3}})
+
+    sel = _branch_selectbox(opts, "features", f"{capture_name}_branch_feat")
+    if sel is None:
         return
 
+    branch_features = sel["names"]
     n_branch = len(branch_features)
     st.success(f"✅ **{n_branch} feature(s)** selected in this branch")
 
     with st.expander(f"📋 {n_branch} selected features", expanded=False):
-        st.dataframe(pd.DataFrame({"Feature": branch_features}), use_container_width=True)
+        st.dataframe(pd.DataFrame({"Feature": branch_features}),
+                     use_container_width=True)
 
-    # ── Over / underexpressed per class ──────────────────────────────────────
+    # Over / under-expression per class (vectorised)
     unique_classes = list(dict.fromkeys(class_labels_ord))
-    over_rows, under_rows = [], []
-    for feat in branch_features:
-        if feat not in feature_labels_ord:
-            continue
-        feat_col_idx = feature_labels_ord.index(feat)
-        cls_means = {}
-        for cls in unique_classes:
-            cls_mask = [i for i, c in enumerate(class_labels_ord) if c == cls]
-            if cls_mask:
-                cls_means[cls] = float(np.nanmean(matrix_ord[np.ix_(cls_mask, [feat_col_idx])][:, 0]))
-        if not cls_means:
-            continue
-        global_mean = float(np.mean(list(cls_means.values())))
-        for cls, mean_val in cls_means.items():
-            diff = mean_val - global_mean
-            row = {"Feature": feat, "Class": cls,
-                   "Mean_Zscore": round(mean_val, 4),
-                   "Delta_vs_global": round(diff, 4)}
-            (over_rows if diff > 0 else under_rows).append(row)
+    cls_arr = np.asarray(class_labels_ord)
+    idx_feat = sel["leaves"]
+    sub = matrix_ord[:, idx_feat]                       # (n_samples, n_branch)
 
-    df_over  = pd.DataFrame(over_rows).sort_values(["Class", "Delta_vs_global"], ascending=[True, False]) if over_rows  else pd.DataFrame()
-    df_under = pd.DataFrame(under_rows).sort_values(["Class", "Delta_vs_global"], ascending=[True, True])  if under_rows else pd.DataFrame()
+    means = np.vstack([np.nanmean(sub[cls_arr == c], axis=0) for c in unique_classes])
+    global_mean = np.nanmean(means, axis=0)
+    delta = means - global_mean
 
-    # ── Export buttons ────────────────────────────────────────────────────────
-    _col_ex, _col_ov, _col_un = st.columns(3)
+    rows = []
+    for ci, cls in enumerate(unique_classes):
+        for fi, feat in enumerate(branch_features):
+            rows.append({"Feature": feat, "Class": cls,
+                         "Mean_Zscore": round(float(means[ci, fi]), 4),
+                         "Delta_vs_global": round(float(delta[ci, fi]), 4)})
+    df_all = pd.DataFrame(rows)
+    df_over = df_all[df_all.Delta_vs_global > 0].sort_values(
+        ["Class", "Delta_vs_global"], ascending=[True, False])
+    df_under = df_all[df_all.Delta_vs_global <= 0].sort_values(
+        ["Class", "Delta_vs_global"], ascending=[True, True])
 
-    with _col_ex:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         try:
-            excel_bytes = _export_branch_excel(
-                branch_features=branch_features,
-                data_original=data_original,
-                feature_labels_ord=feature_labels_ord,
-                matrix_z=matrix_ord,
+            xls = _export_branch_excel(
+                branch_features=branch_features, data_original=data_original,
+                feature_labels_ord=feature_labels_ord, matrix_z=matrix_ord,
                 sample_labels_ord=sample_labels_ord,
-                class_labels_ord=class_labels_ord,
-            )
-            st.download_button(
-                label=f"📥 Full Excel ({n_branch} features)",
-                data=excel_bytes,
-                file_name=f"branch_{n_branch}features.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"{capture_name}_dend_excel_dl",
-                use_container_width=True,
-            )
+                class_labels_ord=class_labels_ord)
+            st.download_button(f"📥 Full Excel ({n_branch} features)", data=xls,
+                               file_name=f"branch_{n_branch}features.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument."
+                                    "spreadsheetml.sheet",
+                               key=f"{capture_name}_feat_excel", use_container_width=True)
         except Exception as e:
             st.error(f"Excel export error: {e}")
-
-    with _col_ov:
+    with c2:
         if not df_over.empty:
-            st.download_button(
-                label=f"📥 CSV Overexpressed ({len(df_over)})",
-                data=df_over.to_csv(index=False).encode("utf-8"),
-                file_name=f"branch_overexpressed_{n_branch}features.csv",
-                mime="text/csv",
-                key=f"{capture_name}_dend_over_dl",
-                use_container_width=True,
-            )
+            st.download_button(f"📥 CSV Overexpressed ({len(df_over)})",
+                               data=df_over.to_csv(index=False).encode("utf-8"),
+                               file_name=f"branch_overexpressed_{n_branch}.csv",
+                               mime="text/csv", key=f"{capture_name}_feat_over",
+                               use_container_width=True)
             with st.expander("👆 Overexpressed — preview", expanded=False):
                 st.dataframe(df_over, use_container_width=True)
         else:
             st.caption("No overexpressed features in this branch.")
-
-    with _col_un:
+    with c3:
         if not df_under.empty:
-            st.download_button(
-                label=f"📥 CSV Underexpressed ({len(df_under)})",
-                data=df_under.to_csv(index=False).encode("utf-8"),
-                file_name=f"branch_underexpressed_{n_branch}features.csv",
-                mime="text/csv",
-                key=f"{capture_name}_dend_under_dl",
-                use_container_width=True,
-            )
+            st.download_button(f"📥 CSV Underexpressed ({len(df_under)})",
+                               data=df_under.to_csv(index=False).encode("utf-8"),
+                               file_name=f"branch_underexpressed_{n_branch}.csv",
+                               mime="text/csv", key=f"{capture_name}_feat_under",
+                               use_container_width=True)
             with st.expander("👇 Underexpressed — preview", expanded=False):
                 st.dataframe(df_under, use_container_width=True)
         else:
             st.caption("No underexpressed features in this branch.")
 
 
-def plot_heatmap_samples(
-    data: pd.DataFrame,
-    class_colors: dict,
-    selected_features: list,
-    custom_colors: list,
-    show_sample_names: bool = True,
-    caption: str = None,
-    capture_name: str = None,
-    meta_annotation_cols: list = None,
-):
-    # ── 1. Data prep ──────────────────────────────────────────────────────────
-    data = data.copy()
-    data.columns = data.columns.astype(str)
-    selected_features = [str(f) for f in selected_features]
-    selected_features = _resolve_features(data, selected_features)
+# ─────────────────────────────────────────────────────────────────────────────
+# Panneau 2 — branche d'ÉCHANTILLONS (dendrogramme horizontal)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    missing = [f for f in selected_features if f not in data.columns]
-    if missing:
-        st.error(f"Invalid features: {', '.join(missing)}")
+def _sample_branch_panel(dd, capture_name):
+    col_dend = dd.get("col_dend")
+    col_link = dd.get("col_link")
+    if col_dend is None or col_link is None:
+        st.info("Re-generate the heatmap to enable sample-branch selection.")
         return
 
-    features = list(selected_features)
-    data[features] = data[features].replace([np.inf, -np.inf], np.nan)
-    data[features] = data[features].fillna(data[features].mean())
+    sample_labels_ord = dd["sample_labels_ord"]
+    class_labels_ord = dd["class_labels_ord"]
+    feature_labels_ord = dd["feature_labels_ord"]
+    matrix_ord = dd["matrix_ord"]
+    data_original = dd["data_original"]
 
-    # ── Save original meta columns BEFORE scaling overwrites them ────────────
-    meta_annotation_cols_safe = meta_annotation_cols or []
-    _meta_cols_present = [m for m in meta_annotation_cols_safe if m in data.columns]
-    data_meta_orig = data[_meta_cols_present].copy() if _meta_cols_present else None
+    st.caption("Select a branch of the sample dendrogram to inspect a sample "
+               "cluster: class composition, features driving the cluster, "
+               "and exports.")
 
-    scaler = StandardScaler()
-    Z = scaler.fit_transform(data[features])
-    data[features] = Z
+    opts, icoord, dcoord = _branch_options(col_dend, col_link, sample_labels_ord)
+    fig = _branch_dend_figure(opts, icoord, dcoord, sample_labels_ord,
+                              orientation="top",
+                              title="Sample dendrogram (horizontal)",
+                              line_color="#7a4e9e", unit_label="samples")
+    st.plotly_chart(fig, use_container_width=True, key=f"{capture_name}_dend_viz_samp",
+                    config={"displayModeBar": True, "displaylogo": False,
+                            "scrollZoom": True,
+                            "toImageButtonOptions": {"format": "png", "scale": 3}})
 
-    if np.isnan(Z).any() or np.isinf(Z).any():
-        st.error("Missing/infinite values after preprocessing.")
+    sel = _branch_selectbox(opts, "samples", f"{capture_name}_branch_samp")
+    if sel is None:
         return
 
-    matrix = data[features].values   # (n_samples, n_features)
-    if "ID" in data.columns:
-        sample_labels = data["ID"].astype(str).tolist()
+    idx_in = np.asarray(sel["leaves"], dtype=int)
+    n_branch = len(idx_in)
+    mask = np.zeros(matrix_ord.shape[0], dtype=bool)
+    mask[idx_in] = True
+    st.success(f"✅ **{n_branch} sample(s)** selected in this branch")
+
+    # Class composition
+    cls_arr = np.asarray(class_labels_ord)
+    comp = (pd.Series(cls_arr[mask]).value_counts()
+            .rename_axis("Class").reset_index(name="n"))
+    comp["% of branch"] = (comp["n"] / n_branch * 100).round(1)
+    total_per_cls = pd.Series(cls_arr).value_counts()
+    comp["% of class captured"] = comp.apply(
+        lambda r: round(r["n"] / total_per_cls[r["Class"]] * 100, 1), axis=1)
+
+    c_left, c_right = st.columns([1, 1])
+    with c_left:
+        st.markdown("**Class composition**")
+        st.dataframe(comp, use_container_width=True, hide_index=True)
+    with c_right:
+        st.markdown("**Samples in this branch**")
+        st.dataframe(pd.DataFrame({"Sample": [sample_labels_ord[i] for i in idx_in],
+                                   "Class": cls_arr[mask]}),
+                     use_container_width=True, hide_index=True, height=220)
+
+    # Features driving the cluster: mean z inside vs outside
+    inside = np.nanmean(matrix_ord[mask], axis=0)
+    outside = (np.nanmean(matrix_ord[~mask], axis=0)
+               if (~mask).any() else np.zeros_like(inside))
+    diff = inside - outside
+    df_drv = pd.DataFrame({
+        "Feature": feature_labels_ord,
+        "Mean_Z_branch": np.round(inside, 4),
+        "Mean_Z_rest": np.round(outside, 4),
+        "Delta": np.round(diff, 4),
+    }).sort_values("Delta", ascending=False)
+
+    top_n = min(20, len(df_drv))
+    top = pd.concat([df_drv.head(top_n // 2), df_drv.tail(top_n // 2)])
+    fig_drv = go.Figure(go.Bar(
+        x=top["Delta"][::-1], y=top["Feature"][::-1], orientation="h",
+        marker=dict(color=["#b2182b" if v > 0 else "#2166ac"
+                           for v in top["Delta"][::-1]]),
+        hovertemplate="%{y}<br>Δz = %{x:.3f}<extra></extra>",
+    ))
+    fig_drv.update_layout(
+        height=max(280, 22 * len(top) + 80),
+        margin=dict(l=10, r=20, t=36, b=36),
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(family="Arial", size=10, color="#111"),
+        title=dict(text="<b>Features driving this sample cluster (Δ z-score vs rest)</b>",
+                   font=dict(size=12, family="Arial"), x=0.5),
+        xaxis=dict(title="Δ z-score", zeroline=True, zerolinecolor="#999",
+                   showgrid=True, gridcolor="#eee"),
+        yaxis=dict(automargin=True, showgrid=False),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_drv, use_container_width=True,
+                    key=f"{capture_name}_samp_drivers",
+                    config={"displaylogo": False,
+                            "toImageButtonOptions": {"format": "png", "scale": 3}})
+
+    # Exports
+    c1, c2 = st.columns(2)
+    with c1:
+        try:
+            xls = _export_sample_branch_excel(
+                idx_in=idx_in, data_original=data_original,
+                matrix_z=matrix_ord, feature_labels_ord=feature_labels_ord,
+                sample_labels_ord=sample_labels_ord,
+                class_labels_ord=class_labels_ord, df_drivers=df_drv)
+            st.download_button(f"📥 Full Excel ({n_branch} samples)", data=xls,
+                               file_name=f"sample_branch_{n_branch}samples.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument."
+                                    "spreadsheetml.sheet",
+                               key=f"{capture_name}_samp_excel", use_container_width=True)
+        except Exception as e:
+            st.error(f"Excel export error: {e}")
+    with c2:
+        st.download_button(f"📥 CSV drivers ({len(df_drv)} features)",
+                           data=df_drv.to_csv(index=False).encode("utf-8"),
+                           file_name=f"sample_branch_{n_branch}samples_drivers.csv",
+                           mime="text/csv", key=f"{capture_name}_samp_drv",
+                           use_container_width=True)
+
+
+def _export_sample_branch_excel(idx_in, data_original, matrix_z, feature_labels_ord,
+                                sample_labels_ord, class_labels_ord, df_drivers):
+    """Excel d'une branche d'échantillons : membres, drivers, z-scores, données brutes."""
+    idx_in = np.asarray(idx_in, dtype=int)
+    members = pd.DataFrame({"Sample": [sample_labels_ord[i] for i in idx_in],
+                            "Class": [class_labels_ord[i] for i in idx_in]})
+
+    z_df = pd.DataFrame(matrix_z[idx_in], columns=feature_labels_ord)
+    z_df.insert(0, "Class", members["Class"].values)
+    z_df.insert(0, "Sample", members["Sample"].values)
+
+    if isinstance(data_original, np.ndarray):
+        raw_df = pd.DataFrame(data_original[idx_in], columns=feature_labels_ord)
+        raw_df.insert(0, "Class", members["Class"].values)
+        raw_df.insert(0, "Sample", members["Sample"].values)
     else:
-        sample_labels = [f"sample_{i+1}" for i in range(len(data))]
-    class_labels = data["Class"].astype(str).tolist()
-    n_samples, n_features = matrix.shape
+        raw_df = pd.DataFrame()
 
-    # ── 2. Hierarchical clustering ────────────────────────────────────────────
-    col_link  = linkage(pdist(matrix,   metric="euclidean"), method="ward")
-    col_dend  = dendrogram(col_link,  no_plot=True)
-    col_order = col_dend["leaves"]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        members.to_excel(writer, sheet_name="Branch_Samples", index=False)
+        df_drivers.to_excel(writer, sheet_name="Branch_Drivers", index=False)
+        z_df.to_excel(writer, sheet_name="Branch_Zscores", index=False)
+        if not raw_df.empty:
+            raw_df.to_excel(writer, sheet_name="Branch_RawData", index=False)
+        for sheet in writer.sheets.values():
+            for col in sheet.columns:
+                vals = [len(str(c.value)) for c in col[:8] if c.value is not None]
+                sheet.column_dimensions[col[0].column_letter].width = \
+                    min(max(vals or [10]) + 4, 40)
+    buf.seek(0)
+    return buf.read()
 
-    row_link  = linkage(pdist(matrix.T, metric="euclidean"), method="ward")
-    row_dend  = dendrogram(row_link,  no_plot=True)
-    row_order = row_dend["leaves"]
 
-    matrix_ord         = matrix[np.ix_(col_order, row_order)]
-    sample_labels_ord  = [sample_labels[i] for i in col_order]
-    class_labels_ord   = [class_labels[i]  for i in col_order]
-    feature_labels_ord = [features[i]      for i in row_order]
+def render_heatmap_dendrogram_widget(capture_name: str = "heatmap_fig"):
+    """
+    Widget persistant de sélection de branche, sur les DEUX dendrogrammes :
+      • onglet 1 — features (dendrogramme vertical, axe gauche du heatmap)
+      • onglet 2 — échantillons (dendrogramme horizontal, axe haut du heatmap)
+    À appeler depuis la GUI dans le bloc show_heatmap, en dehors de
+    plot_heatmap_samples. Lit les données stockées en session_state.
+    """
+    dd = st.session_state.get(f"{capture_name}_dend_data")
+    if dd is None:
+        return
 
-    # ── 3. Build figure — rows adapt to meta annotations ─────────────────────
-    #  Structure:  row1=top-dend | row2=annotation strips | row3=heatmap
-    #  col1=left-dend | col2=gap | col3=content
+    st.markdown("---")
+    st.markdown("🌿 Dendrogram branch explorer")
 
-    colorscale = _make_plotly_colorscale(custom_colors)
-    vmin = matrix_ord.min()
-    vmax = matrix_ord.max()
+    tab_feat, tab_samp = st.tabs(["Features — vertical dendrogram",
+                                  "Samples — horizontal dendrogram"])
+    with tab_feat:
+        _feature_branch_panel(dd, capture_name)
+    with tab_samp:
+        _sample_branch_panel(dd, capture_name)
 
-    # ── Resolve valid meta columns & build their colour mappings ─────────────
-    _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
-                 "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
-    # Palettes distinctes pour chaque méta numérique (évite le viridis uniforme)
-    _NUM_CMAPS = ["viridis", "plasma", "cividis", "magma", "inferno",
-                  "YlOrRd", "Blues", "Greens", "PuRd", "BuPu"]
-    meta_annotation_cols = meta_annotation_cols or []
-    # Use data_meta_orig (pre-scaling) for meta col values if available
-    _meta_src = data_meta_orig if data_meta_orig is not None else data
-    valid_meta = [m for m in meta_annotation_cols if m in _meta_src.columns]
-    # Compteur pour alterner les palettes numériques
-    _num_cmap_counter = [0]
-
-    # Annotation strip labels: Class first, then meta columns
-    ann_labels  = ["Class"] + valid_meta
-    n_ann_rows  = len(ann_labels)   # ≥1
-
-    # Height allocation: top-dend=12%, each ann strip proportional, heatmap=rest
-    ann_strip_frac = 0.03           # 3% per annotation strip
-    total_ann = ann_strip_frac * n_ann_rows
-    top_frac   = 0.12
-    heat_frac  = max(0.40, 1.0 - top_frac - total_ann)
-
-    row_heights = [top_frac] + [ann_strip_frac] * n_ann_rows + [heat_frac]
-    n_rows = 2 + n_ann_rows         # top-dend + N strip rows + heatmap
-
-    fig = make_subplots(
-        rows=n_rows, cols=3,
-        column_widths=[0.10, 0.005, 0.895],
-        row_heights=row_heights,
-        horizontal_spacing=0.002,
-        vertical_spacing=0.002,
-    )
-
-    heatmap_row = n_rows            # last row = main heatmap
-
-    # ── 3a. Sample dendrogram (top) ───────────────────────────────────────────
-    for tr in _dend_to_traces(col_dend, n_samples, orientation="top", color="#444"):
-        fig.add_trace(tr, row=1, col=3)
-
-    # ── 3b. Feature dendrogram (left) ────────────────────────────────────────
-    for tr in _dend_to_traces(row_dend, n_features, orientation="left", color="#444"):
-        fig.add_trace(tr, row=heatmap_row, col=1)
-
-    # ── 3c. Annotation strips (row 2 … row 1+n_ann_rows) ────────────────────
-    # We collect legend traces for meta (categorical only) to show in layout
-    legend_annotations = []
-
-    for ann_idx, ann_label in enumerate(ann_labels):
-        strip_row = 2 + ann_idx     # row 2, 3, … for each annotation bar
-
-        if ann_label == "Class":
-            # ── Class strip (same as original) ──────────────────────────────
-            unique_cls = list(dict.fromkeys(class_labels_ord))
-            n_cls = len(unique_cls)
-            cls_idx = {c: i for i, c in enumerate(unique_cls)}
-            z_cls = [[cls_idx[c] for c in class_labels_ord]]
-
-            if n_cls == 1:
-                cls_cs = [[0.0, class_colors.get(unique_cls[0], "#aaa")],
-                           [1.0, class_colors.get(unique_cls[0], "#aaa")]]
-            else:
-                cls_cs = []
-                for i, c in enumerate(unique_cls):
-                    t0, t1 = i / n_cls, (i + 1) / n_cls
-                    cls_cs += [[t0, class_colors.get(c, "#aaa")],
-                                [t1, class_colors.get(c, "#aaa")]]
-
-            fig.add_trace(go.Heatmap(
-                z=z_cls, x=list(range(n_samples)), y=["Class"],
-                colorscale=cls_cs, zmin=0, zmax=n_cls, showscale=False,
-                hovertemplate="<b>Class:</b> %{customdata}<extra></extra>",
-                customdata=[class_labels_ord], xgap=0, ygap=0,
-            ), row=strip_row, col=3)
-
-            # Add class legend entries via invisible scatter
-            for i_cls, cls_name in enumerate(unique_cls):
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode="markers",
-                    marker=dict(size=10, color=class_colors.get(cls_name, "#aaa"),
-                                symbol="square"),
-                    name=cls_name,
-                    legendgroup="cls_group",
-                    legendgrouptitle=dict(
-                        text="<b>Class</b>",
-                        font=dict(size=11, color="black", family="Arial Black"),
-                    ) if i_cls == 0 else {},
-                    showlegend=True,
-                ))
-
-        else:
-            # ── Meta strip ───────────────────────────────────────────────────
-            # Read from pre-scaling source so values are not corrupted by Z-score
-            col_vals = _meta_src[ann_label].values
-            reordered = [col_vals[i] for i in col_order]
-
-            import pandas as _pd_local
-            import matplotlib.colors as _mc
-            if _pd_local.api.types.is_numeric_dtype(_meta_src[ann_label]):
-                # Continuous numeric → palette distincte par meta (pas toujours viridis)
-                _cmap_name = _NUM_CMAPS[_num_cmap_counter[0] % len(_NUM_CMAPS)]
-                _num_cmap_counter[0] += 1
-                _cmap_num = plt.cm.get_cmap(_cmap_name)
-
-                raw_vals = np.array([float(v) if (v is not None and v == v) else np.nan
-                                     for v in reordered])
-                _vmin = float(np.nanmin(raw_vals)) if not np.all(np.isnan(raw_vals)) else 0.0
-                _vmax = float(np.nanmax(raw_vals)) if not np.all(np.isnan(raw_vals)) else 1.0
-                _vrng = _vmax - _vmin if _vmax != _vmin else 1.0
-
-                # Closure explicite pour capturer _vmin/_vrng/_cmap_num correctement
-                def _make_hex(cmap_fn, vmin_c, vrng_c):
-                    def _num_to_hex(v):
-                        if np.isnan(v):
-                            return "#cccccc"
-                        t = (v - vmin_c) / vrng_c
-                        return _mc.to_hex(cmap_fn(np.clip(t, 0, 1)))
-                    return _num_to_hex
-
-                _num_to_hex = _make_hex(_cmap_num, _vmin, _vrng)
-                cell_colors = [_num_to_hex(v) for v in raw_vals]
-
-                z_meta = [[i for i in range(n_samples)]]
-                if n_samples > 1:
-                    disc_cs = []
-                    for i, hexc in enumerate(cell_colors):
-                        t0 = i / (n_samples - 1)
-                        t1 = (i + 1) / (n_samples - 1) if i < n_samples - 1 else 1.0
-                        disc_cs += [[t0, hexc], [min(t1, 1.0), hexc]]
-                else:
-                    disc_cs = [[0.0, cell_colors[0]], [1.0, cell_colors[0]]]
-
-                hover_num = [f"{v:.3g}" if not np.isnan(v) else "N/A" for v in raw_vals]
-                fig.add_trace(go.Heatmap(
-                    z=z_meta, x=list(range(n_samples)), y=[ann_label],
-                    colorscale=disc_cs,
-                    zmin=0, zmax=max(n_samples - 1, 1),
-                    showscale=False,
-                    text=[[f"<b>{ann_label}:</b> {hv}" for hv in hover_num]],
-                    hovertemplate="%{text}<extra></extra>",
-                    xgap=0, ygap=0,
-                ), row=strip_row, col=3)
-
-                # Légende: min, mid, max swatches avec la bonne palette
-                for _label_val, _t in [
-                    (f"{ann_label} (min={_vmin:.2g})", 0.0),
-                    (f"{ann_label} (mid={(_vmin+_vmax)/2:.2g})", 0.5),
-                    (f"{ann_label} (max={_vmax:.2g})", 1.0),
-                ]:
-                    fig.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        marker=dict(
-                            size=10,
-                            color=_mc.to_hex(_cmap_num(_t)),
-                            symbol="square",
-                        ),
-                        name=_label_val,
-                        legendgroup=f"meta_{ann_label}",
-                        legendgrouptitle=dict(
-                            text=f"<b>{ann_label}</b>",
-                            font=dict(size=11, color="black", family="Arial Black"),
-                        ) if _t == 0.0 else {},
-                        showlegend=True,
-                    ))
-
-            else:
-                # Catégorique → couleurs discrètes
-                # Gérer correctement les NaN (ne pas les inclure dans uniq_vals)
-                uniq_vals = []
-                seen_vals = set()
-                for v in reordered:
-                    try:
-                        is_nan = (v is None) or (v != v)
-                    except Exception:
-                        is_nan = False
-                    sv = str(v) if not is_nan else None
-                    if not is_nan and sv not in seen_vals:
-                        uniq_vals.append(v)
-                        seen_vals.add(sv)
-                uniq_vals = sorted(uniq_vals, key=lambda x: str(x))
-
-                val_map = {v: _AUTO_PAL[i % len(_AUTO_PAL)]
-                           for i, v in enumerate(uniq_vals)}
-                n_v = len(uniq_vals)
-                if n_v == 0:
-                    fig.add_trace(go.Heatmap(
-                        z=[[0]*n_samples], x=list(range(n_samples)), y=[ann_label],
-                        colorscale=[[0, "#cccccc"], [1, "#cccccc"]],
-                        showscale=False, xgap=0, ygap=0,
-                    ), row=strip_row, col=3)
-                else:
-                    def _val_to_idx(v):
-                        try:
-                            is_nan = (v is None) or (v != v)
-                        except Exception:
-                            is_nan = False
-                        if is_nan:
-                            return -1
-                        return next((i for i, uv in enumerate(uniq_vals) if str(uv) == str(v)), -1)
-
-                    z_indices = [_val_to_idx(v) for v in reordered]
-                    z_shifted = [idx + 1 if idx >= 0 else 0 for idx in z_indices]
-                    z_meta = [z_shifted]
-
-                    n_total = n_v + 1
-                    meta_cs = [[0.0, "#cccccc"], [1/n_total - 1e-9, "#cccccc"]]
-                    for i, v in enumerate(uniq_vals):
-                        t0 = (i + 1) / n_total
-                        t1 = (i + 2) / n_total
-                        meta_cs += [[t0, val_map[v]], [min(t1 - 1e-9, 1.0), val_map[v]]]
-                    meta_cs[-1][0] = 1.0
-
-                    hover_meta = []
-                    for v in reordered:
-                        try:
-                            is_nan = (v is None) or (v != v)
-                        except Exception:
-                            is_nan = False
-                        hover_meta.append(f"<b>{ann_label}:</b> {'N/A' if is_nan else v}")
-
-                    fig.add_trace(go.Heatmap(
-                        z=z_meta, x=list(range(n_samples)), y=[ann_label],
-                        colorscale=meta_cs, zmin=0, zmax=n_total,
-                        showscale=False,
-                        text=[hover_meta], hovertemplate="%{text}<extra></extra>",
-                        xgap=0, ygap=0,
-                    ), row=strip_row, col=3)
-
-                    for i_v, v in enumerate(uniq_vals):
-                        fig.add_trace(go.Scatter(
-                            x=[None], y=[None], mode="markers",
-                            marker=dict(size=10, color=val_map[v], symbol="square"),
-                            name=f"{v}",
-                            legendgroup=f"meta_{ann_label}",
-                            legendgrouptitle=dict(
-                                text=f"<b>{ann_label}</b>",
-                                font=dict(size=11, color="black", family="Arial Black"),
-                            ) if i_v == 0 else {},
-                            showlegend=True,
-                        ))
-
-    # ── 3d. Main heatmap ──────────────────────────────────────────────────────
-    hover_text = [
-        [
-            f"<b>Sample:</b> {sample_labels_ord[j]}<br>"
-            f"<b>Class:</b>  {class_labels_ord[j]}<br>"
-            f"<b>Feature:</b> {feature_labels_ord[i]}<br>"
-            f"<b>Z-score:</b> {matrix_ord[j, i]:.3f}"
-            for j in range(n_samples)
-        ]
-        for i in range(n_features)
-    ]
-
-    fig.add_trace(
-        go.Heatmap(
-            z=matrix_ord.T.tolist(),
-            x=list(range(n_samples)),
-            y=list(range(n_features)),
-            colorscale=colorscale,
-            zmin=vmin, zmax=vmax,
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-            colorbar=dict(
-                title=dict(
-                    text="<b>Z-score</b>",
-                    side="right",
-                    font=dict(size=13, color="black", family="Arial Black"),
-                ),
-                thickness=14,
-                len=0.50,
-                x=1.25,
-                xanchor="left",
-                tickfont=dict(size=11, color="black", family="Arial"),
-                tickcolor="black",
-                outlinecolor="black",
-                outlinewidth=1,
-            ),
-            xgap=0.4, ygap=0.4,
-        ),
-        row=heatmap_row, col=3,
-    )
-
-    # ── 4. Axes ───────────────────────────────────────────────────────────────
-    # Hide all tick labels on dendrogram & gap panels
-    for r in range(1, n_rows + 1):
-        for c in [1, 2]:
-            fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, row=r, col=c)
-            fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False, row=r, col=c)
-
-    # Top dendrogram
-    fig.update_xaxes(range=[-0.5, n_samples - 0.5], showticklabels=False, row=1, col=3)
-    fig.update_yaxes(autorange=True, showticklabels=False, row=1, col=3)
-
-    # Left dendrogram
-    fig.update_yaxes(range=[-0.5, n_features - 0.5], autorange=False, row=heatmap_row, col=1)
-    fig.update_xaxes(autorange=True, row=heatmap_row, col=1)
-
-    # Annotation strips — link x axis to heatmap x
-    for strip_row in range(2, 2 + n_ann_rows):
-        fig.update_xaxes(range=[-0.5, n_samples - 0.5],
-                         showticklabels=False, row=strip_row, col=3)
-        # Show the annotation label on y-axis (strip label)
-        fig.update_yaxes(showticklabels=True, tickfont=dict(size=10, color="black", family="Arial"),
-                         showgrid=False, row=strip_row, col=3)
-
-    # Main heatmap x: sample names
-    fig.update_xaxes(
-        tickmode="array",
-        tickvals=list(range(n_samples)),
-        ticktext=sample_labels_ord,
-        tickangle=90,
-        tickfont=dict(size=10, color="black", family="Arial"),
-        showgrid=False, zeroline=False,
-        range=[-0.5, n_samples - 0.5],
-        row=heatmap_row, col=3,
-    )
-
-    # Heatmap y: feature names on right side, bottom→top (index 0 = bottom)
-    fig.update_yaxes(
-        tickmode="array",
-        tickvals=list(range(n_features)),
-        ticktext=[f"<b>{f}</b>" for f in feature_labels_ord],
-        tickfont=dict(size=10, color="black", family="Arial"),
-        showgrid=False, zeroline=False,
-        range=[-0.5, n_features - 0.5],
-        side="right",
-        row=heatmap_row, col=3,
-    )
-
-    # ── 5. Layout — publication-ready ────────────────────────────────────────
-    # Square-ish sizing: each feature row ≈ 20 px, capped for readability
-    _px_per_feature = max(8, min(20, 700 // max(n_features, 1)))
-    _px_per_sample  = max(8, min(20, 700 // max(n_samples,  1)))
-    plot_height = max(550, min(2000, 220 + n_features * _px_per_feature + n_ann_rows * 32))
-    plot_width  = max(600, min(2400, 300 + n_samples  * _px_per_sample  + 250))
-
-    fig.update_layout(
-        height=plot_height,
-        width=plot_width,
-        margin=dict(l=10, r=280, t=20, b=10),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font=dict(color="black", family="Arial", size=12),
-        dragmode="zoom",
-        hovermode="closest",
-        showlegend=True,
-        legend=dict(
-            x=1.02, y=1.0, xanchor="left", yanchor="top",
-            bgcolor="rgba(255,255,255,0.95)",
-            bordercolor="black", borderwidth=1,
-            font=dict(size=11, color="black", family="Arial"),
-            title=dict(
-                text="<b>Legend</b>",
-                font=dict(size=13, color="black", family="Arial Black"),
-            ),
-            tracegroupgap=4,
-            itemsizing="constant",
-        ),
-    )
-
-    if caption:
-        fig.add_annotation(
-            text=caption,
-            xref="paper", yref="paper",
-            x=0.5, y=-0.04,
-            showarrow=False,
-            font=dict(size=11, color="gray"),
-        )
-
-    # ── 6. Render ─────────────────────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True, config={
-        "scrollZoom": True,
-        "displayModeBar": True,
-        "toImageButtonOptions": {
-            "format": "png",
-            "scale": 4,           # 4× → ~300 DPI equivalent at screen resolution
-            "filename": "heatmap",
-        },
-    })
-
-    # ── 7. Static PNG (exact original seaborn version) ────────────────────────
-    img_bytes = _build_static_png_original(
-        data_orig=data,
-        features=features,
-        class_colors=class_colors,
-        custom_colors=custom_colors,
-        show_sample_names=show_sample_names,
-        n_samples=n_samples,
-        n_features=n_features,
-        meta_annotation_cols=valid_meta,
-        data_meta_orig=data_meta_orig,
-    )
-
-    # Store plotly fig — two purposes:
-    #   1. Keyed by capture_name for the HTML report pipeline (_report_*)
-    #   2. Keyed by capture_name directly so the GUI can re-display it across
-    #      reruns (e.g. when a download_button is clicked) without re-running
-    #      the full computation.
-    if capture_name:
-        st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
-        st.session_state[capture_name] = fig          # ← direct re-display key
-        # Store PNG bytes so GUI persistent blocks can re-render the download
-        # button across reruns without needing kaleido or re-running the computation.
-        st.session_state[f"{capture_name}_png_bytes"] = img_bytes
-
-    st.download_button(
-        label="📥 Download Heatmap as PNG",
-        data=img_bytes,
-        file_name="heatmap.png",
-        mime="image/png",
-        key=f"dl_heatmap_png_{capture_name or 'heatmap'}",
-    )
-
-    gc.collect()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2456,256 +1949,6 @@ def _build_static_png_fast(
     return buf.read()
 
 
-def _build_static_png_original(
-    data_orig, features, class_colors, custom_colors,
-    show_sample_names, n_samples, n_features,
-    meta_annotation_cols=None, data_meta_orig=None,
-):
-    import seaborn as sns
-    from matplotlib.colors import LinearSegmentedColormap
-    import matplotlib.patches as mpatches
-    import matplotlib.colors as mcolors
-
-    _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
-                 "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
-    # Palettes distinctes pour les méta numériques (pas que viridis)
-    _NUM_CMAPS_MPL = ["viridis", "plasma", "cividis", "magma", "inferno",
-                      "YlOrRd", "Blues", "Greens", "PuRd", "BuPu"]
-
-    # Publication-ready colormap — N=256 ensures smooth gradient identical to Plotly version
-    cmap = LinearSegmentedColormap.from_list("custom_cmap", custom_colors, N=256)
-    vmin = data_orig[features].min().min()
-    vmax = data_orig[features].max().max()
-    # Font sizes scaled for readability at 300 DPI
-    fontsize       = max(10, 20 - max(n_samples, n_features) // 10)
-    label_fontsize = fontsize + 2   # axis / legend titles
-    tick_fontsize  = fontsize       # tick labels
-
-    meta_annotation_cols = meta_annotation_cols or []
-    # Use data_meta_orig (pre-scaling) for meta col values if available
-    _meta_src = data_meta_orig if data_meta_orig is not None else data_orig
-    valid_meta = [m for m in meta_annotation_cols if m in _meta_src.columns]
-
-    col_colors_list = [data_orig["Class"].map(class_colors).rename("Class")]
-    legend_handles = [
-        mpatches.Patch(color=c, label=f"Class: {cls}")
-        for cls, c in class_colors.items()
-        if cls in data_orig["Class"].unique()
-    ]
-
-    _num_cmap_idx = 0  # compteur pour alterner les palettes numériques
-
-    for m in valid_meta:
-        vals = _meta_src[m]
-        if vals.dtype.kind in "iuf":
-            # Numérique → palette distincte par variable
-            _cmap_name = _NUM_CMAPS_MPL[_num_cmap_idx % len(_NUM_CMAPS_MPL)]
-            _num_cmap_idx += 1
-            _cmap_fn = plt.cm.get_cmap(_cmap_name)
-            _vmin_m = vals.min()
-            _vmax_m = vals.max()
-            _norm = mcolors.Normalize(vmin=_vmin_m, vmax=_vmax_m)
-
-            # Closure explicite pour éviter le bug de capture tardive de la lambda
-            def _make_mapper(cmap_fn, norm_fn):
-                def _mapper(v):
-                    if pd.isna(v):
-                        return "#cccccc"
-                    return mcolors.to_hex(cmap_fn(norm_fn(v)))
-                return _mapper
-
-            _mapper = _make_mapper(_cmap_fn, _norm)
-            col_colors_list.append(vals.map(_mapper).rename(m))
-            legend_handles += [
-                mpatches.Patch(
-                    color=mcolors.to_hex(_cmap_fn(t)),
-                    label=f"{m}: {_vmin_m + t * (_vmax_m - _vmin_m):.2g}"
-                )
-                for t in [0.0, 0.5, 1.0]
-            ]
-        else:
-            # Catégorique → gérer NaN correctement
-            uniq = []
-            seen_str = set()
-            for v in vals.dropna():
-                sv = str(v)
-                if sv not in seen_str:
-                    uniq.append(v)
-                    seen_str.add(sv)
-            uniq = sorted(uniq, key=lambda x: str(x))
-            m_map = {v: _AUTO_PAL[i % len(_AUTO_PAL)] for i, v in enumerate(uniq)}
-
-            def _make_cat_mapper(vmap):
-                def _cat_mapper(v):
-                    if pd.isna(v):
-                        return "#cccccc"
-                    return vmap.get(v, "#cccccc")
-                return _cat_mapper
-
-            col_colors_list.append(vals.map(_make_cat_mapper(m_map)).rename(m))
-            legend_handles += [
-                mpatches.Patch(color=c, label=f"{m}: {v}")
-                for v, c in m_map.items()
-            ]
-
-    import pandas as _pd_local
-    # Reset index so all series align by position
-    col_colors_list_reset = [s.reset_index(drop=True) for s in col_colors_list]
-    col_colors_df = (_pd_local.concat(col_colors_list_reset, axis=1)
-                     if len(col_colors_list_reset) > 1
-                     else col_colors_list_reset[0])
-
-    # ── Figsize: near-square — limit per-cell to avoid extreme strip shapes ──
-    # Each sample column ≈ 0.30 in, each feature row ≈ 0.30 in (square cells).
-    _cell = 0.30   # inches per sample / per feature → square cells
-    _fig_w = max(12, min(32, n_samples * _cell + 5))
-    _fig_h = max(8,  min(28, n_features * _cell + 5))
-
-    g = sns.clustermap(
-        data_orig[features].T,
-        cmap=cmap, square=True,
-        col_cluster=True, row_cluster=True, center=0, z_score=None,
-        col_colors=col_colors_df,
-        cbar_kws={
-            "shrink": 0.5, "label": "Z-score",
-            "format": "%.1f",
-        },
-        yticklabels=True if n_features <= 60 else False,
-        xticklabels=False, vmin=vmin, vmax=vmax,
-        figsize=(_fig_w, _fig_h),
-        dendrogram_ratio=(0.12, 0.12),
-        colors_ratio=0.03,
-        linewidths=0,
-    )
-
-    # ── Colorbar font — large black text ──────────────────────────────────────
-    try:
-        cbar = g.ax_cbar
-        cbar.tick_params(labelsize=label_fontsize, labelcolor="black", color="black")
-        cbar.set_ylabel("Z-score", fontsize=label_fontsize, color="black", fontweight="bold")
-    except Exception:
-        pass
-
-    # ── Sample name labels on x-axis ─────────────────────────────────────────
-    if show_sample_names and n_samples <= 50:
-        col_order = g.dendrogram_col.reordered_ind
-        if "ID" in data_orig.columns:
-            ordered_labels = data_orig["ID"].astype(str).iloc[col_order].values
-        elif "File" in data_orig.columns:
-            ordered_labels = data_orig["File"].astype(str).iloc[col_order].values
-        else:
-            ordered_labels = [f"sample_{i+1}" for i in col_order]
-        g.ax_heatmap.set_xticks(np.arange(len(ordered_labels)) + 0.5)
-        g.ax_heatmap.set_xticklabels(
-            ordered_labels, rotation=45, ha="right",
-            fontsize=tick_fontsize, color="black",
-        )
-
-    # ── Feature (y-axis) tick labels ──────────────────────────────────────────
-    if n_features <= 60:
-        g.ax_heatmap.set_yticklabels(
-            [lbl.get_text() for lbl in g.ax_heatmap.get_yticklabels()],
-            fontsize=tick_fontsize, color="black", fontweight="bold",
-        )
-
-    # ── Annotation strip labels ───────────────────────────────────────────────
-    try:
-        ann_axes = g.ax_col_colors if isinstance(g.ax_col_colors, list) else [g.ax_col_colors]
-        for ax_ann, lbl in zip(ann_axes, ["Class"] + valid_meta):
-            ax_ann.set_ylabel(
-                lbl, fontsize=label_fontsize, fontweight="bold",
-                rotation=0, labelpad=55, va="center", ha="right", color="black",
-            )
-            ax_ann.yaxis.set_label_position("left")
-    except Exception:
-        pass
-
-    # ── Légende — éviter les chevauchements avec ncol adaptatif ─────────────
-    if legend_handles:
-        n_cols = max(1, len(legend_handles) // 12)
-        leg = g.ax_heatmap.legend(
-            handles=legend_handles,
-            loc="upper left",
-            bbox_to_anchor=(1.05, 1.02),
-            frameon=True,
-            fontsize=max(8, label_fontsize - 1),
-            title="Legend",
-            title_fontsize=label_fontsize,
-            ncol=n_cols,
-            columnspacing=0.8,
-            handlelength=1.2,
-            borderpad=0.5,
-        )
-        leg.get_title().set_color("black")
-        leg.get_title().set_fontweight("bold")
-        for text in leg.get_texts():
-            text.set_color("black")
-
-    buf = io.BytesIO()
-    g.fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
-    buf.seek(0)
-    plt.close(g.fig)
-    return buf.getvalue()
-
-
-
-
-
-
-# new code block
-
-"""
-PATCH — profiler_features_importance.py
-========================================
-Deux nouvelles fonctionnalités pour le heatmap Plotly :
-
-  1. CHECKBOX "Afficher les noms des features"
-     ─────────────────────────────────────────
-     Un st.checkbox apparaît juste avant le heatmap Plotly.
-     Quand il est décoché les labels Y sont masqués (tick invisible),
-     ce qui désengorge le graphe sur de larges datasets.
-
-  2. SÉLECTION DE BRANCHE DU DENDROGRAMME → EXPORT EXCEL (style Perseus)
-     ──────────────────────────────────────────────────────────────────────
-     Après l'affichage du heatmap, un widget interactif HTML5 (Plotly
-     clickData via st.components) affiche le dendrogramme des features
-     (axe gauche). L'utilisateur clique sur un nœud = toute la sous-arbre
-     est collectée. Un bouton "📥 Export branch to Excel" génère un Excel
-     avec les protéines/features de cette branche + leurs Z-scores par
-     classe (moyenne ± SD) + les données brutes individuelles.
-
-HOW TO APPLY
-─────────────
-Remplacez la fonction `plot_heatmap_samples` entière par celle ci-dessous.
-Les helpers `_dend_to_traces`, `_make_plotly_colorscale` et
-`_build_static_png_original` restent inchangés.
-
-La seule dépendance ajoutée est `openpyxl` (déjà présente dans Profiler)
-et `streamlit.components.v1` (déjà importé).
-"""
-
-# ─────────────────────────────────────────────────────────────────────────────
-# COPIER-COLLER CETTE FONCTION COMPLÈTE à la place de l'ancienne
-# plot_heatmap_samples dans profiler_features_importance.py
-# ─────────────────────────────────────────────────────────────────────────────
-
-import io
-import gc
-import json
-import base64
-
-import numpy as np
-import pandas as pd
-import streamlit as st
-import streamlit.components.v1 as components
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from scipy.cluster.hierarchy import linkage, dendrogram
-from scipy.spatial.distance import pdist
-from sklearn.preprocessing import StandardScaler
-from matplotlib.colors import LinearSegmentedColormap, to_hex
-import matplotlib.pyplot as plt
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER : extraire les feuilles d'un sous-arbre à partir d'un nœud cliqué
@@ -2733,199 +1976,6 @@ def _leaves_of_subtree(Z, node_id, n_leaves):
     return sorted(leaves)
 
 
-def _build_dend_node_positions(dend, n_leaves, orientation="left"):
-    """
-    Construit un mapping : coordonnée (x_paper, y_paper) → node_id interne.
-    Utilisé pour identifier quel nœud a été cliqué dans le dendrogramme.
-
-    Retourne une liste de dicts :
-      { 'node_id': int, 'x': float, 'y': float, 'height': float }
-
-    Les coordonnées sont dans l'espace Plotly normalisé (même que _dend_to_traces).
-    """
-    icoord = np.array(dend["icoord"])   # shape (n_merges, 4)
-    dcoord = np.array(dend["dcoord"])   # shape (n_merges, 4)
-    ivl    = dend["ivl"]                # liste ordonnée des labels feuilles
-
-    # scipy numérote les merges de gauche à droite dans dcoord[:, 1] croissant
-    # chaque ligne icoord/dcoord correspond à un merge (nœud interne)
-    # Les nœuds internes commencent à n_leaves dans scipy
-
-    def norm(x):
-        return (x - 5) / 10
-
-    nodes = []
-    for merge_idx, (xs, ys) in enumerate(zip(icoord, dcoord)):
-        # Le sommet du merge est au milieu en x, hauteur ys[1]=ys[2]
-        cx = norm((xs[1] + xs[2]) / 2)   # x centre du nœud (position feuille)
-        cy = ys[1]                         # hauteur du merge (= ys[2])
-        nodes.append({
-            "merge_idx": merge_idx,
-            "cx": cx,
-            "cy": cy,
-        })
-    return nodes, icoord, dcoord
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER : widget HTML interactif pour cliquer dans le dendrogramme
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _render_dendrogram_click_widget(row_dend, row_link, n_features, feature_labels_ord,
-                                     matrix_ord, sample_labels_ord, class_labels_ord,
-                                     session_key="dend_branch_selection"):
-    """
-    Affiche un mini-dendrogramme Plotly cliquable (features, axe vertical).
-    Quand l'utilisateur clique sur un nœud → les feuilles de la branche sont
-    stockées dans st.session_state[session_key].
-
-    Retourne True si une sélection est active, False sinon.
-    """
-    st.markdown("---")
-    st.markdown(
-        "### 🌿 Sélection de branche — Dendrogramme des features\n"
-        "*Cliquez sur un nœud du dendrogramme pour sélectionner une branche "
-        "et exporter les features correspondantes vers Excel (style Perseus).*"
-    )
-
-    # ── Construire le mini-dendrogramme cliquable ────────────────────────────
-    icoord = np.array(row_dend["icoord"])
-    dcoord = np.array(row_dend["dcoord"])
-
-    def norm(x):
-        return (x - 5) / 10
-
-    fig_dend = go.Figure()
-
-    # Traces des branches
-    for xs, ys in zip(icoord, dcoord):
-        xs_n = [norm(v) for v in xs]
-        # orientation left : x=height, y=leaf position
-        fig_dend.add_trace(go.Scatter(
-            x=list(ys),
-            y=xs_n,
-            mode="lines",
-            line=dict(color="#2c5f8a", width=2),
-            hoverinfo="skip",
-            showlegend=False,
-        ))
-
-    # Points aux nœuds internes (cliquables)
-    n_leaves = n_features
-    node_cx, node_cy, node_heights = [], [], []
-    node_labels = []
-
-    for merge_idx, (xs, ys) in enumerate(zip(icoord, dcoord)):
-        cx = norm((xs[1] + xs[2]) / 2)
-        cy = ys[1]
-        # Récupérer les feuilles de ce sous-arbre pour le label hover
-        left_child  = int(row_link[merge_idx, 0])
-        right_child = int(row_link[merge_idx, 1])
-        leaves = _leaves_of_subtree(row_link, n_leaves + merge_idx, n_leaves)
-        feat_names_branch = [feature_labels_ord[l] for l in leaves]
-        preview = ", ".join(feat_names_branch[:5])
-        if len(feat_names_branch) > 5:
-            preview += f" … (+{len(feat_names_branch)-5})"
-        node_cx.append(cy)        # x = height (mirrored)
-        node_cy.append(cx)        # y = leaf position
-        node_heights.append(cy)
-        node_labels.append(
-            f"<b>Branche</b><br>{len(feat_names_branch)} features<br>{preview}"
-        )
-
-    fig_dend.add_trace(go.Scatter(
-        x=node_cx,
-        y=node_cy,
-        mode="markers",
-        marker=dict(
-            size=10,
-            color="#e05f2e",
-            symbol="circle",
-            line=dict(color="white", width=1.5),
-        ),
-        hovertext=node_labels,
-        hovertemplate="%{hovertext}<extra></extra>",
-        showlegend=False,
-        name="__nodes__",
-        customdata=list(range(len(node_cx))),  # merge_idx
-    ))
-
-    # Ticks features sur l'axe y
-    leaf_y = [norm(5 + 10 * i) for i in range(n_features)]
-    fig_dend.update_layout(
-        height=max(300, min(900, n_features * 18 + 60)),
-        width=420,
-        margin=dict(l=10, r=10, t=40, b=20),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        title=dict(
-            text="<b>Dendrogramme features</b> — cliquez un nœud 🔴",
-            font=dict(size=13, color="#2c5f8a", family="Arial Black"),
-            x=0.5,
-        ),
-        xaxis=dict(
-            title="Hauteur (distance Ward)",
-            showgrid=True, gridcolor="#eee",
-            zeroline=False,
-            titlefont=dict(size=11),
-        ),
-        yaxis=dict(
-            tickmode="array",
-            tickvals=leaf_y,
-            ticktext=feature_labels_ord,
-            tickfont=dict(size=9, color="black"),
-            showgrid=False,
-            zeroline=False,
-        ),
-        hovermode="closest",
-        clickmode="event",
-    )
-
-    # ── Afficher le dendrogramme (lecture seule) ─────────────────────────────
-    st.plotly_chart(
-        fig_dend,
-        use_container_width=False,
-        key=f"{session_key}_chart",
-        config={"displayModeBar": False},
-    )
-
-    # ── Sélection de branche via selectbox (fiable) ──────────────────────────
-    # Construire les options : une par nœud interne, triées par taille décroissante
-    node_options = []
-    for merge_idx, (xs, ys) in enumerate(zip(icoord, dcoord)):
-        leaves = _leaves_of_subtree(row_link, n_leaves + merge_idx, n_leaves)
-        feat_names = [feature_labels_ord[l] for l in leaves]
-        preview = ", ".join(feat_names[:4])
-        if len(feat_names) > 4:
-            preview += f" … +{len(feat_names)-4}"
-        label = f"{len(feat_names)} features — {preview}"
-        node_options.append((label, merge_idx, feat_names))
-    # Trier par nombre de features décroissant
-    node_options.sort(key=lambda x: -len(x[2]))
-
-    option_labels = ["— Choisir une branche —"] + [o[0] for o in node_options]
-    _sel_key = f"{session_key}_selectbox"
-
-    selected_label = st.selectbox(
-        "🌿 Sélectionner une branche du dendrogramme",
-        options=option_labels,
-        index=0,
-        key=_sel_key,
-        help="Choisissez un nœud pour sélectionner le groupe de features correspondant et l'exporter en CSV/Excel.",
-    )
-
-    selected_features_branch = None
-    if selected_label != "— Choisir une branche —":
-        match = next((o for o in node_options if o[0] == selected_label), None)
-        if match:
-            selected_features_branch = match[2]
-            st.session_state[session_key] = selected_features_branch
-
-    # Lire depuis session_state si déjà sélectionné et selectbox réinitialisé
-    if selected_features_branch is None and session_key in st.session_state:
-        selected_features_branch = st.session_state[session_key]
-
-    return selected_features_branch
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3009,12 +2059,246 @@ def _export_branch_excel(
     return buf.read()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FONCTION PRINCIPALE — remplace l'ancienne plot_heatmap_samples
-# ─────────────────────────────────────────────────────────────────────────────
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PROFILER — HEATMAP "PUBLI-READY"  (drop-in replacement for plot_heatmap_samples)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  INSTALLATION
+#  ------------
+#  Coller ce bloc *à la fin* de profiler_features_importance.py.
+#  Python garde la dernière définition d'un nom : cette version remplace donc
+#  automatiquement les 3 anciennes `plot_heatmap_samples` (lignes ~1291, ~1824,
+#  ~3024), pour Profiler.py ET Profiler_Desktop_Gui.py, sans toucher aux appels.
+#  (Nettoyage recommandé ensuite : supprimer les 3 anciennes définitions.)
+#
+#  CE QUI CHANGE — POURQUOI C'EST RAPIDE
+#  -------------------------------------
+#   • Dendrogrammes : 1 SEULE trace chacun (segments séparés par None) au lieu
+#     d'une go.Scatter par branche  →  ~2 traces au lieu de 2×(n-1).
+#   • Bandes d'annotation : 1 SEUL go.Heatmap (n_ann × n_samples) avec une
+#     colorscale discrète globale, au lieu d'un subplot + 1 trace par annotation.
+#   • Grille : 3×2 fixe au lieu de (2+n_ann)×3  →  moins d'axes à monter.
+#   • Métadonnées numériques : binnées en 9 paliers au lieu de n_samples paliers
+#     (l'ancienne version construisait une colorscale de 2×n_samples points !).
+#   • Hover : tableau de chaînes construit seulement si n_cells ≤ HOVER_MAX_CELLS,
+#     sinon template léger — plus de payload JSON de plusieurs Mo.
+#   • Légende plafonnée (MAX_LEGEND_PER_GROUP) : plus de 60 entrées fantômes.
+#
+#  CE QUI CHANGE — POURQUOI C'EST BEAU
+#  -----------------------------------
+#   • Colorscale divergente RdBu_r centrée sur 0 (les z-scores sont signés) et
+#     bornes robustes (percentile 2/98 symétrisé) : les outliers n'écrasent plus
+#     le contraste.  `diverging=False` restaure l'ancien comportement.
+#   • Dendrogrammes gris fins, non intrusifs.
+#   • Bande d'annotation compacte collée au heatmap, légende groupée à droite,
+#     colorbar en bas à droite — jamais de recouvrement.
+#   • Typo Arial homogène, pas de gras partout, fond blanc, cadre fin.
+#   • Export PNG vectorisé-quality : scale 3 (~300 dpi) + SVG dans la toolbar.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import gc as _gc
+import numpy as _np
+import pandas as _pd
+import plotly.graph_objects as _go
+from plotly.subplots import make_subplots as _make_subplots
+import matplotlib.colors as _mcolors
+
+try:
+    import streamlit as _st
+except Exception:                                    # pragma: no cover
+    _st = None
+
+
+# ── Réglages ────────────────────────────────────────────────────────────────
+HOVER_MAX_CELLS      = 60_000   # au-delà : hover léger (z seul)
+MAX_LEGEND_PER_GROUP = 12       # entrées de légende max par annotation
+N_META_BINS          = 9        # paliers pour une annotation numérique
+_EPS                 = 1e-9
+
+_AUTO_PAL = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B3",
+             "#937860", "#DA8BC3", "#8C8C8C", "#CCB974", "#64B5CD"]
+_NUM_CMAPS = ["viridis", "cividis", "magma", "YlGnBu", "PuRd"]
+_NA_COLOR = "#d9d9d9"
+
+
+def _get_cmap(name):
+    """matplotlib >= 3.9 compatible."""
+    try:
+        import matplotlib as _mpl
+        return _mpl.colormaps[name]
+    except Exception:                                # pragma: no cover
+        import matplotlib.pyplot as _plt
+        return _plt.cm.get_cmap(name)
+
+
+# ── 1. Dendrogramme → UNE seule trace ───────────────────────────────────────
+def _dend_single_trace(dend, orientation="top", color="#6b6b6b", width=1.0):
+    """
+    Tous les segments du dendrogramme dans une seule go.Scatter, séparés par
+    None (rupture de ligne). Visuellement identique, ~N fois moins lourd.
+    """
+    ic = _np.asarray(dend["icoord"], dtype=float)
+    dc = _np.asarray(dend["dcoord"], dtype=float)
+    if ic.size == 0:
+        return _go.Scatter(x=[], y=[], mode="lines", hoverinfo="skip", showlegend=False)
+
+    leaf = (ic - 5.0) / 10.0                      # scipy place les feuilles à 5,15,25…
+    n = leaf.shape[0]
+    nan_col = _np.full((n, 1), _np.nan)
+
+    a = _np.hstack([leaf, nan_col]).ravel()       # positions "feuille"
+    b = _np.hstack([dc,   nan_col]).ravel()       # hauteurs
+
+    if orientation == "top":
+        x, y = a, b
+    else:                                          # "left" : arbre ouvert vers le heatmap
+        x, y = -b, a
+
+    return _go.Scatter(
+        x=x, y=y, mode="lines",
+        line=dict(color=color, width=width, shape="linear"),
+        hoverinfo="skip", showlegend=False, connectgaps=False,
+    )
+
+
+# ── 2. Colorscales ──────────────────────────────────────────────────────────
+def _discrete_colorscale(colors):
+    """Colorscale en paliers nets : z = idx + 0.5, zmin=0, zmax=len(colors)."""
+    k = len(colors)
+    if k == 0:
+        return [[0.0, _NA_COLOR], [1.0, _NA_COLOR]]
+    cs = []
+    for i, c in enumerate(colors):
+        t0, t1 = i / k, (i + 1) / k
+        cs += [[t0, c], [max(t1 - _EPS, t0), c]]
+    cs[-1][0] = 1.0
+    return cs
+
+
+def _diverging_colorscale(name="RdBu_r", n=64):
+    cm = _get_cmap(name)
+    return [[i / (n - 1), _mcolors.to_hex(cm(i / (n - 1)))] for i in range(n)]
+
+
+def _continuous_colorscale(custom_colors, n=64):
+    cm = _mcolors.LinearSegmentedColormap.from_list("cc", custom_colors, N=256)
+    return [[i / (n - 1), _mcolors.to_hex(cm(i / (n - 1)))] for i in range(n)]
+
+
+def _robust_sym_limits(mat, lo=2.0, hi=98.0):
+    """Bornes symétriques robustes → 0 reste au centre de la RdBu."""
+    v = _np.nanpercentile(mat, [lo, hi])
+    m = float(max(abs(v[0]), abs(v[1])))
+    if not _np.isfinite(m) or m == 0:
+        m = float(_np.nanmax(_np.abs(mat))) or 1.0
+    return -m, m
+
+
+# ── 3. Bande d'annotation : UN seul heatmap pour toutes les lignes ──────────
+def _build_annotation_band(ann_labels, ann_values, class_colors, n_samples):
+    """
+    Retourne (trace, legend_traces, y_labels).
+    z : (n_ann, n_samples) d'indices globaux → une colorscale discrète unique.
+    """
+    palette, z_rows, hover_rows, legend_traces = [], [], [], []
+    num_cmap_i = 0
+
+    for label, vals in zip(ann_labels, ann_values):
+        vals = list(vals)
+        is_num = False
+        if label != "Class":
+            try:
+                is_num = _pd.api.types.is_numeric_dtype(_pd.Series(vals))
+            except Exception:
+                is_num = False
+
+        if label == "Class":
+            uniq = list(dict.fromkeys([str(v) for v in vals]))
+            base = len(palette)
+            palette += [class_colors.get(u, "#aaaaaa") for u in uniq]
+            idx = {u: base + i for i, u in enumerate(uniq)}
+            z_rows.append([idx[str(v)] + 0.5 for v in vals])
+            hover_rows.append([f"Class: {v}" for v in vals])
+            for i, u in enumerate(uniq[:MAX_LEGEND_PER_GROUP]):
+                legend_traces.append(_legend_item(
+                    u, class_colors.get(u, "#aaaaaa"), "cls_group", "Class", i == 0))
+
+        elif is_num:
+            arr = _np.array([float(v) if (v is not None and v == v) else _np.nan
+                             for v in vals], dtype=float)
+            cmap = _get_cmap(_NUM_CMAPS[num_cmap_i % len(_NUM_CMAPS)])
+            num_cmap_i += 1
+            finite = arr[_np.isfinite(arr)]
+            vmin = float(finite.min()) if finite.size else 0.0
+            vmax = float(finite.max()) if finite.size else 1.0
+            rng = (vmax - vmin) or 1.0
+
+            base = len(palette)
+            bin_colors = [_mcolors.to_hex(cmap(i / (N_META_BINS - 1)))
+                          for i in range(N_META_BINS)]
+            palette += bin_colors
+            b = _np.clip(((arr - vmin) / rng * (N_META_BINS - 1)).round(), 0, N_META_BINS - 1)
+            z_rows.append([(base + int(bi) + 0.5) if _np.isfinite(a) else None
+                           for bi, a in zip(_np.nan_to_num(b), arr)])
+            hover_rows.append([f"{label}: {a:.3g}" if _np.isfinite(a) else f"{label}: N/A"
+                               for a in arr])
+            for i, (txt, t) in enumerate([(f"{vmin:.3g}", 0.0),
+                                          (f"{(vmin+vmax)/2:.3g}", 0.5),
+                                          (f"{vmax:.3g}", 1.0)]):
+                legend_traces.append(_legend_item(
+                    txt, _mcolors.to_hex(cmap(t)), f"meta_{label}", label, i == 0))
+
+        else:
+            svals = [None if (v is None or v != v) else str(v) for v in vals]
+            uniq = sorted({s for s in svals if s is not None})
+            base = len(palette)
+            palette += [_AUTO_PAL[i % len(_AUTO_PAL)] for i in range(len(uniq))]
+            idx = {u: base + i for i, u in enumerate(uniq)}
+            z_rows.append([(idx[s] + 0.5) if s is not None else None for s in svals])
+            hover_rows.append([f"{label}: {s if s is not None else 'N/A'}" for s in svals])
+            for i, u in enumerate(uniq[:MAX_LEGEND_PER_GROUP]):
+                legend_traces.append(_legend_item(
+                    u, _AUTO_PAL[i % len(_AUTO_PAL)], f"meta_{label}", label, i == 0))
+            if len(uniq) > MAX_LEGEND_PER_GROUP:
+                legend_traces.append(_legend_item(
+                    f"… +{len(uniq) - MAX_LEGEND_PER_GROUP}", "#ffffff",
+                    f"meta_{label}", label, False))
+
+    k = max(len(palette), 1)
+    # Ligne du bas = première annotation (Class) → on inverse pour l'affichage
+    trace = _go.Heatmap(
+        z=z_rows[::-1],
+        x=list(range(n_samples)),
+        y=ann_labels[::-1],
+        colorscale=_discrete_colorscale(palette),
+        zmin=0, zmax=k, showscale=False,
+        customdata=hover_rows[::-1],
+        hovertemplate="%{customdata}<extra></extra>",
+        hoverongaps=False, xgap=0, ygap=1,
+    )
+    return trace, legend_traces, ann_labels[::-1]
+
+
+def _legend_item(name, color, group, group_title, first):
+    return _go.Scatter(
+        x=[None], y=[None], mode="markers",
+        marker=dict(size=9, color=color, symbol="square",
+                    line=dict(width=0.5, color="#444")),
+        name=str(name), legendgroup=group,
+        legendgrouptitle=dict(text=f"<b>{group_title}</b>",
+                              font=dict(size=11, family="Arial")) if first else {},
+        showlegend=True, hoverinfo="skip",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FONCTION PRINCIPALE
+# ═══════════════════════════════════════════════════════════════════════════
 def plot_heatmap_samples(
-    data: pd.DataFrame,
+    data,
     class_colors: dict,
     selected_features: list,
     custom_colors: list,
@@ -3024,532 +2308,328 @@ def plot_heatmap_samples(
     caption: str = None,
     capture_name: str = None,
     meta_annotation_cols: list = None,
+    *,
+    diverging: bool = True,      # RdBu_r centrée sur 0 (recommandé pour z-scores)
+    robust: bool = True,         # bornes percentile 2/98 symétrisées
+    cell_border: bool = None,    # None = auto (bordures si < 80 lignes/colonnes)
+    colorbar_pos: str = "top-left",   # "top-left" (style clustermap) ou "right"
+    feature_label_side: str = "right",  # côté des noms de features
+    fit_width: bool = False,     # True = s'étire au conteneur (px non garantis)
 ):
     """
-    Memory-efficient hierarchical heatmap with:
-      • sample_label_col: column displayed on X-axis (ID, Class, File, _meta…)
-      • show_feature_names: toggle feature labels on Y-axis
-      • Persistent dendrogram branch-selection widget (via render_heatmap_dendrogram_widget)
-    Performance notes:
-      - Only feature columns are copied (not the full dataframe)
-      - Clustering uses fastcluster when available, falls back to scipy
-      - For large datasets (>300 features or >500 samples), hover is disabled
-        and the static PNG is generated on demand only
+    Heatmap hiérarchique publication-ready, rendu léger.
+    Signature et contrats session_state identiques à l'ancienne version
+    (capture_name, {capture_name}_dend_data, bouton PNG).
     """
-    # ── 1. Data prep (minimal copies) ────────────────────────────────────────
+    # ── 1. Préparation des données ──────────────────────────────────────────
     data.columns = data.columns.astype(str)
-    selected_features = [str(f) for f in selected_features]
-    selected_features = _resolve_features(data, selected_features)
+    selected_features = _resolve_features(data, [str(f) for f in selected_features])
 
     missing = [f for f in selected_features if f not in data.columns]
     if missing:
-        st.error(f"Invalid features: {', '.join(missing)}")
+        _st.error(f"Invalid features: {', '.join(missing)}")
         return
 
     features = list(selected_features)
+    meta_cols_present = [m for m in (meta_annotation_cols or []) if m in data.columns]
+    keep = list(dict.fromkeys(["Class"] + features + meta_cols_present +
+                              [c for c in ["ID", "File"] if c in data.columns]))
+    df = data[keep].copy()
 
-    # Copy only what we need — avoid full dataframe duplication
-    meta_annotation_cols_safe = meta_annotation_cols or []
-    _meta_cols_present = [m for m in meta_annotation_cols_safe if m in data.columns]
-    _keep_cols = list(dict.fromkeys(["Class"] + features + _meta_cols_present +
-                                    [c for c in ["ID", "File"] if c in data.columns]))
-    df = data[_keep_cols].copy()
+    data_meta_orig = df[meta_cols_present].copy() if meta_cols_present else None
+    raw_features = df[features].values.copy()
 
-    # Save meta and raw feature values BEFORE scaling
-    data_meta_orig = df[_meta_cols_present].copy() if _meta_cols_present else None
-    _raw_features  = df[features].values.copy()  # for export — float64 numpy array only
+    df[features] = df[features].replace([_np.inf, -_np.inf], _np.nan)
+    df[features] = df[features].fillna(df[features].mean())
 
-    df[features] = df[features].replace([np.inf, -np.inf], np.nan)
-    _col_means = df[features].mean()
-    df[features] = df[features].fillna(_col_means)
-
-    scaler = StandardScaler()
-    Z = scaler.fit_transform(df[features].values)
-
-    if np.isnan(Z).any() or np.isinf(Z).any():
-        st.error("Missing/infinite values after preprocessing.")
+    matrix = StandardScaler().fit_transform(df[features].values).astype(_np.float32)
+    if not _np.isfinite(matrix).all():
+        _st.error("Missing/infinite values after preprocessing.")
         return
 
-    matrix = Z  # (n_samples, n_features) — float32 cast to save memory
-    matrix = matrix.astype(np.float32)
-
-    # Build sample labels from the chosen column
-    _label_candidates = ["ID", "File", "Class"] + [c for c in df.columns if str(c).endswith("_meta")]
-    _label_col = sample_label_col if sample_label_col in df.columns else (
-        next((c for c in _label_candidates if c in df.columns), None)
-    )
-    sample_labels = df[_label_col].astype(str).tolist() if _label_col else [
-        f"sample_{i+1}" for i in range(len(df))
-    ]
+    label_col = sample_label_col if sample_label_col in df.columns else next(
+        (c for c in ["ID", "File", "Class"] if c in df.columns), None)
+    sample_labels = (df[label_col].astype(str).tolist() if label_col
+                     else [f"sample_{i+1}" for i in range(len(df))])
     class_labels = df["Class"].astype(str).tolist()
     n_samples, n_features = matrix.shape
+    large = (n_features > 300) or (n_samples > 500)
 
-    _large_dataset = (n_features > 300) or (n_samples > 500)
-
-    # ── 2. Hierarchical clustering (fast path) ────────────────────────────────
-    # Use fastcluster if available (10-50× faster for large matrices)
+    # ── 2. Clustering ───────────────────────────────────────────────────────
     try:
         import fastcluster as _fc
         _ward = lambda X: _fc.linkage(X, method="ward", metric="euclidean")
     except ImportError:
         _ward = lambda X: linkage(X, method="ward", metric="euclidean")
 
-    # For very large feature sets, reduce dimensions before clustering
-    # (clustering >1000 features with pdist is O(n²) memory)
-    _MAX_FEAT_CLUST = 800
-    if n_features > _MAX_FEAT_CLUST:
+    if n_features > 800:
         from sklearn.decomposition import TruncatedSVD
-        _svd = TruncatedSVD(n_components=min(50, n_samples - 1), random_state=0)
-        matrix_for_row_clust = _svd.fit_transform(matrix.T)
+        mat_row = TruncatedSVD(n_components=min(50, max(n_samples - 1, 2)),
+                               random_state=0).fit_transform(matrix.T)
     else:
-        matrix_for_row_clust = matrix.T  # (n_features, n_samples)
+        mat_row = matrix.T
 
     col_link = _ward(matrix)
     col_dend = dendrogram(col_link, no_plot=True)
     col_order = col_dend["leaves"]
 
-    row_link = _ward(matrix_for_row_clust)
+    row_link = _ward(mat_row)
     row_dend = dendrogram(row_link, no_plot=True)
     row_order = row_dend["leaves"]
 
-    # Reorder using numpy advanced indexing (no Python loops)
-    matrix_ord         = matrix[np.ix_(col_order, row_order)]
-    sample_labels_ord  = [sample_labels[i] for i in col_order]
-    class_labels_ord   = [class_labels[i]  for i in col_order]
-    feature_labels_ord = [features[i]      for i in row_order]
+    matrix_ord = matrix[_np.ix_(col_order, row_order)]
+    sample_labels_ord = [sample_labels[i] for i in col_order]
+    class_labels_ord = [class_labels[i] for i in col_order]
+    feature_labels_ord = [features[i] for i in row_order]
+    export_raw_ord = raw_features[_np.ix_(col_order, row_order)]
 
-    # Build a lightweight export object — only what's needed, no full df copy
-    _export_raw_ord = _raw_features[np.ix_(col_order, row_order)]
+    # ── 3. Figure : grille fixe 3×2 ─────────────────────────────────────────
+    valid_meta = [m for m in (meta_annotation_cols or [])
+                  if data_meta_orig is not None and m in data_meta_orig.columns]
+    ann_labels = ["Class"] + valid_meta
+    n_ann = len(ann_labels)
 
-    # ── 3. Build figure ───────────────────────────────────────────────────────
-    colorscale = _make_plotly_colorscale(custom_colors)
-    vmin = matrix_ord.min()
-    vmax = matrix_ord.max()
+    dend_top_frac = 0.13 if n_samples > 2 else 0.04
+    ann_frac = min(0.16, 0.030 * n_ann + 0.008)
+    heat_frac = max(0.55, 1.0 - dend_top_frac - ann_frac)
 
-    _AUTO_PAL = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3",
-                 "#937860","#DA8BC3","#8C8C8C","#CCB974","#64B5CD"]
-    _NUM_CMAPS = ["viridis", "plasma", "cividis", "magma", "inferno",
-                  "YlOrRd", "Blues", "Greens", "PuRd", "BuPu"]
-    meta_annotation_cols = meta_annotation_cols or []
-    _meta_src = data_meta_orig if data_meta_orig is not None else data
-    valid_meta = [m for m in meta_annotation_cols if m in _meta_src.columns]
-    _num_cmap_counter = [0]
+    # ── Géométrie : on réserve explicitement la place des labels de features
+    #    pour que colorbar et légende ne les chevauchent JAMAIS ────────────────
+    _CHAR_PX = 5.4                       # largeur moyenne Arial 9 px
+    feat_lab_px = 0
+    if show_feature_names and feature_labels_ord:
+        feat_lab_px = min(240, 10 + _CHAR_PX * max(len(str(f))
+                                                   for f in feature_labels_ord))
+    samp_lab_px = 0
+    if show_sample_names and sample_labels_ord:
+        samp_lab_px = min(180, 10 + _CHAR_PX * max(len(str(s))
+                                                   for s in sample_labels_ord))
 
-    ann_labels  = ["Class"] + valid_meta
-    n_ann_rows  = len(ann_labels)
+    legend_px = 0
+    if n_ann:
+        _leg_chars = max([len(str(a)) for a in ann_labels] + [10])
+        legend_px = int(min(260, 46 + _CHAR_PX * _leg_chars * 1.6))
+    cbar_px = 96 if colorbar_pos == "right" else 0
 
-    ann_strip_frac = 0.03
-    total_ann = ann_strip_frac * n_ann_rows
-    top_frac   = 0.12
-    heat_frac  = max(0.40, 1.0 - top_frac - total_ann)
+    px_f = max(9, min(18, 720 // max(n_features, 1)))
+    px_s = max(9, min(18, 720 // max(n_samples, 1)))
 
-    row_heights = [top_frac] + [ann_strip_frac] * n_ann_rows + [heat_frac]
-    n_rows = 2 + n_ann_rows
+    left_px = 8 + (feat_lab_px if feature_label_side == "left" else 0)
+    right_px = 14 + (feat_lab_px if feature_label_side == "right" else 0) \
+               + legend_px + cbar_px
+    bottom_px = 12 + samp_lab_px
+    top_px = 18
 
-    fig = make_subplots(
-        rows=n_rows, cols=3,
-        column_widths=[0.10, 0.005, 0.895],
-        row_heights=row_heights,
-        horizontal_spacing=0.002,
-        vertical_spacing=0.002,
-    )
+    height = int(max(520, min(1900, top_px + bottom_px + n_features * px_f
+                              + n_ann * 22 + 120)))
+    width = int(max(620, min(2400, left_px + right_px + n_samples * px_s + 120)))
+    plot_w = max(width - left_px - right_px, 200)
 
-    heatmap_row = n_rows
+    # décalage en coordonnées "paper" correspondant à la largeur des labels
+    _lab_off = (feat_lab_px / plot_w) if feature_label_side == "right" else 0.0
+    _pad = 0.012
 
-    # 3a. Sample dendrogram (top)
-    for tr in _dend_to_traces(col_dend, n_samples, orientation="top", color="#444"):
-        fig.add_trace(tr, row=1, col=3)
-
-    # 3b. Feature dendrogram (left)
-    for tr in _dend_to_traces(row_dend, n_features, orientation="left", color="#444"):
-        fig.add_trace(tr, row=heatmap_row, col=1)
-
-    # 3c. Annotation strips
-    import matplotlib.colors as _mc
-
-    for ann_idx, ann_label in enumerate(ann_labels):
-        strip_row = 2 + ann_idx
-
-        if ann_label == "Class":
-            unique_cls = list(dict.fromkeys(class_labels_ord))
-            n_cls = len(unique_cls)
-            cls_idx = {c: i for i, c in enumerate(unique_cls)}
-            z_cls = [[cls_idx[c] for c in class_labels_ord]]
-
-            if n_cls == 1:
-                cls_cs = [[0.0, class_colors.get(unique_cls[0], "#aaa")],
-                           [1.0, class_colors.get(unique_cls[0], "#aaa")]]
-            else:
-                cls_cs = []
-                for i, c in enumerate(unique_cls):
-                    t0, t1 = i / n_cls, (i + 1) / n_cls
-                    cls_cs += [[t0, class_colors.get(c, "#aaa")],
-                                [t1, class_colors.get(c, "#aaa")]]
-
-            fig.add_trace(go.Heatmap(
-                z=z_cls, x=list(range(n_samples)), y=["Class"],
-                colorscale=cls_cs, zmin=0, zmax=n_cls, showscale=False,
-                hovertemplate="<b>Class:</b> %{customdata}<extra></extra>",
-                customdata=[class_labels_ord], xgap=0, ygap=0,
-            ), row=strip_row, col=3)
-
-            for i_cls, cls_name in enumerate(unique_cls):
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode="markers",
-                    marker=dict(size=10, color=class_colors.get(cls_name, "#aaa"),
-                                symbol="square"),
-                    name=cls_name,
-                    legendgroup="cls_group",
-                    legendgrouptitle=dict(
-                        text="<b>Class</b>",
-                        font=dict(size=11, color="black", family="Arial Black"),
-                    ) if i_cls == 0 else {},
-                    showlegend=True,
-                ))
-
-        else:
-            col_vals = _meta_src[ann_label].values
-            reordered = [col_vals[i] for i in col_order]
-
-            if pd.api.types.is_numeric_dtype(_meta_src[ann_label]):
-                _cmap_name = _NUM_CMAPS[_num_cmap_counter[0] % len(_NUM_CMAPS)]
-                _num_cmap_counter[0] += 1
-                _cmap_num = plt.cm.get_cmap(_cmap_name)
-
-                raw_vals = np.array([float(v) if (v is not None and v == v) else np.nan
-                                     for v in reordered])
-                _vmin_m = float(np.nanmin(raw_vals)) if not np.all(np.isnan(raw_vals)) else 0.0
-                _vmax_m = float(np.nanmax(raw_vals)) if not np.all(np.isnan(raw_vals)) else 1.0
-                _vrng_m = _vmax_m - _vmin_m if _vmax_m != _vmin_m else 1.0
-
-                def _make_hex(cmap_fn, vmin_c, vrng_c):
-                    def _num_to_hex(v):
-                        if np.isnan(v):
-                            return "#cccccc"
-                        t = (v - vmin_c) / vrng_c
-                        return _mc.to_hex(cmap_fn(np.clip(t, 0, 1)))
-                    return _num_to_hex
-
-                _num_to_hex = _make_hex(_cmap_num, _vmin_m, _vrng_m)
-                cell_colors = [_num_to_hex(v) for v in raw_vals]
-                z_meta = [[i for i in range(n_samples)]]
-                if n_samples > 1:
-                    disc_cs = []
-                    for i, hexc in enumerate(cell_colors):
-                        t0 = i / (n_samples - 1)
-                        t1 = (i + 1) / (n_samples - 1) if i < n_samples - 1 else 1.0
-                        disc_cs += [[t0, hexc], [min(t1, 1.0), hexc]]
-                else:
-                    disc_cs = [[0.0, cell_colors[0]], [1.0, cell_colors[0]]]
-
-                hover_num = [f"{v:.3g}" if not np.isnan(v) else "N/A" for v in raw_vals]
-                fig.add_trace(go.Heatmap(
-                    z=z_meta, x=list(range(n_samples)), y=[ann_label],
-                    colorscale=disc_cs,
-                    zmin=0, zmax=max(n_samples - 1, 1),
-                    showscale=False,
-                    text=[[f"<b>{ann_label}:</b> {hv}" for hv in hover_num]],
-                    hovertemplate="%{text}<extra></extra>",
-                    xgap=0, ygap=0,
-                ), row=strip_row, col=3)
-
-                for _label_val, _t in [
-                    (f"{ann_label} (min={_vmin_m:.2g})", 0.0),
-                    (f"{ann_label} (mid={(_vmin_m+_vmax_m)/2:.2g})", 0.5),
-                    (f"{ann_label} (max={_vmax_m:.2g})", 1.0),
-                ]:
-                    fig.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        marker=dict(size=10, color=_mc.to_hex(_cmap_num(_t)), symbol="square"),
-                        name=_label_val,
-                        legendgroup=f"meta_{ann_label}",
-                        legendgrouptitle=dict(
-                            text=f"<b>{ann_label}</b>",
-                            font=dict(size=11, color="black", family="Arial Black"),
-                        ) if _t == 0.0 else {},
-                        showlegend=True,
-                    ))
-            else:
-                uniq_vals = []
-                seen_vals = set()
-                for v in reordered:
-                    try:
-                        is_nan = (v is None) or (v != v)
-                    except Exception:
-                        is_nan = False
-                    sv = str(v) if not is_nan else None
-                    if not is_nan and sv not in seen_vals:
-                        uniq_vals.append(v)
-                        seen_vals.add(sv)
-                uniq_vals = sorted(uniq_vals, key=lambda x: str(x))
-                val_map = {v: _AUTO_PAL[i % len(_AUTO_PAL)] for i, v in enumerate(uniq_vals)}
-                n_v = len(uniq_vals)
-
-                if n_v == 0:
-                    fig.add_trace(go.Heatmap(
-                        z=[[0]*n_samples], x=list(range(n_samples)), y=[ann_label],
-                        colorscale=[[0, "#cccccc"], [1, "#cccccc"]],
-                        showscale=False, xgap=0, ygap=0,
-                    ), row=strip_row, col=3)
-                else:
-                    def _val_to_idx(v):
-                        try:
-                            is_nan = (v is None) or (v != v)
-                        except Exception:
-                            is_nan = False
-                        if is_nan:
-                            return -1
-                        return next((i for i, uv in enumerate(uniq_vals) if str(uv) == str(v)), -1)
-
-                    z_shifted = [_val_to_idx(v) + 1 if _val_to_idx(v) >= 0 else 0 for v in reordered]
-                    n_total = n_v + 1
-                    meta_cs = [[0.0, "#cccccc"], [1/n_total - 1e-9, "#cccccc"]]
-                    for i, v in enumerate(uniq_vals):
-                        t0 = (i + 1) / n_total
-                        t1 = (i + 2) / n_total
-                        meta_cs += [[t0, val_map[v]], [min(t1 - 1e-9, 1.0), val_map[v]]]
-                    meta_cs[-1][0] = 1.0
-
-                    hover_meta = []
-                    for v in reordered:
-                        try:
-                            is_nan = (v is None) or (v != v)
-                        except Exception:
-                            is_nan = False
-                        hover_meta.append(f"<b>{ann_label}:</b> {'N/A' if is_nan else v}")
-
-                    fig.add_trace(go.Heatmap(
-                        z=[z_shifted], x=list(range(n_samples)), y=[ann_label],
-                        colorscale=meta_cs, zmin=0, zmax=n_total,
-                        showscale=False,
-                        text=[hover_meta], hovertemplate="%{text}<extra></extra>",
-                        xgap=0, ygap=0,
-                    ), row=strip_row, col=3)
-
-                    for i_v, v in enumerate(uniq_vals):
-                        fig.add_trace(go.Scatter(
-                            x=[None], y=[None], mode="markers",
-                            marker=dict(size=10, color=val_map[v], symbol="square"),
-                            name=f"{v}",
-                            legendgroup=f"meta_{ann_label}",
-                            legendgrouptitle=dict(
-                                text=f"<b>{ann_label}</b>",
-                                font=dict(size=11, color="black", family="Arial Black"),
-                            ) if i_v == 0 else {},
-                            showlegend=True,
-                        ))
-
-    # 3d. Main heatmap
-    # For large datasets disable hover (too slow to build & render)
-    if _large_dataset:
-        _heatmap_kwargs = dict(hovertemplate="%{z:.3f}<extra></extra>")
+    if colorbar_pos == "right":
+        _cbar = dict(
+            title=dict(text=f"<b>{{}}</b>", side="right",
+                       font=dict(size=12, family="Arial")),
+            thickness=12, len=0.28, orientation="v",
+            x=1.0 + _lab_off + _pad, xanchor="left", y=0.0, yanchor="bottom",
+            tickfont=dict(size=10, family="Arial"),
+            outlinecolor="#333", outlinewidth=0.8, ticks="outside", ticklen=3,
+        )
+        _legend_x = 1.0 + _lab_off + _pad + (cbar_px / plot_w)
     else:
-        # Vectorized hover text — avoid n_features × n_samples Python loops
-        _samp_arr = np.array(sample_labels_ord)   # (n_samples,)
-        _cls_arr  = np.array(class_labels_ord)    # (n_samples,)
-        _feat_arr = np.array(feature_labels_ord)  # (n_features,)
-        # Build as (n_features, n_samples) array via broadcasting
-        _zscore_str = np.round(matrix_ord.T, 3).astype(str)  # (n_features, n_samples)
-        hover_text = [
-            [
-                f"<b>Sample:</b> {_samp_arr[j]}<br>"
-                f"<b>Class:</b> {_cls_arr[j]}<br>"
-                f"<b>Feature:</b> {_feat_arr[i]}<br>"
-                f"<b>Z-score:</b> {_zscore_str[i, j]}"
-                for j in range(n_samples)
-            ]
-            for i in range(n_features)
-        ]
-        _heatmap_kwargs = dict(text=hover_text, hovertemplate="%{text}<extra></extra>")
+        # colorbar horizontale en haut à gauche (style seaborn clustermap) :
+        # aucune collision possible avec les labels de features
+        _cbar = dict(
+            title=dict(text=f"<b>{{}}</b>", side="top",
+                       font=dict(size=11, family="Arial")),
+            thickness=10, len=max(0.10, min(0.18, 140 / plot_w)),
+            orientation="h",
+            x=0.0, xanchor="left", y=1.0, yanchor="top",
+            tickfont=dict(size=9, family="Arial"), nticks=5,
+            outlinecolor="#333", outlinewidth=0.8, ticks="outside", ticklen=3,
+        )
+        _legend_x = 1.0 + _lab_off + _pad
 
-    fig.add_trace(
-        go.Heatmap(
-            z=matrix_ord.T,          # pass numpy array directly — no .tolist()
-            x=list(range(n_samples)),
-            y=list(range(n_features)),
-            colorscale=colorscale,
-            zmin=float(matrix_ord.min()), zmax=float(matrix_ord.max()),
-            colorbar=dict(
-                title=dict(
-                    text="<b>Z-score</b>",
-                    side="right",
-                    font=dict(size=13, color="black", family="Arial Black"),
-                ),
-                thickness=14, len=0.50,
-                x=1.25, xanchor="left",
-                tickfont=dict(size=11, color="black", family="Arial"),
-                tickcolor="black",
-                outlinecolor="black", outlinewidth=1,
-            ),
-            xgap=0.3 if not _large_dataset else 0,
-            ygap=0.3 if not _large_dataset else 0,
-            **_heatmap_kwargs,
-        ),
-        row=heatmap_row, col=3,
+    fig = _make_subplots(
+        rows=3, cols=2,
+        row_heights=[dend_top_frac, ann_frac, heat_frac],
+        column_widths=[0.11, 0.89],
+        horizontal_spacing=0.006, vertical_spacing=0.008,
     )
 
-    # ── 4. Axes ───────────────────────────────────────────────────────────────
-    for r in range(1, n_rows + 1):
-        for c in [1, 2]:
-            fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, row=r, col=c)
-            fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False, row=r, col=c)
+    # 3a — dendrogrammes (1 trace chacun)
+    fig.add_trace(_dend_single_trace(col_dend, "top"), row=1, col=2)
+    fig.add_trace(_dend_single_trace(row_dend, "left"), row=3, col=1)
 
-    fig.update_xaxes(range=[-0.5, n_samples - 0.5], showticklabels=False, row=1, col=3)
-    fig.update_yaxes(autorange=True, showticklabels=False, row=1, col=3)
-    fig.update_yaxes(range=[-0.5, n_features - 0.5], autorange=False, row=heatmap_row, col=1)
-    fig.update_xaxes(autorange=True, row=heatmap_row, col=1)
+    # 3b — bande d'annotation (1 trace) + légende groupée
+    ann_values = [class_labels_ord]
+    for m in valid_meta:
+        col_vals = data_meta_orig[m].values
+        ann_values.append([col_vals[i] for i in col_order])
 
-    for strip_row in range(2, 2 + n_ann_rows):
-        fig.update_xaxes(range=[-0.5, n_samples - 0.5],
-                         showticklabels=False, row=strip_row, col=3)
-        fig.update_yaxes(showticklabels=True, tickfont=dict(size=8, color="black"),
-                         showgrid=False, row=strip_row, col=3)
+    band_trace, legend_traces, band_y = _build_annotation_band(
+        ann_labels, ann_values, class_colors, n_samples)
+    fig.add_trace(band_trace, row=2, col=2)
+    for t in legend_traces:
+        fig.add_trace(t)
+
+    # 3c — heatmap principal
+    if diverging:
+        colorscale = _diverging_colorscale("RdBu_r")
+        cb_title = "Z-score"
+    else:
+        colorscale = _continuous_colorscale(custom_colors)
+        cb_title = "Z-score"
+
+    if robust:
+        zmin, zmax = _robust_sym_limits(matrix_ord)
+    else:
+        m = float(_np.nanmax(_np.abs(matrix_ord))) or 1.0
+        zmin, zmax = (-m, m) if diverging else (float(matrix_ord.min()),
+                                                float(matrix_ord.max()))
+
+    n_cells = n_samples * n_features
+    if n_cells <= HOVER_MAX_CELLS:
+        s = _np.asarray(sample_labels_ord)
+        f = _np.asarray(feature_labels_ord)
+        zs = _np.round(matrix_ord.T.astype(_np.float64), 2).astype(str)
+        hover = [[f"{f[i]}<br>{s[j]}<br>z = {zs[i, j]}" for j in range(n_samples)]
+                 for i in range(n_features)]
+        hover_kw = dict(text=hover, hovertemplate="%{text}<extra></extra>")
+    else:
+        hover_kw = dict(hovertemplate="z = %{z:.2f}<extra></extra>")
+
+    if cell_border is None:
+        cell_border = (n_samples <= 80 and n_features <= 80)
+    gap = 0.6 if cell_border else 0
+
+    fig.add_trace(_go.Heatmap(
+        z=matrix_ord.T, x=list(range(n_samples)), y=list(range(n_features)),
+        colorscale=colorscale, zmin=zmin, zmax=zmax,
+        colorbar=_cbar,
+        xgap=gap, ygap=gap, **hover_kw,
+    ), row=3, col=2)
+
+    # ── 4. Axes ─────────────────────────────────────────────────────────────
+    blank = dict(showticklabels=False, showgrid=False, zeroline=False,
+                 showline=False, ticks="")
+    for r, c in [(1, 1), (2, 1), (1, 2), (3, 1)]:
+        fig.update_xaxes(**blank, row=r, col=c)
+        fig.update_yaxes(**blank, row=r, col=c)
+
+    fig.update_xaxes(range=[-0.5, n_samples - 0.5], **blank, row=1, col=2)
+    fig.update_yaxes(autorange=True, **blank, row=1, col=2)
+    fig.update_yaxes(range=[-0.5, n_features - 0.5], autorange=False, **blank,
+                     row=3, col=1)
+    fig.update_xaxes(autorange=True, **blank, row=3, col=1)
+
+    fig.update_xaxes(range=[-0.5, n_samples - 0.5], **blank, row=2, col=2)
+    fig.update_yaxes(showticklabels=True, tickfont=dict(size=9, family="Arial"),
+                     showgrid=False, zeroline=False, showline=False, ticks="",
+                     row=2, col=2)
 
     fig.update_xaxes(
-        tickmode="array",
-        tickvals=list(range(n_samples)),
-        ticktext=sample_labels_ord,
-        tickangle=90,
-        tickfont=dict(size=10, color="black", family="Arial"),
-        showticklabels=True,
-        showgrid=False, zeroline=False,
-        range=[-0.5, n_samples - 0.5],
-        row=heatmap_row, col=3,
+        tickmode="array", tickvals=list(range(n_samples)),
+        ticktext=sample_labels_ord if show_sample_names else [""] * n_samples,
+        tickangle=90, tickfont=dict(size=9, family="Arial", color="#111"),
+        showticklabels=show_sample_names, showgrid=False, zeroline=False,
+        showline=True, linecolor="#333", linewidth=0.8, ticks="outside", ticklen=2,
+        range=[-0.5, n_samples - 0.5], row=3, col=2,
     )
-
-    # ── contrôle affichage feature names via paramètre ───────────────────
     fig.update_yaxes(
-        tickmode="array",
-        tickvals=list(range(n_features)),
-        ticktext=[f"<b>{f}</b>" for f in feature_labels_ord] if show_feature_names else [""] * n_features,
-        tickfont=dict(size=10, color="black", family="Arial"),
-        showticklabels=show_feature_names,
-        showgrid=False, zeroline=False,
-        range=[-0.5, n_features - 0.5],
-        side="right",
-        row=heatmap_row, col=3,
+        tickmode="array", tickvals=list(range(n_features)),
+        ticktext=feature_labels_ord if show_feature_names else [""] * n_features,
+        tickfont=dict(size=9, family="Arial", color="#111"),
+        showticklabels=show_feature_names, showgrid=False, zeroline=False,
+        showline=True, linecolor="#333", linewidth=0.8, ticks="outside", ticklen=2,
+        range=[-0.5, n_features - 0.5], side=feature_label_side,
+        automargin=False, row=3, col=2,
     )
 
-    # ── 5. Layout ─────────────────────────────────────────────────────────────
-    _px_per_feature = max(8, min(20, 700 // max(n_features, 1)))
-    _px_per_sample  = max(8, min(20, 700 // max(n_samples,  1)))
-    plot_height = max(550, min(2000, 220 + n_features * _px_per_feature + n_ann_rows * 32))
-    plot_width  = max(600, min(2400, 300 + n_samples  * _px_per_sample  + 250))
-
+    # ── 5. Layout ───────────────────────────────────────────────────────────
     fig.update_layout(
-        height=plot_height,
-        width=plot_width,
-        margin=dict(l=10, r=280, t=20, b=10),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font=dict(color="black", family="Arial", size=12),
-        dragmode="zoom",
-        hovermode="closest",
+        height=height, width=None if fit_width else width,
+        margin=dict(l=left_px, r=right_px, t=top_px, b=bottom_px),
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(color="#111", family="Arial", size=11),
+        hovermode="closest", dragmode="zoom",
         showlegend=True,
         legend=dict(
-            x=1.02, y=1.0, xanchor="left", yanchor="top",
-            bgcolor="rgba(255,255,255,0.95)",
-            bordercolor="black", borderwidth=1,
-            font=dict(size=11, color="black", family="Arial"),
-            title=dict(
-                text="<b>Legend</b>",
-                font=dict(size=13, color="black", family="Arial Black"),
-            ),
-            tracegroupgap=4,
-            itemsizing="constant",
+            x=_legend_x, y=1.0 if colorbar_pos == "right" else 0.98,
+            xanchor="left", yanchor="top",
+            bgcolor="rgba(255,255,255,0)", bordercolor="rgba(0,0,0,0)", borderwidth=0,
+            font=dict(size=10, family="Arial"),
+            tracegroupgap=10, itemsizing="constant", itemclick=False,
+            itemdoubleclick=False,
         ),
+        uirevision=capture_name or "heatmap",
     )
 
     if caption:
-        fig.add_annotation(
-            text=caption,
-            xref="paper", yref="paper",
-            x=0.5, y=-0.04,
-            showarrow=False,
-            font=dict(size=11, color="gray"),
-        )
+        fig.add_annotation(text=caption, xref="paper", yref="paper",
+                           x=0.5, y=-0.05, showarrow=False,
+                           font=dict(size=10, color="#666", family="Arial"))
 
-    # ── 6. Render ─────────────────────────────────────────────────────────────
-    st.plotly_chart(fig, use_container_width=True, config={
+    # ── 6. Rendu ────────────────────────────────────────────────────────────
+    _st.plotly_chart(fig, use_container_width=fit_width, config={
         "scrollZoom": True,
         "displayModeBar": True,
+        "displaylogo": False,
         "toImageButtonOptions": {
-            "format": "png",
-            "scale": 4,
-            "filename": "heatmap",
+            "format": "png", "scale": 3,
+            "width": width, "height": height,
+            "filename": capture_name or "heatmap",
         },
+        "modeBarButtonsToAdd": ["toggleSpikelines"],
     })
 
-    # ── 7. Static PNG download (lazy — built only when button clicked) ──────────
-    # For large datasets, avoid blocking the main render with a heavy matplotlib call.
-    # We store everything needed in session_state and generate PNG on demand.
-    _png_key   = f"dl_heatmap_png_{capture_name or 'heatmap'}"
-    _bytes_key = f"{capture_name}_png_bytes" if capture_name else None
+    # ── 7. PNG statique + contrats session_state (inchangés) ────────────────
+    png_key = f"dl_heatmap_png_{capture_name or 'heatmap'}"
+    bytes_key = f"{capture_name}_png_bytes" if capture_name else None
 
     if capture_name:
-        st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
-        st.session_state[capture_name]               = fig
+        _st.session_state[f"_report_{capture_name}"] = ("plotly", fig)
+        _st.session_state[capture_name] = fig
 
-    if _large_dataset:
-        # Lazy: build PNG only when user clicks
-        if st.button("📥 Generate & Download Heatmap PNG", key=f"gen_png_{capture_name or 'hm'}",
-                     help="For large datasets PNG generation may take a few seconds."):
-            with st.spinner("Building high-resolution PNG…"):
-                img_bytes = _build_static_png_fast(
-                    matrix_ord=matrix_ord,
-                    raw_ord=_export_raw_ord,
-                    feature_labels_ord=feature_labels_ord,
-                    sample_labels_ord=sample_labels_ord,
-                    class_labels_ord=class_labels_ord,
-                    class_colors=class_colors,
-                    custom_colors=custom_colors,
-                    data_meta_orig=data_meta_orig,
-                    meta_cols=valid_meta,
-                    col_order=col_order,
-                )
-                if _bytes_key:
-                    st.session_state[_bytes_key] = img_bytes
-                st.download_button(
-                    label="📥 Download PNG",
-                    data=img_bytes,
-                    file_name="heatmap.png",
-                    mime="image/png",
-                    key=f"{_png_key}_dl",
-                )
-    else:
-        img_bytes = _build_static_png_fast(
-            matrix_ord=matrix_ord,
-            raw_ord=_export_raw_ord,
+    def _png():
+        return _build_static_png_fast(
+            matrix_ord=matrix_ord, raw_ord=export_raw_ord,
             feature_labels_ord=feature_labels_ord,
             sample_labels_ord=sample_labels_ord,
             class_labels_ord=class_labels_ord,
-            class_colors=class_colors,
-            custom_colors=custom_colors,
-            data_meta_orig=data_meta_orig,
-            meta_cols=valid_meta,
-            col_order=col_order,
-        )
-        if _bytes_key:
-            st.session_state[_bytes_key] = img_bytes
-        st.download_button(
-            label="📥 Download Heatmap as PNG",
-            data=img_bytes,
-            file_name="heatmap.png",
-            mime="image/png",
-            key=_png_key,
+            class_colors=class_colors, custom_colors=custom_colors,
+            data_meta_orig=data_meta_orig, meta_cols=valid_meta, col_order=col_order,
         )
 
-    gc.collect()
+    if large:
+        if _st.button("📥 Generate & Download Heatmap PNG",
+                      key=f"gen_png_{capture_name or 'hm'}",
+                      help="Large dataset — PNG generation may take a few seconds."):
+            with _st.spinner("Building high-resolution PNG…"):
+                img = _png()
+                if bytes_key:
+                    _st.session_state[bytes_key] = img
+                _st.download_button("📥 Download PNG", data=img,
+                                    file_name="heatmap.png", mime="image/png",
+                                    key=f"{png_key}_dl")
+    else:
+        img = _png()
+        if bytes_key:
+            _st.session_state[bytes_key] = img
+        _st.download_button("📥 Download Heatmap as PNG", data=img,
+                            file_name="heatmap.png", mime="image/png", key=png_key)
 
-    # ── Store dendrogram data in session_state for the persistent widget ──────
+    _gc.collect()
+
     if capture_name:
-        st.session_state[f"{capture_name}_dend_data"] = {
-            "row_dend":           row_dend,
-            "row_link":           row_link,
-            "n_features":         n_features,
-            "feature_labels_ord": feature_labels_ord,
-            "matrix_ord":         matrix_ord,
-            "sample_labels_ord":  sample_labels_ord,
-            "class_labels_ord":   class_labels_ord,
-            "data_original":      _export_raw_ord,   # raw values (not full df)
+        _st.session_state[f"{capture_name}_dend_data"] = {
+            "row_dend": row_dend, "row_link": row_link, "n_features": n_features,
+            "feature_labels_ord": feature_labels_ord, "matrix_ord": matrix_ord,
+            "sample_labels_ord": sample_labels_ord,
+            "class_labels_ord": class_labels_ord, "data_original": export_raw_ord,
+            # nécessaires au panneau "Samples — horizontal dendrogram"
+            "col_dend": col_dend, "col_link": col_link, "n_samples": n_samples,
         }

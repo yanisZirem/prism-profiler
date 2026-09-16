@@ -4,8 +4,9 @@ Module name : Unsupervised Learning
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 05/03/2026
-Version: 1.2.0
+Last Updated: 23/10/2025
+Version: 1.0.0
+
 Context:
 This module is part of the "Profiler" project, originally developed for a web version (https://prism-profiler.univ-lille.fr) and now adapted for a desktop version (profiler_desktop_GUI).
 It is designed for archiving on Zenodo and integration into GitHub releases.
@@ -28,12 +29,17 @@ import pandas as pd
 import plotly.express as px
 import umap.umap_ as umap
 from sklearn.manifold import TSNE
+import numpy as np
+import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
+import pandas as pd
+import numpy as np
 import plotly.express as px
+import streamlit as st
 
 
 
@@ -78,236 +84,11 @@ def plot_feature_distribution(data, feature, class_colors, capture_name=None):
     return fig
 
 
-def plot_umap(data, num_components=2, custom_colors=None, feature_intensity=None, random_state=1, capture_name=None):
-    if 'Class' not in data.columns:
-        st.error("Class column not found in data.")
-        return
-
-    num_components = min(num_components, 3)
-
-    n_samples = data.shape[0]
-    n_neighbors = max(2, min(int(np.log2(n_samples)), 100))
-
-    # Standardize the feature data
-    data_features = data.drop(columns=['Class'])
-    # ⚡ float32 reduces RAM by ~50% before scaling
-    data_scaled = StandardScaler().fit_transform(data_features.values.astype('float32'))
-
-    # ⚡ low_memory=False + n_jobs=-1 → ~2-4x faster
-    reducer = umap.UMAP(
-        n_components=num_components, n_neighbors=n_neighbors,
-        random_state=random_state, n_jobs=-1,
-        low_memory=False, verbose=False
-    )
-    umap_results = reducer.fit_transform(data_scaled)
-    del data_scaled; import gc; gc.collect()
-
-    df_umap = pd.DataFrame(umap_results, columns=[f'UMAP{i+1}' for i in range(num_components)])
-    df_umap['Class'] = data['Class'].values
-    df_umap['Index'] = df_umap.index
-
-    if feature_intensity and feature_intensity != 'None':
-        df_umap[feature_intensity] = data[feature_intensity]
-
-    # Adjust marker size based on the number of samples
-    marker_size = max(4, 10 - np.log10(n_samples))
-
-    if num_components == 2:
-        fig = px.scatter(df_umap, x='UMAP1', y='UMAP2', color='Class',
-                         color_discrete_map=custom_colors,
-                         hover_data=['Index'])
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_umap[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True))
-
-        fig.update_layout(
-            xaxis=dict(
-                title='UMAP1',
-                titlefont=dict(size=24, color='black'),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            yaxis=dict(
-                title='UMAP2',
-                titlefont=dict(size=24, color='black'),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            legend=dict(
-                font=dict(size=20, color='black')
-            ),
-            title=dict(
-                text="UMAP Plot",
-                font=dict(size=26, color='black')
-            ),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-    else:
-        fig = px.scatter_3d(df_umap, x='UMAP1', y='UMAP2', z='UMAP3', color='Class',
-                            color_discrete_map=custom_colors,
-                            hover_data=['Index'])
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_umap[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True))
-
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(
-                    title='UMAP1',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                yaxis=dict(
-                    title='UMAP2',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                zaxis=dict(
-                    title='UMAP3',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                )
-            ),
-            legend=dict(
-                font=dict(size=24, color='black')
-            ),
-            title=dict(
-                text="UMAP Plot",
-                font=dict(size=26, color='black')
-            ),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))
-    st.plotly_chart(fig)    
-    _capture_plotly(fig, "umap_fig")
 
 
 
 
 import gc
-def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None, random_state=1, capture_name=None):
-    """
-    Generates and displays a t-SNE plot with optional feature intensity coloring.
-
-    Args:
-        data (pd.DataFrame): The input data containing features and a 'Class' column.
-        num_components (int): The number of t-SNE components (2 or 3).
-        custom_colors (dict, optional): A dictionary mapping class labels to colors. Defaults to None.
-        feature_intensity (str, optional): The name of the feature to use for intensity coloring. Defaults to None.
-        random_state (int, optional): Random seed for t-SNE. Defaults to 1.
-    """
-    if 'Class' not in data.columns:
-        st.error("Class column not found in data.")
-        return
-
-    num_components = min(num_components, 3)
-
-    n_samples = data.shape[0]
-    perplexity = max(2, min(int(np.log2(n_samples)), 100))
-
-    # Standardize the features
-    features = data.drop(columns=['Class'])
-    # ⚡ float32 → 50% less RAM
-    features_scaled = StandardScaler().fit_transform(features.values.astype('float32'))
-
-    # ⚡ n_jobs=-1 + barnes_hut + adaptive n_iter → ~6-8x faster
-    tsne = TSNE(
-        n_components=num_components, perplexity=perplexity, random_state=random_state,
-        n_jobs=-1, method='barnes_hut',
-        n_iter=500 if n_samples > 2000 else 1000
-    )
-    tsne_results = tsne.fit_transform(features_scaled)
-    del features_scaled; import gc; gc.collect()
-
-    df_tsne = pd.DataFrame(tsne_results, columns=[f't-SNE{i+1}' for i in range(num_components)])
-    df_tsne['Class'] = data['Class'].values
-    df_tsne['Index'] = df_tsne.index
-
-    if feature_intensity and feature_intensity != 'None':
-        df_tsne[feature_intensity] = data[feature_intensity].values
-
-    marker_size = max(4, 10 - np.log10(n_samples))
-
-    cmax_value = data[feature_intensity].max() if feature_intensity and feature_intensity != 'None' else None
-
-    if num_components == 2:
-        fig = px.scatter(df_tsne, x='t-SNE1', y='t-SNE2', color='Class',
-                         color_discrete_map=custom_colors,
-                         hover_data=['Index'])
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_tsne[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True,
-                                          cmin=0, cmax=cmax_value))
-
-        fig.update_layout(
-            xaxis=dict(title='t-SNE1', titlefont=dict(size=24, color='black'),
-                       tickfont=dict(size=22, color='black'), showgrid=False,
-                       showline=True, linecolor='black', linewidth=2),
-            yaxis=dict(title='t-SNE2', titlefont=dict(size=24, color='black'),
-                       tickfont=dict(size=22, color='black'), showgrid=False,
-                       showline=True, linecolor='black', linewidth=2),
-            legend=dict(font=dict(size=20, color='black')),
-            title=dict(text="t-SNE Plot", font=dict(size=26, color='black')),
-            plot_bgcolor='white', paper_bgcolor='white'
-        )
-    else:
-        fig = px.scatter_3d(df_tsne, x='t-SNE1', y='t-SNE2', z='t-SNE3', color='Class',
-                            color_discrete_map=custom_colors,
-                            hover_data=['Index'])
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_tsne[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True,
-                                          cmin=0, cmax=cmax_value))
-
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(title='t-SNE1', titlefont=dict(size=22, color='black'),
-                           tickfont=dict(size=18, color='black'), showgrid=False,
-                           showline=True, linecolor='black', linewidth=2),
-                yaxis=dict(title='t-SNE2', titlefont=dict(size=22, color='black'),
-                           tickfont=dict(size=18, color='black'), showgrid=False,
-                           showline=True, linecolor='black', linewidth=2),
-                zaxis=dict(title='t-SNE3', titlefont=dict(size=22, color='black'),
-                           tickfont=dict(size=18, color='black'), showgrid=False,
-                           showline=True, linecolor='black', linewidth=2)
-            ),
-            legend=dict(font=dict(size=24, color='black')),
-            title=dict(text="t-SNE Plot", font=dict(size=26, color='black')),
-            plot_bgcolor='white', paper_bgcolor='white'
-        )
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))
-    st.plotly_chart(fig)
-    _capture_plotly(fig, "tsne_fig")        
 
 
 
@@ -328,365 +109,31 @@ def apply_pca(X, n_components,random_state=1):
 
 
 
-def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=None, X=None, capture_name=None):
-    num_components = min(reduced_data.shape[1], 3)
-
-    pca_df = pd.DataFrame(reduced_data, columns=[f'PCA{i+1}' for i in range(num_components)])
-    pca_df['Class'] = class_labels
-    pca_df['Index'] = pca_df.index
-    # Add ID column for hover if available in session state data
-    _raw = __import__('streamlit').session_state.get('final_data') or __import__('streamlit').session_state.get('data')
-    if _raw is not None and 'ID' in _raw.columns and len(_raw) == len(pca_df):
-        pca_df['ID'] = _raw['ID'].values
-    if feature_intensity and feature_intensity != 'None' and X is not None:
-        pca_df[feature_intensity] = X[feature_intensity]
-
-    n_samples = pca_df.shape[0]
-    marker_size = max(4, 10 - np.log10(n_samples))
-
-    if num_components == 2:
-        fig = px.scatter(
-            pca_df, x='PCA1', y='PCA2', color='Class',
-            color_discrete_map=custom_colors,
-            hover_data=['Index']
-        )
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=pca_df[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True))
-
-        fig.update_layout(
-            xaxis=dict(
-                title='PCA 1',
-                titlefont=dict(size=24, color='black'),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            yaxis=dict(
-                title='PCA 2',
-                titlefont=dict(size=24, color='black'),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            legend=dict(
-                font=dict(size=20, color='black')
-            ),
-            title=dict(
-                text="PCA Scatter Plot",
-                font=dict(size=26, color='black')
-            ),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-    else:
-        fig = px.scatter_3d(
-            pca_df, x='PCA1', y='PCA2', z='PCA3', color='Class',
-            color_discrete_map=custom_colors,
-            hover_data=['Index']
-        )
-
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=pca_df[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True))
-
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(
-                    title='PCA 1',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                yaxis=dict(
-                    title='PCA 2',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                zaxis=dict(
-                    title='PCA 3',
-                    titlefont=dict(size=22, color='black'),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                )
-            ),
-            legend=dict(
-                font=dict(size=24, color='black')
-            ),
-            title=dict(
-                text="PCA Scatter Plot (3D)",
-                font=dict(size=26, color='black')
-            ),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))
-
-    # Uniformiser les échelles X et Y
-    if num_components == 2:
-        max_range = max(pca_df[['PCA1', 'PCA2']].abs().max())
-        fig.update_layout(
-            xaxis=dict(range=[-max_range, max_range], scaleanchor="y", scaleratio=1),
-            yaxis=dict(range=[-max_range, max_range], scaleanchor="x", scaleratio=1)
-        )
-
-    st.plotly_chart(fig)    
-    _capture_plotly(fig, "pca_fig")
 
 
 
 
 
-def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=None, X=None, capture_name=None):
-    num_components = min(reduced_data.shape[1], 3)
-    pca_df = pd.DataFrame(reduced_data, columns=[f'PCA{i+1}' for i in range(num_components)])
-    pca_df['Class'] = class_labels
-    pca_df['Index'] = pca_df.index
-
-    if feature_intensity and feature_intensity != 'None' and X is not None and feature_intensity in X.columns:
-        pca_df[feature_intensity] = X[feature_intensity]
-
-    n_samples = pca_df.shape[0]
-    marker_size = max(4, 10 - np.log10(n_samples))
-
-    if num_components == 2:
-        fig = px.scatter(pca_df, x='PCA1', y='PCA2', color='Class',
-                         color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in pca_df.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=pca_df[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True))
-        max_range = max(pca_df[['PCA1', 'PCA2']].abs().max())
-        fig.update_layout(xaxis=dict(range=[-max_range, max_range], scaleanchor="y", scaleratio=1),
-                          yaxis=dict(range=[-max_range, max_range], scaleanchor="x", scaleratio=1))
-    else:
-        fig = px.scatter_3d(pca_df, x='PCA1', y='PCA2', z='PCA3', color='Class',
-                            color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in pca_df.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=pca_df[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True))
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))
-    if capture_name:
-        _capture_plotly(fig, capture_name)
-    return fig  
-
-
-def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None, random_state=1, capture_name=None):
-    if 'Class' not in data.columns:
-        st.error("Class column not found in data.")
-        return None
-
-    num_components = min(num_components, 3)
-    n_samples = data.shape[0]
-    perplexity = max(2, min(int(np.log2(n_samples)), 100))
-
-    features = data.drop('Class', axis=1)
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
-
-    tsne = TSNE(n_components=num_components, perplexity=perplexity, random_state=random_state, n_jobs=-1, method="barnes_hut", n_iter=500)
-    tsne_results = tsne.fit_transform(features_scaled)
-    import gc; gc.collect()
-    gc.collect()
-
-    df_tsne = pd.DataFrame(tsne_results, columns=[f't-SNE{i+1}' for i in range(num_components)])
-    df_tsne['Class'] = data['Class']
-    df_tsne['Index'] = df_tsne.index
-    _raw = __import__('streamlit').session_state.get('final_data') or __import__('streamlit').session_state.get('data')
-    if _raw is not None and 'ID' in _raw.columns and len(_raw) == len(df_tsne):
-        df_tsne['ID'] = _raw['ID'].values
-
-    if feature_intensity and feature_intensity != 'None' and feature_intensity in data.columns:
-        df_tsne[feature_intensity] = data[feature_intensity]
-
-    marker_size = max(4, 10 - np.log10(n_samples))
-    cmax_value = data[feature_intensity].max() if feature_intensity and feature_intensity != 'None' else None
-
-    if num_components == 2:
-        fig = px.scatter(df_tsne, x='t-SNE1', y='t-SNE2', color='Class',
-                         color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in df_tsne.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_tsne[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True,
-                                          cmin=0, cmax=cmax_value))
-    else:
-        fig = px.scatter_3d(df_tsne, x='t-SNE1', y='t-SNE2', z='t-SNE3', color='Class',
-                            color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in df_tsne.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_tsne[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True,
-                                          cmin=0, cmax=cmax_value))
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))  
-    if capture_name:
-        _capture_plotly(fig, capture_name)
-    return fig
-
-
-def plot_umap(data, num_components=2, custom_colors=None, feature_intensity=None, random_state=1, capture_name=None):
-    if 'Class' not in data.columns:
-        st.error("Class column not found in data.")
-        return None
-
-    num_components = min(num_components, 3)
-    n_samples = data.shape[0]
-    n_neighbors = max(2, min(int(np.log2(n_samples)), 100))
-
-    data_features = data.drop('Class', axis=1)
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data_features)
-
-    reducer = umap.UMAP(
-        n_components=num_components, n_neighbors=n_neighbors,
-        random_state=random_state, n_jobs=-1,
-        low_memory=False, verbose=False
-    )
-    umap_results = reducer.fit_transform(data_scaled)
-
-    df_umap = pd.DataFrame(umap_results, columns=[f'UMAP{i+1}' for i in range(num_components)])
-    df_umap['Class'] = data['Class'].values
-    df_umap['Index'] = df_umap.index
-    _raw = __import__('streamlit').session_state.get('final_data') or __import__('streamlit').session_state.get('data')
-    if _raw is not None and 'ID' in _raw.columns and len(_raw) == len(df_umap):
-        df_umap['ID'] = _raw['ID'].values
-
-    if feature_intensity and feature_intensity != 'None' and feature_intensity in data.columns:
-        df_umap[feature_intensity] = data[feature_intensity]
-
-    marker_size = max(4, 10 - np.log10(n_samples))
-
-    if num_components == 2:
-        fig = px.scatter(df_umap, x='UMAP1', y='UMAP2', color='Class',
-                         color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in df_umap.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_umap[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.5),
-                                          colorscale='jet', showscale=True))
-    else:
-        fig = px.scatter_3d(df_umap, x='UMAP1', y='UMAP2', z='UMAP3', color='Class',
-                            color_discrete_map=custom_colors, hover_data=['Index'] + (['ID'] if 'ID' in df_umap.columns else []))
-        if feature_intensity and feature_intensity != 'None':
-            fig.update_traces(marker=dict(color=df_umap[feature_intensity],
-                                          colorbar=dict(title=feature_intensity, x=-0.05),
-                                          colorscale='jet', showscale=True))
-
-    fig.update_traces(marker=dict(size=marker_size, opacity=0.8, line=dict(width=0.5, color='black')))
-    if capture_name:
-        _capture_plotly(fig, capture_name)
-    return fig
 
 
 
 
-def update_axes_style(fig, num_components=2, plot_type="Scatter Plot"):
-    """
-    Uniformise le style des axes, titres, ticks et légendes pour les scatter plots 2D/3D
-    et renomme automatiquement les axes selon le type de réduction (PCA, t-SNE, UMAP).
-    """
-    # Déterminer les labels des axes automatiquement
-    if "PCA" in plot_type:
-        axis_labels = [f"PCA {i+1}" for i in range(num_components)]
-    elif "t-SNE" in plot_type:
-        axis_labels = [f"t-SNE {i+1}" for i in range(num_components)]
-    elif "UMAP" in plot_type:
-        axis_labels = [f"UMAP {i+1}" for i in range(num_components)]
-    else:
-        axis_labels = [f"Component {i+1}" for i in range(num_components)]
 
-    if num_components == 2:
-        fig.update_layout(
-            xaxis=dict(
-                title=axis_labels[0],
-                titlefont=dict(size=24, color='black', family="Arial, sans-serif"),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            yaxis=dict(
-                title=axis_labels[1],
-                titlefont=dict(size=24, color='black', family="Arial, sans-serif"),
-                tickfont=dict(size=22, color='black'),
-                showgrid=False,
-                showline=True,
-                linecolor='black',
-                linewidth=2
-            ),
-            legend=dict(font=dict(size=20, color='black')),
-            title=dict(text=plot_type, font=dict(size=26, color='black')),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
-    else:  # 3D
-        z_label = axis_labels[2] if num_components >= 3 else "Component 3"
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(
-                    title=axis_labels[0],
-                    titlefont=dict(size=22, color='black', family="Arial, sans-serif"),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                yaxis=dict(
-                    title=axis_labels[1],
-                    titlefont=dict(size=22, color='black', family="Arial, sans-serif"),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                ),
-                zaxis=dict(
-                    title=z_label,
-                    titlefont=dict(size=22, color='black', family="Arial, sans-serif"),
-                    tickfont=dict(size=18, color='black'),
-                    showgrid=False,
-                    showline=True,
-                    linecolor='black',
-                    linewidth=2
-                )
-            ),
-            legend=dict(font=dict(size=24, color='black')),
-            title=dict(text=f"{plot_type} (3D)", font=dict(size=26, color='black')),
-            plot_bgcolor='white',
-            paper_bgcolor='white'
-        )
 
-    return fig
+
+
 
 def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=None,
-             X=None, capture_name=None, color_by=None, data_orig=None):
+             X=None, capture_name=None, color_by=None, data_orig=None,
+             explained_variance=None):
     """
     Parameters
     ----------
     color_by   : None | 'Class' | '<meta_col>'  — column used to colour points
     data_orig  : original DataFrame (needed to pull ID / _meta columns for hover)
+    explained_variance : optional array-like of the PCA explained_variance_ratio_
+                          (one value per component). When given, axis titles
+                          become "PC1 (42.3%)" etc. instead of a bare "PCA1".
     """
     num_components = min(reduced_data.shape[1], 3)
     pca_df = pd.DataFrame(reduced_data, columns=[f'PCA{i+1}' for i in range(num_components)])
@@ -699,6 +146,14 @@ def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=N
     n_samples = pca_df.shape[0]
     marker_size = max(4, 10 - np.log10(n_samples))
 
+    # ── Axis labels with % of variance explained per component ──────────────
+    def _pc_label(i):
+        if explained_variance is not None and i < len(explained_variance):
+            return f"PC{i+1} ({explained_variance[i] * 100:.1f}%)"
+        return f"PC{i+1}"
+
+    axis_labels = {f'PCA{i+1}': _pc_label(i) for i in range(num_components)}
+
     # ── Enrich hover + colour ────────────────────────────────────────────────
     _color_col = color_by if color_by and color_by != 'Class' else 'Class'
     if data_orig is not None:
@@ -710,7 +165,8 @@ def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=N
         color_kwargs = dict(color='Class', color_discrete_map=custom_colors)
 
     if num_components == 2:
-        fig = px.scatter(pca_df, x='PCA1', y='PCA2', hover_data=hover_cols, **color_kwargs)
+        fig = px.scatter(pca_df, x='PCA1', y='PCA2', hover_data=hover_cols,
+                          labels=axis_labels, **color_kwargs)
         if feature_intensity and feature_intensity != 'None':
             fig.update_traces(marker=dict(color=pca_df[feature_intensity],
                                           colorbar=dict(title=feature_intensity, x=-0.5),
@@ -723,7 +179,7 @@ def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=N
         )
     else:
         fig = px.scatter_3d(pca_df, x='PCA1', y='PCA2', z='PCA3',
-                            hover_data=hover_cols, **color_kwargs)
+                            hover_data=hover_cols, labels=axis_labels, **color_kwargs)
         if feature_intensity and feature_intensity != 'None':
             fig.update_traces(marker=dict(color=pca_df[feature_intensity],
                                           colorbar=dict(title=feature_intensity, x=-0.05),
@@ -896,13 +352,16 @@ def update_axes_style(fig, num_components=2, plot_type="Scatter Plot"):
             )
         )
     else:  # 3D plot
+        _sx = fig.layout.scene.xaxis.title.text if fig.layout.scene.xaxis.title.text else 'X'
+        _sy = fig.layout.scene.yaxis.title.text if fig.layout.scene.yaxis.title.text else 'Y'
+        _sz = fig.layout.scene.zaxis.title.text if fig.layout.scene.zaxis.title.text else 'Z'
         fig.update_layout(autosize=True,
             title=dict(text=plot_type, font=dict(size=22)),
             font=dict(color=font_color, size=18),
             scene=dict(
-                xaxis=dict(title=dict(text='X', font=dict(size=title_font_size, color=font_color))),
-                yaxis=dict(title=dict(text='Y', font=dict(size=title_font_size, color=font_color))),
-                zaxis=dict(title=dict(text='Z', font=dict(size=title_font_size, color=font_color))),
+                xaxis=dict(title=dict(text=_sx, font=dict(size=title_font_size, color=font_color))),
+                yaxis=dict(title=dict(text=_sy, font=dict(size=title_font_size, color=font_color))),
+                zaxis=dict(title=dict(text=_sz, font=dict(size=title_font_size, color=font_color))),
             ),
             plot_bgcolor='white',
             paper_bgcolor='white',
