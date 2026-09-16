@@ -3,8 +3,8 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 08/07/2026
-Version: 1.2.7
+Last Updated: 16/09/2026
+Version: 1.2.8
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
 It is designed for archiving on Zenodo and integration into GitHub releases.
@@ -88,6 +88,18 @@ from statsmodels.stats.multitest import multipletests
 from neurocombat_sklearn import CombatModel
 from lifelines import KaplanMeierFitter, CoxPHFitter
 from lifelines.statistics import logrank_test
+
+# ── Thème graphique + accélérateur de rendu Profiler ─────────────────────────
+# Une seule ligne : applique le template "profiler" à TOUS les graphes de
+# l'application (px, go, tous modules confondus) et enveloppe st.plotly_chart
+# pour basculer automatiquement en WebGL / décimer les courbes trop denses.
+try:
+    from profiler_plot_theme import bootstrap as _profiler_plot_bootstrap
+    _profiler_plot_bootstrap()
+except Exception as _e:                                   # pragma: no cover
+    print(f"[profiler_plot_theme] non chargé : {_e}")
+
+
 
 # ── Performance: pandas Copy-on-Write (pandas 2+) ────────────────────────────
 try:
@@ -929,6 +941,55 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--tex
     if enrich_content.strip():
         _sec("sec-enrich", "Pathway & Enrichment Analysis", """<span class="section-icon" style="display:inline-flex;align-items:center;vertical-align:middle;"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 2c0 4 8 3 8 7s-8 3-8 7" stroke="#1a5fa8" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M13 2c0 4-8 3-8 7s8 3 8 7" stroke="#1a5fa8" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.5"/><line x1="5.5" y1="6" x2="12.5" y2="6" stroke="#1a5fa8" stroke-width="1" opacity="0.6"/><line x1="5.5" y1="12" x2="12.5" y2="12" stroke="#1a5fa8" stroke-width="1" opacity="0.6"/></svg></span>""", enrich_content)
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION — Processing Log (every step performed this session, in order)
+    # ══════════════════════════════════════════════════════════════════════════
+    steps_log = ss.get('_report_steps') or []
+    if steps_log:
+        log_rows = "".join(
+            f'<tr><td style="white-space:nowrap;color:var(--muted);'
+            f'font-family:\'IBM Plex Mono\',monospace">{s["time"]}</td><td>{s["msg"]}</td></tr>'
+            for s in steps_log
+        )
+        log_content = (
+            f'<p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">'
+            f'{len(steps_log)} step(s) recorded during this session, in the order they were performed.</p>'
+            f'<table class="profiler-table"><thead><tr><th>Time</th><th>Step</th></tr></thead>'
+            f'<tbody>{log_rows}</tbody></table>'
+        )
+        _sec("sec-log", "Processing Log", """<span class="section-icon" style="display:inline-flex;align-items:center;vertical-align:middle;"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#1a5fa8" stroke-width="1.3" fill="none"/><path d="M9 5v4.5l3 2" stroke="#1a5fa8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>""", log_content)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION — All Generated Plots (every figure rendered this session)
+    # ══════════════════════════════════════════════════════════════════════════
+    all_figs = ss.get('_report_all_figs') or []
+    if all_figs:
+        _seen_titles = {}
+        fig_cards = []
+        for _k, _title, _fig in all_figs:
+            _label = _title or _k
+            _seen_titles[_label] = _seen_titles.get(_label, 0) + 1
+            if _seen_titles[_label] > 1:
+                _label = f"{_label} ({_seen_titles[_label]})"
+            try:
+                _img = pio.to_image(_fig, format='png', width=800, height=800, scale=1.5)
+                _b64 = base64.b64encode(_img).decode()
+                fig_cards.append(
+                    f'<div class="fig-card"><div class="fig-title">{_label}</div>'
+                    f'<img src="data:image/png;base64,{_b64}" alt="{_label}" '
+                    f'style="width:100%;display:block;cursor:zoom-in;"></div>'
+                )
+            except Exception:
+                continue
+        if fig_cards:
+            figs_content = (
+                f'<p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">'
+                f'{len(fig_cards)} plot(s) generated during this session — including any already '
+                f'shown in the sections above.</p>'
+                f'<div class="fig-grid">{"".join(fig_cards)}</div>'
+            )
+            _sec("sec-allfigs", "All Generated Plots", """<span class="section-icon" style="display:inline-flex;align-items:center;vertical-align:middle;"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1" y="1" width="7" height="7" rx="1.2" stroke="#1a5fa8" stroke-width="1.3" fill="none"/><rect x="10" y="1" width="7" height="7" rx="1.2" stroke="#1a5fa8" stroke-width="1.3" fill="none"/><rect x="1" y="10" width="7" height="7" rx="1.2" stroke="#1a5fa8" stroke-width="1.3" fill="none"/><rect x="10" y="10" width="7" height="7" rx="1.2" stroke="#1a5fa8" stroke-width="1.3" fill="none"/></svg></span>""", figs_content)
+
     # ── fallback if nothing was generated ─────────────────────────────────────
     if not sections_html:
         sections_html.append(
@@ -977,7 +1038,7 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--tex
 
 def render_run_all_button():
     """Sidebar button to generate and download the HTML report."""
-    with st.sidebar.expander("📊 Export HTML Report", expanded=False):
+    with st.sidebar.expander(" Export HTML Report", expanded=False):
         st.markdown(
             '<p style="font-size:12px;color:#555">Generate a full HTML report of all analyses in the current session.</p>',
             unsafe_allow_html=True
@@ -994,12 +1055,330 @@ def render_run_all_button():
                 key="download_report_btn",
                 use_container_width=True
             )
-            st.success("✅ Report ready!")
+            _log_success("✅ Report ready!")
 
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# QRILC — Quantile Regression Imputation of Left-Censored data
+# ═══════════════════════════════════════════════════════════════════════
+def _qrilc_impute_series(series, tune_sigma: float = 1.0, rng=None, min_obs: int = 4):
+    """
+    Quantile Regression Imputation of Left-Censored data (QRILC-style).
+
+    Python re-implementation of the principle behind R/Bioconductor's
+    `imputeLCMD::impute.QRILC` (Lazar et al.), widely used for MNAR / left-
+    censored missing values in LC-MS/MS proteomics & metabolomics, where
+    missing values reflect signals below the instrument's detection limit
+    rather than random dropout.
+
+    Method
+    ------
+    1. Assume the *underlying* (fully observed) distribution of the feature
+       is approximately Normal. The observed values are the *upper* part of
+       that distribution — the lower tail (below the detection limit) is
+       what's missing.
+    2. Fit a robust quantile regression between the observed values and
+       their theoretical Normal quantiles (Blom-type plotting positions,
+       shifted to account for the missing lower tail) to recover (mu, sigma)
+       of the underlying distribution without bias from the truncation.
+    3. Draw the missing values from the reconstructed lower tail of that
+       distribution (+ small residual jitter), clipped to never exceed the
+       smallest observed value (a left-censored value cannot be larger than
+       what was actually detected).
+
+    Note: works best on approximately Normal data — apply after a Log2 (or
+    similar) normalization for biologically meaningful imputed values.
+    """
+    x = series.to_numpy(dtype=float)
+    obs_mask = ~np.isnan(x)
+    n_obs = int(obs_mask.sum())
+    n_miss = int((~obs_mask).sum())
+
+    if n_miss == 0:
+        return series
+    if n_obs < min_obs:
+        # not enough observed points to model the tail — conservative fallback
+        fallback = np.nanpercentile(x, 25) if n_obs > 0 else 0.0
+        x_imp = x.copy()
+        x_imp[~obs_mask] = fallback
+        return pd.Series(x_imp, index=series.index, name=series.name)
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    n_total = n_obs + n_miss
+    p_na = n_miss / n_total
+
+    obs_sorted = np.sort(x[obs_mask])
+    ranks = np.arange(1, n_obs + 1)
+    probs = p_na + (1 - p_na) * (ranks - 0.375) / (n_obs + 0.25)
+    probs = np.clip(probs, 1e-4, 1 - 1e-4)
+    z = stats.norm.ppf(probs)
+
+    mu = sigma = None
+    if n_obs >= 8:
+        try:
+            import statsmodels.api as sm
+            from statsmodels.regression.quantile_regression import QuantReg
+            X = sm.add_constant(z)
+            coefs = []
+            for tau in (0.1, 0.25, 0.5):
+                try:
+                    res = QuantReg(obs_sorted, X).fit(q=tau, max_iter=500)
+                    coefs.append(res.params)
+                except Exception:
+                    continue
+            if coefs:
+                coefs = np.array(coefs)
+                mu, sigma = float(coefs[:, 0].mean()), float(coefs[:, 1].mean())
+        except Exception:
+            pass
+
+    if mu is None or sigma is None or not np.isfinite(sigma) or sigma <= 0:
+        coeffs = np.polyfit(z, obs_sorted, 1)
+        sigma, mu = abs(coeffs[0]), coeffs[1]
+
+    miss_ranks = np.arange(1, n_miss + 1)
+    miss_probs = (miss_ranks - 0.375) / (n_total + 0.25)
+    upper_bound = max(p_na - 1e-4, 1e-4)
+    miss_probs = np.clip(miss_probs, 1e-4, upper_bound)
+    z_miss = stats.norm.ppf(miss_probs)
+
+    jitter = rng.normal(0, sigma * 0.05 * tune_sigma, size=n_miss)
+    imputed_vals = mu + sigma * z_miss + jitter
+    imputed_vals = np.minimum(imputed_vals, obs_sorted.min())  # censoring sanity clamp
+    imputed_vals = rng.permutation(imputed_vals)
+
+    x_imp = x.copy()
+    x_imp[~obs_mask] = imputed_vals
+    return pd.Series(x_imp, index=series.index, name=series.name)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Missingness mechanism screening — MCAR / MAR / MNAR-like heuristic
+# ═══════════════════════════════════════════════════════════════════════
+def _diagnose_missingness_mechanism(df, relevant_cols, progress_callback=None):
+    """
+    Heuristic screening of the missing-data mechanism (MCAR / MAR / MNAR-like)
+    per feature, to help choose an appropriate imputation strategy.
+
+    IMPORTANT — this is a practical heuristic for guidance, not a formal
+    statistical test (e.g. Little's MCAR test): with the sample sizes typical
+    of omics data, individual-feature classification carries real
+    uncertainty. Use it to read the *dominant* pattern in the dataset, not
+    as a definitive per-feature label.
+
+    Two signals are combined per feature:
+      • Abundance-driven signal (→ MNAR / left-censoring): the feature's
+        observed values sit in the lower range of the overall intensity
+        distribution AND it carries above-median missingness. This is the
+        classic signature of values missing below the detection limit.
+      • Class-driven signal (→ MAR): a chi² test of independence between the
+        feature's missingness indicator (present/absent) and sample Class.
+        A significant result means missingness is predictable from an
+        *observed* variable (Class) — the definition of MAR.
+
+    Returns
+    -------
+    (verdict_df, summary, fig)
+        verdict_df : per-feature table with the assigned label
+        summary    : dict with dataset-level %/mechanism and a dominant verdict
+        fig        : Plotly scatter (Mean observed intensity vs. % missing),
+                     colored by the per-feature heuristic label
+    """
+    sub = df[relevant_cols].select_dtypes(include="number")
+    if sub.shape[1] == 0 or len(df) == 0:
+        return None, None, None
+
+    miss_pct = sub.isna().mean() * 100
+    mean_obs = sub.mean(skipna=True)
+
+    has_class = "Class" in df.columns and df["Class"].nunique() > 1
+    mar_pvals = {}
+    n_cols = len(sub.columns)
+    if has_class:
+        classes = df["Class"]
+        for i, col in enumerate(sub.columns):
+            ind = sub[col].isna().astype(int)
+            if ind.nunique() < 2:
+                mar_pvals[col] = np.nan
+            else:
+                try:
+                    ctab = pd.crosstab(ind, classes)
+                    if ctab.shape[0] < 2 or ctab.shape[1] < 2 or (ctab.values < 5).mean() > 0.5:
+                        mar_pvals[col] = np.nan
+                    else:
+                        _, p, _, _ = stats.chi2_contingency(ctab)
+                        mar_pvals[col] = p
+                except Exception:
+                    mar_pvals[col] = np.nan
+            if progress_callback:
+                progress_callback((i + 1) / max(n_cols, 1))
+    else:
+        mar_pvals = {col: np.nan for col in sub.columns}
+        if progress_callback:
+            progress_callback(1.0)
+
+    verdict_df = pd.DataFrame({
+        "Feature": sub.columns,
+        "Missing (%)": miss_pct.values,
+        "Mean observed intensity": mean_obs.values,
+        "Class assoc. p-value": [mar_pvals.get(c, np.nan) for c in sub.columns],
+    })
+
+    intensity_q1 = np.nanpercentile(verdict_df["Mean observed intensity"], 25)
+    missing_median = verdict_df.loc[verdict_df["Missing (%)"] > 0, "Missing (%)"].median()
+    missing_median = 0 if pd.isna(missing_median) else missing_median
+
+    def _label(row):
+        if row["Missing (%)"] <= 0:
+            return "Complete"
+        low_intensity = row["Mean observed intensity"] <= intensity_q1
+        class_driven = (not pd.isna(row["Class assoc. p-value"])) and row["Class assoc. p-value"] < 0.05
+        high_missing = row["Missing (%)"] >= missing_median
+        if low_intensity and high_missing and class_driven:
+            return "Mixed MNAR + MAR"
+        if low_intensity and high_missing:
+            return "MNAR-like (left-censored)"
+        if class_driven:
+            return "MAR-like (class-dependent)"
+        return "MCAR-like (no clear driver)"
+
+    verdict_df["Mechanism"] = verdict_df.apply(_label, axis=1)
+
+    n_incomplete = int((verdict_df["Missing (%)"] > 0).sum())
+    counts = verdict_df.loc[verdict_df["Mechanism"] != "Complete", "Mechanism"].value_counts()
+    pct = (counts / max(n_incomplete, 1) * 100).round(1).to_dict()
+    dominant = "No missing values" if n_incomplete == 0 else (
+        counts.idxmax() if len(counts) else "MCAR-like (no clear driver)"
+    )
+
+    summary = {
+        "n_incomplete_features": n_incomplete,
+        "pct_by_mechanism": pct,
+        "dominant": dominant,
+    }
+
+    color_map = {
+        "Complete": "#94a3b8",
+        "MNAR-like (left-censored)": "#ef4444",
+        "MAR-like (class-dependent)": "#3b82f6",
+        "Mixed MNAR + MAR": "#a855f7",
+        "MCAR-like (no clear driver)": "#22c55e",
+    }
+    fig = px.scatter(
+        verdict_df, x="Mean observed intensity", y="Missing (%)",
+        color="Mechanism", color_discrete_map=color_map,
+        hover_name="Feature",
+        title="Missingness Mechanism Screening (per feature)",
+        labels={"Mean observed intensity": "Mean observed intensity (feature)"},
+    )
+    fig.add_hline(y=missing_median, line_dash="dot", line_color="gray",
+                  annotation_text=f"median missing among incomplete features ({missing_median:.0f}%)")
+    fig.add_vline(x=intensity_q1, line_dash="dot", line_color="gray",
+                  annotation_text="lower-quartile intensity")
+    fig.update_layout(
+        height=460, plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(size=13, color="black", family="Arial"),
+        legend=dict(font=dict(size=12)),
+    )
+    return verdict_df, summary, fig
+
+
+
+
+def _log_success(msg, *args, **kwargs):
+    """Wrapper around st.success() that also timestamps the action into the
+    HTML report's processing-step log, so the report can list every step
+    performed during the session, in order, without manual bookkeeping."""
+    try:
+        clean = re.sub(r'[*_`#]', '', str(msg)).strip()
+        log = st.session_state.setdefault('_report_steps', [])
+        if not log or log[-1]['msg'] != clean:
+            log.append({'time': datetime.datetime.now().strftime('%H:%M:%S'), 'msg': clean})
+    except Exception:
+        pass
+    return st.success(msg, *args, **kwargs)
+
+# ─── Standard Plotly config, shared by every chart in the app ────────────────
+# One single source of truth for the modebar so all plots (heatmap, PCA, ROC,
+# confusion matrix, etc.) behave consistently: zoom, pan, box/lasso select,
+# autoscale and "reset axes" are Plotly's built-in modebar buttons and stay
+# available by default as long as we never pass modeBarButtonsToRemove for
+# them or displayModeBar=False. We only *add* a one-click PNG download.
+STD_PLOTLY_CONFIG = {
+    'displayModeBar': True,
+    'displaylogo': False,
+    'scrollZoom': True,
+    'modeBarButtonsToAdd': ['downloadImage'],
+    'toImageButtonOptions': {'format': 'png', 'scale': 2},
+}
+
+
+def _std_config(**overrides):
+    """Return a fresh copy of STD_PLOTLY_CONFIG, optionally overriding keys
+    (e.g. _std_config(scrollZoom=False)). Always returns a new dict so callers
+    can mutate it (e.g. toImageButtonOptions) without corrupting the shared
+    default used elsewhere."""
+    cfg = {k: (dict(v) if isinstance(v, dict) else v) for k, v in STD_PLOTLY_CONFIG.items()}
+    cfg.update(overrides)
+    return cfg
+
+
+def _square_plot(fig, config=None, key=None, min_size=380, max_size=700, n_samples=None):
+    """Render a Plotly figure at a fixed square size, centered in a narrower
+    column instead of stretching full-width. Keeps on-screen proportions and
+    PNG exports (toImageButtonOptions) square and consistent for editing.
+
+    n_samples, if given, lets the plot grow a bit with the number of points
+    plotted (more samples → slightly bigger canvas, still capped) instead of
+    always using a one-size-fits-all square.
+    """
+    try:
+        h = fig.layout.height
+        size = int(h) if h else 480
+    except Exception:
+        size = 480
+    if n_samples:
+        # Gentle, sub-linear growth with sample count so dense plots (many
+        # points/features) get a bit more room without exploding in size.
+        size = max(size, int(420 + 40 * np.log2(max(n_samples, 1))))
+    size = max(min_size, min(max_size, size))
+    try:
+        fig.update_layout(width=size, height=size)
+    except Exception:
+        pass
+    if config is None:
+        config = _std_config(
+            toImageButtonOptions={'format': 'png', 'scale': 2, 'width': size, 'height': size}
+        )
+    else:
+        config = dict(config)
+        opts = dict(config.get('toImageButtonOptions', {}) or {})
+        opts.setdefault('width', size)
+        opts.setdefault('height', size)
+        config['toImageButtonOptions'] = opts
+    try:
+        _title = None
+        if fig.layout.title and fig.layout.title.text:
+            _title = re.sub(r'<[^>]+>', '', fig.layout.title.text).strip()
+        _all = st.session_state.setdefault('_report_all_figs', [])
+        _auto_key = key or _title or f"plot_{len(_all) + 1}"
+        _all.append((_auto_key, _title or _auto_key, fig))
+    except Exception:
+        pass
+    _l, _mid, _r = st.columns([1, 2, 1])
+    with _mid:
+        st.plotly_chart(fig, use_container_width=False, config=config, key=key)
 
 
 def main():
     initialize_session_state()
+    # Reset the per-run figure registry (rebuilt fresh every rerun since
+    # every visible tab's plots are regenerated each run) so the HTML
+    # report's "All Generated Plots" section never shows stale figures.
+    st.session_state['_report_all_figs'] = []
     # ── Desktop mode: no cleanup thread, no auth ─────────────────────────────
 
     # working directory to the directory where the script is located
@@ -1112,7 +1491,7 @@ button[data-baseweb="tab"] * {{
     )
 
     # ── Desktop session controls (Reset / Stop — no Logout) ──────────────────
-    with st.sidebar.expander("  Session & Controls", expanded=True):
+    with st.sidebar.expander(" Session & Controls", expanded=True):
         st.markdown(
             "<div style='font-size:0.78rem;color:#64748b;margin-bottom:10px;'>"
             "Manage your working session below.</div>",
@@ -1137,7 +1516,7 @@ button[data-baseweb="tab"] * {{
         # ═══════════════════════════════════════════════════════════
 
         # ── 0. Quick Help & PDF guide ───────────────────────────────
-        with st.sidebar.expander("❓ Help & Import Guide", expanded=False):
+        with st.sidebar.expander(" Help & Import Guide", expanded=False):
             st.markdown(
                 "<div style='font-size:0.80rem;line-height:1.7;color:#334155;'>"
                 "<b>Desktop mode — no size limits.</b><br>"
@@ -1212,7 +1591,7 @@ button[data-baseweb="tab"] * {{
         # ═══════════════════════════════════════════════════════════
         #  SECTION 1 — RAW CONVERSION
         # ═══════════════════════════════════════════════════════════
-        with st.sidebar.expander("⚙️ Step 1 — RAW File Conversion", expanded=False):
+        with st.sidebar.expander(" RAW File Conversion", expanded=False):
             st.caption("Convert Waters/Thermo/Bruker RAW files to mzML/mzXML before loading.")
             uploaded_raw = st.file_uploader(
                 "Upload RAW files or ZIP archive",
@@ -1263,7 +1642,7 @@ button[data-baseweb="tab"] * {{
                             float(lock_mass) if lock_mass else None,
                             output_format
                         )
-                        st.success(f"✅ {len(os.listdir(output_dir))} file(s) converted.")
+                        _log_success(f"✅ {len(os.listdir(output_dir))} file(s) converted.")
                     except Exception as e:
                         st.error(f"❌ {e}")
                     finally:
@@ -1292,7 +1671,7 @@ button[data-baseweb="tab"] * {{
 
 
 
-        with st.sidebar.expander("📡 Step 2 — Load MS1 Spectra (mzML / mzXML)", expanded=False):
+        with st.sidebar.expander(" Load MS1 Spectra (mzML / mzXML)", expanded=False):
             st.caption("Upload mzML/mzXML files grouped by class. Each group = one biological class.")
             for i, group in enumerate(st.session_state["file_groups"]):
                 with st.container():
@@ -1481,7 +1860,7 @@ button[data-baseweb="tab"] * {{
             st.session_state.expand_load_data = False
 
         with st.sidebar.expander(
-            "📂 Step 3 — Load Tabular / Omics Data",
+            " Load Tabular / Omics Data",
             expanded=st.session_state.expand_load_data
         ):
             # Format summary card
@@ -1647,7 +2026,7 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
         # ═══════════════════════════════════════════════════════════
         #  SECTION 4 — SURVIVAL DATA
         # ═══════════════════════════════════════════════════════════
-        with st.sidebar.expander("⏳ Step 4 — Load Survival Data", expanded=False):
+        with st.sidebar.expander(" Load Survival Data", expanded=False):
             st.caption("Kaplan-Meier & Cox regression. Requires survival time + event status columns.")
             import pandas as pd
             uploaded_file_surv = st.file_uploader(
@@ -1670,7 +2049,7 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
                         df = None
                     if df is not None:
                         st.session_state["survival_data"] = df
-                        st.success(f"✅ Survival data loaded: {df.shape[0]} samples, {df.shape[1]} columns.")
+                        _log_success(f"✅ Survival data loaded: {df.shape[0]} samples, {df.shape[1]} columns.")
                         if st.checkbox("Show preview", key="surv_preview"):
                             st.dataframe(df.head(5), use_container_width=True)
                 except Exception as e:
@@ -1679,7 +2058,7 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
         # ═══════════════════════════════════════════════════════════
         #  SECTION 5 — LONGITUDINAL DATA
         # ═══════════════════════════════════════════════════════════
-        with st.sidebar.expander("📈 Step 5 — Longitudinal / Time-Series Data", expanded=False):
+        with st.sidebar.expander(" Longitudinal / Time-Series Data", expanded=False):
             # st.markdown(
             #     "<div style='background:#fffbeb;border-left:3px solid #d97706;"
             #     "border-radius:6px;padding:8px 12px;font-size:0.76rem;color:#92400e;margin-bottom:8px;'>"
@@ -1746,13 +2125,13 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
                              if c.lower().replace(" ", "_") in _time_aliases), None)
 
                         if _auto_subj:
-                            st.success(f"✅ Subject ID: **{_auto_subj}** "
+                            _log_success(f"✅ Subject ID: **{_auto_subj}** "
                                        f"({df_long[_auto_subj].nunique()} subjects)")
                         else:
                             st.warning("⚠️ No Subject_ID column detected.")
                         if _auto_time:
                             _tp = sorted(df_long[_auto_time].dropna().unique().tolist())
-                            st.success(f"✅ Time: **{_auto_time}** → "
+                            _log_success(f"✅ Time: **{_auto_time}** → "
                                        f"{len(_tp)} timepoints: {_tp[:6]}")
                         else:
                             st.warning("⚠️ No Time column detected.")
@@ -1819,7 +2198,7 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
                                     c: _plotly_pal[i % len(_plotly_pal)]
                                     for i, c in enumerate(_cls_list)}
                             _tp_final = df_long["Time"].dropna().unique().tolist()
-                            st.success(
+                            _log_success(
                                 f"✅ Longitudinal data loaded — "
                                 f"{df_long['Subject_ID'].nunique()} subjects · "
                                 f"{len(_tp_final)} timepoints: "
@@ -1834,7 +2213,7 @@ border-radius:8px;padding:10px 12px;margin-bottom:10px;line-height:1.8;'>
         # ═══════════════════════════════════════════════════════════
         #  SECTION 6 — ADDITIONAL TOOLS (MSI2Profiler)
         # ═══════════════════════════════════════════════════════════
-        with st.sidebar.expander("🔧 Additional Tools — MSI2Profiler", expanded=False):
+        with st.sidebar.expander(" Additional Tools — MSI2Profiler", expanded=False):
             st.markdown("""
 <div style='background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px 12px;font-size:0.78rem;color:#0c4a6e;'>
 <b>MSI2Profiler</b> is a desktop tool for <b>Mass Spectrometry Imaging (MSI)</b> data.<br>
@@ -2250,12 +2629,33 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             st.markdown("<hr style='margin:14px 0;border:none;border-top:1px solid #e2e8f0;'>", unsafe_allow_html=True)
 
             # ── LEVEL 1 : 4 thematic group tabs — always visible after login ──────────
-            _grp_clean, _grp_balance, _grp_explore, _grp_process = st.tabs([
-                "  Clean & Edit",
-                "  Class & Sample QC",
-                "  Data Overview",
-                "  Preprocess",
-            ])
+            # NOTE: native st.tabs() has no `key` param, so Streamlit cannot pin the
+            # active tab across a full script rerun (e.g. a form submit inside
+            # Preprocessing / Post-Preprocessing QC) -- it can silently snap back to
+            # the first tab. Using a session_state-keyed radio (styled as a tab bar)
+            # instead makes the selection persist across reruns like any other widget.
+            _grp_labels = ["  Clean & Edit", "  Class & Sample QC", "  Missing & Distribution", "  Preprocess"]
+            if "_active_datalab_group" not in st.session_state:
+                st.session_state["_active_datalab_group"] = _grp_labels[0]
+            st.markdown(
+                "<style>"
+                "div[data-testid='stRadio'] > label {display:none;}"
+                "div[data-testid='stRadio'] div[role='radiogroup']{gap:4px;flex-wrap:wrap;}"
+                "div[data-testid='stRadio'] div[role='radiogroup'] label{"
+                "background:#f1f5f9;border-radius:8px 8px 0 0;padding:8px 18px;margin:0;"
+                "border:1px solid #e2e8f0;border-bottom:none;font-weight:600;}"
+                "div[data-testid='stRadio'] div[role='radiogroup'] label[data-checked='true']{"
+                "background:#ffffff;border-bottom:2px solid #318CE7;}"
+                "div[data-testid='stRadio'] div[role='radiogroup'] label,"
+                "div[data-testid='stRadio'] div[role='radiogroup'] label *{"
+                "font-family:'PI','Segoe UI',system-ui,sans-serif !important;}"
+                "</style>",
+                unsafe_allow_html=True,
+            )
+            _active_group = st.radio(
+                "Data Lab section", _grp_labels, key="_active_datalab_group",
+                horizontal=True, label_visibility="collapsed",
+            )
 
             # # Show message if no dataset loaded — group tabs visible, content locked
             # if _t1_no_data:
@@ -2266,7 +2666,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             # ════════════════════════════════════════════════════════════════════════
             # GROUP 1 — EXPLORE   (Overview · Missing & Zeros · Distribution)
             # ════════════════════════════════════════════════════════════════════════
-            with _grp_explore:
+            if _active_group == "  Missing & Distribution":
                 st.markdown(_picon("overview","Inspect dataset structure, missing values and feature distributions.", "#318CE7"), unsafe_allow_html=True)
                 _t1_missing, _t1_distrib = st.tabs([
                     "  Missing & Zeros", "  Distribution"
@@ -2297,7 +2697,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         st.markdown("**Missing Values**")
 
                         if missing_df.empty:
-                            st.success("✅ No missing values detected.")
+                            _log_success("✅ No missing values detected.")
                             total_missing_pct = 0
                             zero_inflated_features = pd.Series(dtype=float)
                         else:
@@ -2306,7 +2706,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 / (df.shape[0] * len(relevant_cols))
                             ) * 100
 
-                            st.success(f"Overall missingness: **{total_missing_pct:.2f}%**")
+                            _log_success(f"Overall missingness: **{total_missing_pct:.2f}%**")
 
                             # ── 1. Pie charts par classe ──────────────────────────────
                             if "Class" in df.columns:
@@ -2360,7 +2760,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     plot_bgcolor="white", paper_bgcolor="white",
                                     title_font=dict(size=18, color="black", family="Arial"),
                                 )
-                                st.plotly_chart(fig_pies, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                _square_plot(fig_pies, config=_std_config())
                                 _capture_plotly(fig_pies, "missing_values_per_class_pies")
 
 
@@ -2444,13 +2844,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 ),
                             )
 
-                            st.plotly_chart(fig_missing, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                            _square_plot(fig_missing, config=_std_config())
                             _capture_plotly(fig_missing, "cumulative_missing_curve")
 
                             # ── NEW: Missing heatmap + per-class bar + completeness ──
                             try:
                                 fig_miss_hm = plot_missing_heatmap(df)
-                                st.plotly_chart(fig_miss_hm, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                _square_plot(fig_miss_hm, config=_std_config())
                                 _capture_plotly(fig_miss_hm, "missing_heatmap")
                             except Exception:
                                 pass
@@ -2458,7 +2858,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             try:
                                 fig_miss_cls = plot_missing_per_class(df)
                                 if fig_miss_cls:
-                                    st.plotly_chart(fig_miss_cls, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                    _square_plot(fig_miss_cls, config=_std_config())
                                     _capture_plotly(fig_miss_cls, "missing_per_class_bar")
                             except Exception:
                                 pass
@@ -2466,7 +2866,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             try:
                                 fig_compl = plot_feature_completeness_rank(df)
                                 if fig_compl:
-                                    st.plotly_chart(fig_compl, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                    _square_plot(fig_compl, config=_std_config())
                                     _capture_plotly(fig_compl, "feature_completeness_rank")
                             except Exception:
                                 pass
@@ -2586,14 +2986,14 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 linecolor="#333", linewidth=1.5, mirror=True,
                             ),
                         )
-                        st.plotly_chart(fig_cum, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_cum, config=_std_config())
                         _capture_plotly(fig_cum, "cumulative_feature_detection_curve")
 
                         # ── NEW: Zero-inflation violin per class ──────────────────
                         try:
                             fig_zi_viol = plot_zero_inflation_per_class(df)
                             if fig_zi_viol:
-                                st.plotly_chart(fig_zi_viol, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                _square_plot(fig_zi_viol, config=_std_config())
                                 _capture_plotly(fig_zi_viol, "zero_inflation_violin_class")
                         except Exception:
                             pass
@@ -2614,23 +3014,126 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 use_container_width=True
                             )
                         else:
-                            st.success("✅ No strongly zero-inflated features detected.")
+                            _log_success("✅ No strongly zero-inflated features detected.")
 
                         st.markdown("**📋 Zero % per feature (NaN excluded)**")
                         st.dataframe(zero_feat_df, use_container_width=True)
 
                         # ============================================================
-                        # IMPUTATION RECOMMENDATIONS
+                        # MISSINGNESS MECHANISM SCREENING (MCAR / MAR / MNAR-like)
+                        # ============================================================
+                        st.markdown("---")
+                        st.markdown("**Missingness Mechanism Screening (MCAR / MAR / MNAR-like)**")
+
+                        _mech_verdict_df, _mech_summary, _mech_fig = (None, None, None)
+                        if not missing_df.empty:
+                            # Per-SESSION cache (st.session_state), NOT st.cache_data: kept consistent with
+                            # the web version even though the desktop app is single-user, so both codebases
+                            # share the exact same caching logic.
+                            import hashlib
+                            try:
+                                _fp_bytes = pd.util.hash_pandas_object(df[relevant_cols], index=False).values.tobytes()
+                                if 'Class' in df.columns:
+                                    _fp_bytes += pd.util.hash_pandas_object(df[['Class']], index=False).values.tobytes()
+                                _mech_cache_key = hashlib.md5(_fp_bytes).hexdigest()
+                            except Exception:
+                                _mech_cache_key = f"{df.shape}-{tuple(relevant_cols)}"
+
+                            _mech_cache = st.session_state.setdefault("_mech_screen_cache", {})
+
+                            if _mech_cache_key in _mech_cache:
+                                _mech_verdict_df, _mech_summary, _mech_fig = _mech_cache[_mech_cache_key]
+                            else:
+                                _mech_progress = st.progress(0, text="Screening missingness mechanism (MCAR / MAR / MNAR)…")
+                                def _update_mech_progress(frac, _bar=_mech_progress):
+                                    _bar.progress(min(max(frac, 0.0), 1.0), text=f"Screening missingness mechanism… {int(frac*100)}%")
+                                try:
+                                    _mech_verdict_df, _mech_summary, _mech_fig = _diagnose_missingness_mechanism(
+                                        df, relevant_cols, progress_callback=_update_mech_progress
+                                    )
+                                    _mech_cache[_mech_cache_key] = (_mech_verdict_df, _mech_summary, _mech_fig)
+                                    if len(_mech_cache) > 3:
+                                        del _mech_cache[next(iter(_mech_cache))]
+                                except Exception as _e:
+                                    st.info(f"Mechanism screening unavailable: {_e}")
+                                finally:
+                                    _mech_progress.empty()
+
+                        if _mech_fig is not None:
+                            _square_plot(_mech_fig, config=_std_config())
+                            _capture_plotly(_mech_fig, "missingness_mechanism_screening")
+
+                            _dominant = _mech_summary["dominant"]
+                            _pct_txt = " · ".join(f"{k}: {v}%" for k, v in _mech_summary["pct_by_mechanism"].items())
+                            st.info(
+                                f"**Dominant pattern: {_dominant}** (among {_mech_summary['n_incomplete_features']} "
+                                f"features with missing values)\n\n{_pct_txt}"
+                            )
+                            with st.expander("How to read this"):
+                                st.markdown(
+                                    "- **Red / MNAR-like (left-censored):** low-abundance features with high "
+                                    "missingness → values are likely missing *because* they fall below the "
+                                    "detection limit. Classic in LC-MS/MS. → favor **QRILC** or **Shifted Gaussian**.\n"
+                                    "- **Blue / MAR-like (class-dependent):** missingness is statistically linked "
+                                    "to sample Class rather than to abundance. → impute **per class** "
+                                    "(check *Impute missing values per class*), e.g. class-wise KNN or Median.\n"
+                                    "- **Purple / Mixed MNAR + MAR:** both signals present → per-class QRILC / "
+                                    "Shifted Gaussian is usually safest.\n"
+                                    "- **Green / MCAR-like:** no clear driver detected → Mean/Median/KNN are all "
+                                    "reasonable, no special handling required.\n\n"
+                                    "⚠️ This is a heuristic screening for practical guidance — not a formal "
+                                    "statistical test (e.g. Little's MCAR test). Treat it as a starting point."
+                                )
+                            st.dataframe(_mech_verdict_df, use_container_width=True)
+                        elif missing_df.empty:
+                            pass  # nothing to screen
+                        else:
+                            st.info("Not enough data to screen the missingness mechanism.")
+
+                        # ============================================================
+                        # IMPUTATION & FILTERING RECOMMENDATIONS (mechanism-aware)
                         # ============================================================
                         st.markdown("---")
                         st.markdown("**💡 Imputation & Filtering Recommendations**")
 
+                        _dominant_mech = _mech_summary["dominant"] if _mech_summary else None
+                        # suggested per-class detection threshold, bounded to a sane 50–90% range
+                        _suggested_threshold = int(min(90, max(50, round(100 - total_missing_pct))))
+
                         if total_missing_pct < 5 and len(zero_inflated_features) == 0:
-                            st.success(
+                            _log_success(
                                 "✅ **Low missingness & low sparsity detected**\n\n"
                                 "- Data are globally well-covered across samples\n"
                                 "- **Recommended imputation:** Mean / Median or fillna(0) (not detected)\n"
                                 "- Feature filtering not strictly required"
+                            )
+                        elif _dominant_mech and _dominant_mech.startswith("MNAR"):
+                            st.info(
+                                "🔬 **MNAR-dominant pattern detected (left-censored, low-abundance signals)**\n\n"
+                                "- Missing values are concentrated in low-intensity features → consistent with "
+                                "*missing below detection limit*, not random dropout\n\n"
+                                "**Recommended strategy:**\n"
+                                "- 🔹 **QRILC** (Quantile Regression, left-censored) — reconstructs the missing "
+                                "lower tail from each feature's own distribution; best-suited choice here\n"
+                                "- 🔹 **Shifted Gaussian** as a simpler biologically-realistic alternative\n"
+                                "- ❌ Avoid Mean/KNN — they assume values are missing at random, which biases "
+                                "MNAR features upward\n\n"
+                                f"**Filtering guidance:** keep features detected in **≥{_suggested_threshold}% of "
+                                "samples per class**; remove features missing in an entire class"
+                            )
+                        elif _dominant_mech and _dominant_mech.startswith("MAR"):
+                            st.info(
+                                "🔬 **MAR-dominant pattern detected (class-dependent missingness)**\n\n"
+                                "- Missingness is statistically associated with sample **Class**, not with "
+                                "abundance level\n\n"
+                                "**Recommended strategy:**\n"
+                                "- 🔹 Enable **Impute missing values per class** — this is the key lever for MAR "
+                                "data, since it lets each class' missingness pattern be modeled separately\n"
+                                "- 🔹 **KNN imputation** (per class) captures within-class structure well\n"
+                                "- 🔹 Median (per class) is a safe fallback if sample size per class is small\n\n"
+                                f"**Filtering guidance:** keep features detected in **≥{_suggested_threshold}% of "
+                                "samples per class**; a class entirely missing a feature should be dropped rather "
+                                "than imputed across classes"
                             )
                         elif total_missing_pct < 20:
                             st.info(
@@ -2638,12 +3141,12 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 "- Missing values mainly reflect **low-abundance signals**\n"
                                 "- Zeros should be interpreted as *missing below detection limit*\n\n"
                                 "**Recommended strategy:**\n"
-                                "- 🔹 **Shifted Gaussian imputation** (default & biologically realistic)\n"
+                                "- 🔹 **Shifted Gaussian** or **QRILC** (default & biologically realistic for "
+                                "intensity-type data)\n"
                                 "- 🔹 **KNN imputation** if samples are homogeneous and well clustered\n"
                                 "- 🔹 Median preferred over Mean if data are skewed\n\n"
-                                "**Filtering guidance:**\n"
-                                "- Keep features detected in **≥50–60% of samples per class**\n"
-                                "- Remove features missing in entire classes"
+                                f"**Filtering guidance:** keep features detected in **≥{_suggested_threshold}% of "
+                                "samples per class**; remove features missing in entire classes"
                             )
                         else:
                             st.warning(
@@ -2651,10 +3154,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 "- Many features are absent in a large fraction of samples\n"
                                 "- Typical of **count-like data** or **direct MS spectral matrices**\n\n"
                                 "**Recommended strategy:**\n"
-                                "- 🔹 Apply **feature detection filtering first** → keep features detected in **≥70% of samples**\n"
-                                "- 🔹 Then apply **KNN** or **Shifted Gaussian** imputation\n"
+                                f"- 🔹 Apply **feature detection filtering first** → keep features detected in "
+                                f"**≥{max(_suggested_threshold, 70)}% of samples**\n"
+                                "- 🔹 Then apply **QRILC**, **KNN** or **Shifted Gaussian** imputation depending "
+                                "on the mechanism screening above\n"
                                 "- ❌ Avoid Mean/Mode in highly sparse matrices\n\n"
-                                "**Practical rule:** if a feature is zero or missing in >70% of samples → discard it"
+                                f"**Practical rule:** if a feature is zero or missing in >{max(_suggested_threshold, 70)}% "
+                                "of samples → discard it"
                             )
 
 
@@ -2708,7 +3214,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             height=400
                         )
 
-                        st.plotly_chart(fig_density, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_density, config=_std_config())
                         _capture_plotly(fig_density, "Features per Sample Distribution Skewness")
 
 
@@ -2732,7 +3238,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                         fig_norm.update_layout(height=400)
 
-                        st.plotly_chart(fig_norm, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_norm, config=_std_config())
                         _capture_plotly(fig_norm, "Features per Sample Normality Proportion")
 
                         cv = (df[relevant_cols].std() / df[relevant_cols].mean()).replace([np.inf, -np.inf], np.nan)
@@ -2742,25 +3248,58 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                         st.markdown("**💡Multi-omics diagnostics**")
                         st.info(
-                            f"Mean |skew|: {skew_mean:.2f}\n"
-                            f"Mean CV: {cv_mean:.2f}\n"
-                            f"Zero ratio: {zero_ratio*100:.1f}%"
+                            f"Mean |skew|: {skew_mean:.2f} (threshold: <0.5 near-normal, >1 highly skewed)\n"
+                            f"Mean CV: {cv_mean:.2f} (threshold: >1 signals strong mean–variance dependency)\n"
+                            f"Zero ratio: {zero_ratio*100:.1f}% (threshold: >30% considered high sparsity)"
                         )
 
                         st.markdown("**💡Normalization guidance (non-prescriptive)**")
                         if zero_ratio > 0.3:
-                            st.warning("High sparsity → Median of Ratios / TMM / VST")
+                            st.warning(
+                                f"**High sparsity ({zero_ratio*100:.1f}% zeros > 30% threshold) → "
+                                "Median of Ratios / TMM / VST**\n\n"
+                                "These methods are designed for count-like, zero-heavy matrices (RNA-seq-style "
+                                "normalization) and are far less sensitive to the many zeros than a simple "
+                                "mean/total-intensity scaling would be."
+                            )
                         elif cv_mean > 1:
-                            st.warning("Strong mean–variance dependency → VST or log-based normalization")
+                            st.warning(
+                                f"**Strong mean–variance dependency (mean CV = {cv_mean:.2f} > 1) → "
+                                "VST or log-based normalization**\n\n"
+                                "High CV means variance grows with intensity — a variance-stabilizing "
+                                "transform (VST) or Log2/Log10 evens this out so downstream stats aren't "
+                                "dominated by the highest-intensity features."
+                            )
                         elif skew_mean > 1:
-                            st.info("Right-skewed distributions → Log2 / Log10 / VST")
+                            st.info(
+                                f"**Right-skewed distributions (mean |skew| = {skew_mean:.2f} > 1) → "
+                                "Log2 / Log10 / VST**\n\n"
+                                "Log-scale transforms compress the long right tail typical of intensity data, "
+                                "bringing features closer to approximate normality — also a prerequisite for "
+                                "QRILC imputation if you use it."
+                            )
                         elif skew_mean < 0.5:
-                            st.success("Near-normal distributions → Total intensity / RMS / BasePeak suitable")
+                            _log_success(
+                                f"**Near-normal distributions (mean |skew| = {skew_mean:.2f} < 0.5) → "
+                                "Total intensity / RMS / BasePeak suitable**\n\n"
+                                "Data are already reasonably symmetric — a simple scaling normalization is "
+                                "usually enough; a log transform is optional rather than required."
+                            )
                         else:
-                            st.info("Mixed signals → Median / Mean normalization recommended")
+                            st.info(
+                                f"**Mixed signals (mean |skew| = {skew_mean:.2f}, mean CV = {cv_mean:.2f}) → "
+                                "Median / Mean normalization recommended**\n\n"
+                                "No single diagnostic dominates — a robust central-tendency normalization is a "
+                                "safe default; revisit after inspecting the per-feature distributions."
+                            )
 
                         st.caption(
-                            "ℹ️ Recommendations are data-driven and intended to guide, not enforce, normalization choices in multi-omics settings."
+                            "ℹ️ Recommendations are data-driven and intended to guide, not enforce, normalization "
+                            "choices in multi-omics settings. Note that in the **Preprocessing** pipeline, "
+                            "Imputation runs before Normalization — if the **Missing & Zeros** tab flagged an "
+                            "**MNAR-like** pattern and your intensities are still on a raw (non-log) scale, "
+                            "**QRILC** imputation will be less accurate; consider re-running preprocessing on a "
+                            "Log2/Log10-normalized export if you need the strictest MNAR handling."
                         )
 
 
@@ -2815,7 +3354,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             # ════════════════════════════════════════════════════════════════════════
             # GROUP 2 — CLEAN & EDIT   (Dataset Inspector · Rename · Edit)
             # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═            # ═
-            with _grp_clean:
+            if _active_group == "  Clean & Edit":
                 st.markdown(_picon("edit","View data, rename classes, edit columns/rows, then export your cleaned dataset.", "#10b981"), unsafe_allow_html=True)
                 _t1_save, _t1_rename, _t1_edit = st.tabs([
                     "  📊 Dataset Inspector", "  ✏️ Rename Classes", "  🛠️ Edit Dataset"
@@ -2960,7 +3499,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     if _sync_df is not None:
                                         st.session_state['datalab_df']  = _sync_df.copy()
                                         st.session_state['overview_df'] = _sync_df.copy()
-                                    st.success("Class names updated successfully!")
+                                    _log_success("Class names updated successfully!")
                                     st.rerun()
                     
                             if reset_changes:
@@ -2973,7 +3512,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 # Re-sync DataLab cache
                                 st.session_state['datalab_df']  = st.session_state["final_data"].copy()
                                 st.session_state['overview_df'] = st.session_state["final_data"].copy()
-                                st.success("🗑️ All renaming changes have been reset.")
+                                _log_success("🗑️ All renaming changes have been reset.")
                                 gc.collect()
                                 st.rerun()
                 
@@ -3064,13 +3603,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 if remaining_classes:
                                     st.info(f"📊 **Summary:** {assigned_count} classes assigned to groups, {len(remaining_classes)} remaining: {', '.join(sorted(remaining_classes))}")
                                 else:
-                                    st.success(f"✅ **Summary:** All {len(class_names)} classes have been assigned to groups!")
+                                    _log_success(f"✅ **Summary:** All {len(class_names)} classes have been assigned to groups!")
 
                             # Afficher le message persistant de succès/reset s'il y en a un
                             if st.session_state.get("_group_apply_success"):
-                                st.success(st.session_state.pop("_group_apply_success"))
+                                _log_success(st.session_state.pop("_group_apply_success"))
                             if st.session_state.get("_group_reset_success"):
-                                st.success(st.session_state.pop("_group_reset_success"))
+                                _log_success(st.session_state.pop("_group_reset_success"))
 
                             # Boutons d'action
                             col1, col2 = st.columns(2)
@@ -3180,7 +3719,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         if _sync_rn is not None:
                                             st.session_state['datalab_df']  = _sync_rn.copy()
                                             st.session_state['overview_df'] = _sync_rn.copy()
-                                        st.success(f"Column '{_col_to_rename}' renamed to '{_col_new_name}'.")
+                                        _log_success(f"Column '{_col_to_rename}' renamed to '{_col_new_name}'.")
                                         st.rerun()
                                 else:
                                     st.warning("Please enter a different name.")
@@ -3307,7 +3846,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     st.session_state['datalab_df']  = _sync_e.copy()
                                     st.session_state['overview_df'] = _sync_e.copy()
 
-                                st.success("✅ Modifications applied successfully.")
+                                _log_success("✅ Modifications applied successfully.")
                                 st.rerun()
                 
                         # ------------------------- RESET -------------------------
@@ -3316,19 +3855,43 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             st.session_state["final_data"] = original
                             st.session_state['datalab_df']  = original.copy()
                             st.session_state['overview_df'] = original.copy()
-                            st.success("🔁 Dataset has been restored to its original state.")
+                            _log_success("🔁 Dataset has been restored to its original state.")
                             st.rerun()
                 
 
 
             # GROUP 3 — PROCESS   (Preprocessing · Post-QC)
             # ════════════════════════════════════════════════════════════════════════
-            with _grp_process:
+            if _active_group == "  Preprocess":
                 st.markdown(_picon("preprocess","Filter, impute, normalize and batch-correct — then verify readiness.", "#f59e0b"), unsafe_allow_html=True)
-                _t1_preprocess, _t1_postqc = st.tabs([
-                    "  Preprocessing", "  Post-Preprocessing QC"
-                ])
-                with _t1_preprocess:
+                # NOTE: same st.tabs() rerun-reset issue as the outer group bar above —
+                # submitting the "Run Post-Preprocessing QC" form is a full script
+                # rerun, which snapped native tabs back to "Preprocessing". A
+                # session-state-keyed radio (styled as tabs) persists the active
+                # sub-tab across reruns, same fix as the outer group bar.
+                _pp_sub_labels = ["  Preprocessing", "  Post-Preprocessing QC"]
+                if "_active_pp_subtab" not in st.session_state:
+                    st.session_state["_active_pp_subtab"] = _pp_sub_labels[0]
+                st.markdown(
+                    "<style>"
+                    "div[data-testid='stRadio'] > label {display:none;}"
+                    "div[data-testid='stRadio'] div[role='radiogroup']{gap:4px;flex-wrap:wrap;}"
+                    "div[data-testid='stRadio'] div[role='radiogroup'] label{"
+                    "background:#f1f5f9;border-radius:8px 8px 0 0;padding:8px 18px;margin:0;"
+                    "border:1px solid #e2e8f0;border-bottom:none;font-weight:600;}"
+                    "div[data-testid='stRadio'] div[role='radiogroup'] label[data-checked='true']{"
+                    "background:#ffffff;border-bottom:2px solid #318CE7;}"
+                    "div[data-testid='stRadio'] div[role='radiogroup'] label,"
+                    "div[data-testid='stRadio'] div[role='radiogroup'] label *{"
+                    "font-family:'PI','Segoe UI',system-ui,sans-serif !important;}"
+                    "</style>",
+                    unsafe_allow_html=True,
+                )
+                _active_pp_sub = st.radio(
+                    "Preprocess section", _pp_sub_labels, key="_active_pp_subtab",
+                    horizontal=True, label_visibility="collapsed",
+                )
+                if _active_pp_sub == "  Preprocessing":
                     st.markdown(
                         '<p style="color: gray; font-size: 14px">Filtering, Imputation, Binning, Normalization,Batch Effect Correction and sparse matrix handling</p>',
                         unsafe_allow_html=True
@@ -3337,7 +3900,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     df_overview = st.session_state.get('overview_df')
                     submitted = False
                     if df_overview is None or df_overview.empty:
-                        st.warning("⚠️ You must load a dataset in **Data Overview** before running preprocessing steps.")
+                        st.warning("⚠️ You must load a dataset in **Missing & Distribution** before running preprocessing steps.")
                     else:
                         # base copy
                         data_to_preprocess = df_overview.copy()
@@ -3405,9 +3968,17 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 "Select Missing Value Imputation Method",
                                 [
                                     'None', 'Mean Imputation', 'Median Imputation', 'Mode Imputation',
-                                    'Delete Missing Values', 'KNN Imputation', 'Fillna with 0', 'Shifted Gaussian'
+                                    'Delete Missing Values', 'KNN Imputation', 'Fillna with 0', 'Shifted Gaussian',
+                                    'QRILC (Left-Censored, MNAR)'
                                 ],
-                                key="imputation_method"
+                                key="imputation_method",
+                                help="QRILC (Quantile Regression Imputation of Left-Censored data) is recommended "
+                                    "when missing values are MNAR-like — i.e. low-abundance signals falling below "
+                                    "the detection limit (typical of LC-MS/MS proteomics/metabolomics). It "
+                                    "reconstructs the missing lower tail of each feature's distribution via robust "
+                                    "quantile regression instead of filling with a fixed value. Check the "
+                                    "**Missingness Mechanism Screening** plot in Missing & Zeros to see whether "
+                                    "your data actually looks MNAR-like before choosing it."
                             )
 
                             impute_by_class = st.checkbox(
@@ -3649,6 +4220,20 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                 for c in numeric_cols:
                                                     data[c] = shifted_gaussian_fill(data[c], rng=rng)
 
+                                        elif imputation_method == 'QRILC (Left-Censored, MNAR)':
+                                            numeric_cols = get_numeric_features(data)
+                                            if impute_by_class and 'Class' in data.columns:
+                                                parts = []
+                                                for _, grp in data.groupby('Class'):
+                                                    grp2 = grp.copy()
+                                                    for c in numeric_cols:
+                                                        grp2[c] = _qrilc_impute_series(grp2[c], rng=rng)
+                                                    parts.append(grp2)
+                                                data = pd.concat(parts)
+                                            else:
+                                                for c in numeric_cols:
+                                                    data[c] = _qrilc_impute_series(data[c], rng=rng)
+
                                         else:
                                             st.error(f"Unknown imputation method: {imputation_method}")
                                     # if imputation method is None or no numeric cols, nothing to do
@@ -3658,7 +4243,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 else:
                                     progress.progress(40)
                                     if imputation_method != 'None' and numeric_cols:
-                                        st.success(f"✅ {imputation_method} applied")
+                                        _log_success(f"✅ {imputation_method} applied")
 
                                 # ------------------ Remove features still entirely missing in some class ------------------
                                 try:
@@ -3706,7 +4291,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 else:
                                     progress.progress(70)
                                     if apply_binning_option:
-                                        st.success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
+                                        _log_success(f"Binning applied: {mass_range_min:.2f}-{mass_range_max:.2f} Da, bin width {bin_width:.2f}")
 
                                 
                                     # ── Peak Picking / Centroid ──────────────────────────────────────
@@ -3730,7 +4315,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                             _zero_cols = [c for c, col_arr in zip(_feat_cols, _picked.T) if col_arr.max() == 0]
                                             if _zero_cols:
                                                 data.drop(columns=_zero_cols, inplace=True)
-                                            st.success(f"Peak picking applied (window=±{_w}, threshold={_thr:.1f}). "
+                                            _log_success(f"Peak picking applied (window=±{_w}, threshold={_thr:.1f}). "
                                                        f"Removed {len(_zero_cols)} all-zero m/z features.")
                                             del _feat_arr, _picked, _zero_cols
                                             gc.collect()
@@ -3746,7 +4331,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 else:
                                     progress.progress(85)
                                     if normalization_type != 'None':
-                                        st.success(f"{normalization_type} normalization applied")
+                                        _log_success(f"{normalization_type} normalization applied")
 
                                 # ------------------ Combat Batch Correction ------------------
                                 try:
@@ -3812,7 +4397,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                                     [meta, features.reset_index(drop=True)],
                                                     axis=1
                                                 )
-                                                st.success(f"✅ Combat correction applied using **{_cb_col}** as batch variable")
+                                                _log_success(f"✅ Combat correction applied using **{_cb_col}** as batch variable")
                                 except Exception as e:
                                     st.error(f"❌ Combat correction failed: {e}")
 
@@ -3901,7 +4486,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
             # -------------------- Post-Preprocessing QC --------------------
 
-                with _t1_postqc:
+                if _active_pp_sub == "  Post-Preprocessing QC":
                     st.markdown(
                         "<p style='color: gray'>Final quality checks after preprocessing to ensure data is model-ready.</p>",
                         unsafe_allow_html=True
@@ -3927,7 +4512,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 total_nan = df_qc[feature_cols].isna().sum().sum()
 
                                 if total_nan == 0:
-                                    st.success("✅ No missing values detected after preprocessing.")
+                                    _log_success("✅ No missing values detected after preprocessing.")
                                 else:
                                     st.error(f"❌ {total_nan} missing values remain after preprocessing.")
                                     st.info("Consider adjusting imputation or filtering settings.")
@@ -3976,7 +4561,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     color_discrete_map=color_map,
                                     title="Features per Sample (Post-Preprocessing)"
                                 )
-                                st.plotly_chart(fig_box, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                _square_plot(fig_box, config=_std_config())
                                 _capture_plotly(fig_box, "Features per Sample Distribution Boxplot")
 
                                 # ------------------ 4. Normalization effectiveness ------------------
@@ -3986,7 +4571,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 st.info(f"Total signal CV after preprocessing: **{cv:.2f}**")
 
                                 if cv < 0.3:
-                                    st.success("✅ Signal variability well controlled.")
+                                    _log_success("✅ Signal variability well controlled.")
                                 elif cv < 0.5:
                                     st.warning("⚠️ Moderate variability remains across samples.")
                                 else:
@@ -3996,7 +4581,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 st.markdown("**🚦 Model Readiness Verdict**")
 
                                 if total_nan == 0 and cv < 0.5 and len(high_zero_features) < 0.2 * len(feature_cols):
-                                    st.success(
+                                    _log_success(
                                         "🎯 **Dataset is model-ready**\n\n"
                                         "- No missing values\n"
                                         "- Controlled sparsity\n"
@@ -4020,7 +4605,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             # ════════════════════════════════════════════════════════════════════════
             # GROUP 4 — BALANCE & QC   (Dataset Balance · Sample QC · Sampling)
             # ════════════════════════════════════════════════════════════════════════
-            with _grp_balance:
+            if _active_group == "  Class & Sample QC":
                 st.markdown(_picon("balance","Check class balance, sample-level quality and apply resampling strategies.", "#8b5cf6"), unsafe_allow_html=True)
                 _t1_qc, _t1_sampleqc, _t1_sampling = st.tabs([
                     "  Dataset Balance", "  Sample QC", "  Sampling"
@@ -4114,7 +4699,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             height=420
                         )
 
-                        st.plotly_chart(fig_density, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_density, config=_std_config())
                         _capture_plotly(fig_density, "density_intensity_per_class")
 
             # -------------------- Outliers & Sample QC --------------------
@@ -4210,7 +4795,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         "- Manual removal recommended before modeling"
                                     )
                                 else:
-                                    st.success("✅ No critical sample-level QC issues detected.")
+                                    _log_success("✅ No critical sample-level QC issues detected.")
 
                                 # -------------------- 📊 QC PLOT (AVANT SUPPRESSION) --------------------
                                 import plotly.express as px
@@ -4242,7 +4827,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     title="Features per Sample Distribution"
                                 )
 
-                                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                                _square_plot(fig, config=_std_config())
                                 _capture_plotly(fig, "qc_features_per_sample")
                                 st.session_state['qc_analysis_done'] = True
                         
@@ -4306,7 +4891,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         st.session_state['datalab_df']  = _sync_qc.copy()
                                         st.session_state['overview_df'] = _sync_qc.copy()
 
-                                    st.success(f"✅ {len(samples_to_remove)} samples removed from all datasets.")
+                                    _log_success(f"✅ {len(samples_to_remove)} samples removed from all datasets.")
                                     st.session_state['detected_outliers'] = []
                                     st.session_state['qc_analysis_done'] = False
                                     st.session_state['_qc_sample_options'] = None
@@ -4330,7 +4915,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 _sampled.insert(0, "ID", [f"sample_{i+1}" for i in range(len(_sampled))])
                             st.session_state['oversampled_data'] = _sampled
                             # Desktop: session_state only
-                            st.success("✅ Oversampling successful")
+                            _log_success("✅ Oversampling successful")
                         except Exception as e: st.error(f"Oversampling error: {e}")
 
             # ------------------ Undersampling ------------------
@@ -4352,7 +4937,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             st.session_state['undersampled_data'] = _under_df
                             # Desktop: session_state only
                             st.write(st.session_state['undersampled_data']['Class'].value_counts())
-                            st.success("✅ Undersampling successful")
+                            _log_success("✅ Undersampling successful")
 
                         except Exception as e: st.error(f"Undersampling error: {e}")
     with tabs[2]:
@@ -4442,7 +5027,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             key=f"color_{_class_name}_custom"
                         )
                     if st.form_submit_button("✅ Apply Colors"):
-                        st.success("Class colors updated successfully!")
+                        _log_success("Class colors updated successfully!")
             else:
                 st.info("No class column found in the selected data.")
 
@@ -4478,7 +5063,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     )
                     st.session_state['feature_distribution_plot'] = fig
                 if isinstance(st.session_state.get('feature_distribution_plot'), go.Figure):
-                    st.plotly_chart(st.session_state['feature_distribution_plot'], use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(st.session_state['feature_distribution_plot'], config=_std_config())
                     _capture_plotly(st.session_state['feature_distribution_plot'], "feature_distribution_plot")
                 gc.collect()
             else:
@@ -4531,7 +5116,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 elif apply_viz_multi:
                     st.warning("⚠️ Please select at least two features.")
                 if isinstance(st.session_state.get('multi_feature_plot'), go.Figure):
-                    st.plotly_chart(st.session_state['multi_feature_plot'], use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(st.session_state['multi_feature_plot'], config=_std_config())
                 gc.collect()
             else:
                 st.info("Select a valid data source above.")
@@ -4557,14 +5142,14 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         capture_name="mean_spectrum_plot")
                     st.session_state['mean_spectrum_plot'] = fig_mean
                 if 'mean_spectrum_plot' in st.session_state and isinstance(st.session_state['mean_spectrum_plot'], go.Figure):
-                    st.plotly_chart(st.session_state['mean_spectrum_plot'], use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(st.session_state['mean_spectrum_plot'], config=_std_config())
                 if apply_individual and selected_indices:
                     fig_ind = plot_individual_spectra(
                         _viz_df, st.session_state['class_colors'], selected_indices,
                         capture_name="individual_spectra_plot")
                     st.session_state['individual_spectra_plot'] = fig_ind
                 if 'individual_spectra_plot' in st.session_state and isinstance(st.session_state['individual_spectra_plot'], go.Figure):
-                    st.plotly_chart(st.session_state['individual_spectra_plot'], use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(st.session_state['individual_spectra_plot'], config=_std_config())
                 gc.collect()
             else:
                 st.info("Select a valid data source above.")
@@ -4946,6 +5531,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             capture_name="pca_fig",
                             color_by=st.session_state.get("dim_color_by", "Class"),
                             data_orig=df,
+                            explained_variance=explained_variance,
                         )
 
                         st.session_state["fig_initial"] = fig
@@ -4995,7 +5581,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
         # --- Affichage du premier plot ---
         if st.session_state["fig_initial"] is not None:
-            st.plotly_chart(st.session_state["fig_initial"], use_container_width=True, key="fig_initial")
+            _square_plot(st.session_state["fig_initial"], key="fig_initial",
+                         n_samples=st.session_state.get("compressed_data").shape[0]
+                         if st.session_state.get("compressed_data") is not None else None)
 
         # --- FORM 2 : Feature Intensity + Regenerate Plot ---
         if st.session_state["compressed_data"] is not None:
@@ -5010,8 +5598,10 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 method = st.session_state.get("reduction_method")
                 try:
                     if method == "PCA":
+                        _loadings_fi, _explvar_fi = st.session_state.get('svd_model', (None, None))
                         st.session_state["fig_feature"] = plot_pca(st.session_state["compressed_data"], y,
-                                                                st.session_state['class_colors'], feature_col, X)
+                                                                st.session_state['class_colors'], feature_col, X,
+                                                                explained_variance=_explvar_fi)
                     elif method == "UMAP":
                         st.session_state["fig_feature"] = plot_umap(st.session_state["compressed_data"],
                                                                     num_components=st.session_state["n_components_reduction"],
@@ -5027,7 +5617,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
         # --- Affichage du plot Feature Intensity ---
         if st.session_state.get("fig_feature") is not None:
-            st.plotly_chart(st.session_state["fig_feature"], use_container_width=True, key="fig_feature")
+            _square_plot(st.session_state["fig_feature"], key="fig_feature")
             _capture_plotly(st.session_state["fig_feature"], "Features per Sample Feature Intensity")
 
 
@@ -5074,7 +5664,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     yaxis_title="Feature",
                                     yaxis=dict(autorange="reversed"),  # inverser l’ordre pour barh
                                     plot_bgcolor='white')
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(fig, config=_std_config())
                     _capture_plotly(fig, "Features per Sample PCA Contributions")
 
                 except Exception as e:
@@ -5163,7 +5753,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 title='Silhouette Score vs. Number of Clusters'
                             )
                             fig.update_layout(xaxis_title='Number of Clusters', yaxis_title='Silhouette Score')
-                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                            _square_plot(fig, config=_std_config())
                             _capture_plotly(fig, "Silhouette Score vs. Number of Clusters")
 
                         except ValueError:
@@ -5206,6 +5796,12 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         time.sleep(0.05)
 
                         reduced = reducer.fit_transform(X_scaled)
+                        _evr = getattr(reducer, 'explained_variance_ratio_', None) if method == 'PCA' else None
+
+                        def _comp_label(i):
+                            if _evr is not None and i < len(_evr):
+                                return f"PC{i+1} ({_evr[i]*100:.1f}%)"
+                            return f"Component {i+1}"
 
                         if dims == 2:
                             import plotly.express as px
@@ -5215,7 +5811,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 color=label_chars,
                                 title=f'{method} - Clustering (k={k})'
                             )
-                            fig.update_layout(xaxis_title='Component 1', yaxis_title='Component 2')
+                            fig.update_layout(xaxis_title=_comp_label(0), yaxis_title=_comp_label(1))
                         else:
                             fig = px.scatter_3d(
                                 x=reduced[:, 0],
@@ -5226,13 +5822,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             )
                             fig.update_layout(
                                 scene=dict(
-                                    xaxis_title='Component 1',
-                                    yaxis_title='Component 2',
-                                    zaxis_title='Component 3'
+                                    xaxis_title=_comp_label(0),
+                                    yaxis_title=_comp_label(1),
+                                    zaxis_title=_comp_label(2)
                                 )
                             )
 
-                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig, config=_std_config())
                         _capture_plotly(fig, f"Features per Sample {method} Visualization with Clusters")
                         progress.progress(1.0)
 
@@ -5519,7 +6115,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 st.session_state['models'] = model_results
                 # Desktop: session_state only
                 status_text.success("Training complete!")
-                st.success("✅ Models trained successfully!")
+                _log_success("✅ Models trained successfully!")
 
             except RuntimeError as e:
                 st.error(f"Runtime error: {e}")
@@ -5575,7 +6171,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 # =========================
                 if task_type == "Classification":
 
-                    st.subheader("Classification Report")
+                    # st.subheader("Classification Report")
                     report_data = model_data['classification_report']
 
                     if isinstance(report_data, dict):
@@ -5597,24 +6193,13 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         numeric_cols = [c for c in ['precision', 'recall', 'f1-score', 'support'] if c in combined_df.columns]
                         combined_df[numeric_cols] = combined_df[numeric_cols].apply(pd.to_numeric, errors='coerce')
 
-                        st.dataframe(
-                            combined_df.style
-                            .format("{:.4f}", subset=numeric_cols)
-                            .highlight_max(subset=numeric_cols, axis=0, color='lightgreen')
-                            .set_table_styles([
-                                {'selector': 'th', 'props': [('background-color', '#f0f2f6'),
-                                                             ('font-size', '18px'),
-                                                             ('text-align', 'center'),
-                                                             ('font-weight', 'bold')]},
-                                {'selector': 'td', 'props': [('font-size', '16px'),
-                                                             ('text-align', 'center')]},
-                                {'selector': 'tr:nth-child(even)', 'props': [('background-color', '#f9f9f9')]},
-                                {'selector': 'tr:nth-child(odd)',  'props': [('background-color', 'white')]}
-                            ])
-                            .set_properties(**{'border': '1px solid #ddd', 'padding': '8px'}),
-                            use_container_width=True,
-                            height=400
-                        )
+                        fig_report = plot_classification_report(combined_df, capture_name="ml_classification_report")
+                        if fig_report is not None:
+                            _l_rep, _mid_rep, _r_rep = st.columns([1, 2, 1])
+                            with _mid_rep:
+                                st.plotly_chart(fig_report, use_container_width=False, config=_std_config())
+                        else:
+                            st.dataframe(combined_df, use_container_width=True, height=400)
 
                     elif isinstance(report_data, str):
                         st.code(report_data)
@@ -5641,24 +6226,24 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     ))
                     fig.update_layout(
                         title=dict(text="Confusion Matrix",
-                                   font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                    font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
                         autosize=True,
                         margin=dict(l=50, r=50, b=50, t=80),
                         xaxis=dict(
                             title=dict(text="Predicted label",
-                                       font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                        font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="y", constrain="domain"
                         ),
                         yaxis=dict(
                             title=dict(text="True label",
-                                       font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                        font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="x", constrain="domain"
                         ),
                         font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
                     )
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(fig, config=_std_config())
                     _capture_plotly(fig, "ml_confusion")
 
                     # Normalized
@@ -5668,34 +6253,34 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         colorscale='jet',
                         text=np.round(cm_norm, 2),
                         texttemplate="<b>%{text}%</b>",
-                        textfont=dict(size=11, family=FONT_FAMILY),
+                        textfont=dict(size=26, family=FONT_FAMILY),
                         hoverinfo="z"
                     ))
                     fig_norm.update_layout(
                         title=dict(text="Normalized Confusion Matrix (%)",
-                                   font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                    font=dict(size=TITLE_SIZE, color="black", family=FONT_FAMILY)),
                         autosize=True,
                         margin=dict(l=50, r=50, b=50, t=80),
                         xaxis=dict(
                             title=dict(text="Predicted label",
-                                       font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                        font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="y", constrain="domain"
                         ),
                         yaxis=dict(
                             title=dict(text="True label",
-                                       font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
+                                        font=dict(size=AXIS_TITLE_SIZE, color="black", family=FONT_FAMILY)),
                             tickfont=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY),
                             scaleanchor="x", constrain="domain"
                         ),
                         font=dict(size=TICK_SIZE, color="black", family=FONT_FAMILY)
                     )
-                    st.plotly_chart(fig_norm, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                    _square_plot(fig_norm, config=_std_config())
                     _capture_plotly(fig_norm, "ml_confusion_norm")
 
                     # ---------- ROC Curves ----------
                     try:
-                        st.markdown("#### ROC Curves")
+                        # st.markdown("#### ROC Curves")
                         # Use stored probas from model_data if available
                         if model_data.get('probas') is not None:
                             fig_roc = plot_roc_curves({selected_model: model_data})
@@ -5704,22 +6289,53 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             models_with_probas = {k: v for k, v in models_dict.items() if v.get('probas') is not None}
                             fig_roc = plot_roc_curves(models_with_probas) if models_with_probas else None
                         if fig_roc is not None:
-                            st.plotly_chart(fig_roc, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                            _square_plot(fig_roc, config=_std_config())
                             _capture_plotly(fig_roc, "ml_roc")
                         else:
                             st.info("ROC curves not available (model does not support probability output).")
                     except Exception as e:
                         st.warning(f"ROC curves could not be computed: {e}")
 
+                    # ---------- LDA Class-Separability Plot ----------
+                    # Independent of the chosen model: LDA is used here purely as a
+                    # supervised *projection technique* (same role PCA plays elsewhere)
+                    # to build a stable 2D "class map" of the samples, with this
+                    # model's own misclassifications highlighted on top of it — so the
+                    # plot appears for every model, not only when LDA itself is chosen.
+                    try:
+                        if X_used is not None:
+                            fig_lda = plot_lda_projection(
+                                X_used,
+                                model_data.get('y_true'),
+                                model_data.get('y_pred'),
+                                class_names=list(model_data['label_encoder'].classes_),
+                                capture_name="ml_lda",
+                                custom_colors=st.session_state.get('class_colors'),
+                            )
+                            if fig_lda is not None:
+                                # st.markdown("#### Class Separability (LDA projection)")
+                                st.caption(
+                                    "LDA is used here only to project the samples onto the axes that "
+                                    "best separate the known classes — a fixed 'map' you can reuse to "
+                                    "judge *any* model, not just an LDA classifier. "
+                                    "Circles = correctly classified · red ✕ = misclassified by "
+                                    f"**{selected_model}**."
+                                )
+                                _square_plot(fig_lda, config=_std_config(),
+                                                n_samples=len(model_data.get('y_true', [])))
+                    except Exception as e:
+                        st.warning(f"LDA projection could not be computed: {e}")
+
                     # ---------- Learning Curve ----------
                     try:
                         learning_curve_fig = plot_learning_curve(
                             model_data['model'], X_used, y_used, n_splits=n_splits
                         )
-                        st.plotly_chart(learning_curve_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(learning_curve_fig, config=_std_config())
                         _capture_plotly(learning_curve_fig, "ml_learning_curve")
                     except Exception as e:
                         st.error(f"Error plotting learning curve: {e}")
+
 
                 # =========================
                 # REGRESSION
@@ -5749,7 +6365,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             x1=max(y_true), y1=max(y_true),
                             line=dict(color="red", dash="dash"),
                         )
-                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig, config=_std_config())
                         _capture_plotly(fig, "pred_vs_true_fig")
 
                         # Residuals
@@ -5760,7 +6376,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             title="Residual Plot"
                         )
                         fig_res.add_hline(y=0, line_dash="dash", line_color="red")
-                        st.plotly_chart(fig_res, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_res, config=_std_config())
                         _capture_plotly(fig_res, "residual_plot_fig")
 
             # ======================================================
@@ -5798,22 +6414,17 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 #     title=f"Model Comparison – {task_type}"
                 # )
 
-                # st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                # _square_plot(fig, config=_std_config())
                 # _capture_plotly(fig, "model_comparison_fig")
                 if task_type == "Classification":
                     fig = compare_models(models_dict)
                 else:
                     fig_r2, fig_rmse = compare_regression_models(models_dict)
                     fig = fig_r2
-                    st.plotly_chart(fig_rmse, use_container_width=True,
-                                    config={'displayModeBar': True, 'displaylogo': False,
-                                            'scrollZoom': True})
+                    _square_plot(fig_rmse, config=_std_config())
                     _capture_plotly(fig_rmse, "model_comparison_rmse_fig")
 
-                st.plotly_chart(fig, use_container_width=True,
-                                config={'displayModeBar': True, 'displaylogo': False,
-                                        'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'],
-                                        'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                _square_plot(fig, config=_std_config())
                 _capture_plotly(fig, "model_comparison_fig")
 
 
@@ -5885,27 +6496,18 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     model_results = train_DL(X, y, n_splits=n_splits, epochs=epochs, batch_size=batch_size, learning_rate=learning_rate)
                     st.session_state['dl_models'] = model_results
                     # Desktop: session_state only
-                    st.success("Deep Learning models trained successfully!")
+                    _log_success("Deep Learning models trained successfully!")
                 except Exception as e:
                     st.error(f"Error during DL model training: {e}")
 
         # if st.button("Deep Learning Model Comparison", key="show_dl_model_comparison") and 'dl_models' in st.session_state:
-        #     st.plotly_chart(compare_DL(st.session_state['dl_models'], config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}}))
+        #     st.plotly_chart(compare_DL(st.session_state['dl_models'], config=_std_config()))
     
 
         if st.button("Deep Learning Model Comparison", key="show_dl_model_comparison") and 'dl_models' in st.session_state:
             fig = compare_DL(st.session_state['dl_models'])
 
-            st.plotly_chart(
-                fig,
-                config={
-                    'displayModeBar': True,
-                    'displaylogo': False,
-                    'scrollZoom': True,
-                    'modeBarButtonsToAdd': ['downloadImage'],
-                    'toImageButtonOptions': {'format': 'png', 'scale': 2}
-                }
-            )
+            _square_plot(fig, config=_std_config())
 
         selected_dl_model = st.selectbox("Select DL Model for Report", ['None'] + list(st.session_state['dl_models'].keys()), key="selected_dl_model")
         if selected_dl_model != 'None':
@@ -6085,7 +6687,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 file_name=f"{st.session_state.model_name}_{st.session_state.timestamp}_label_encoder.pkl",
                 mime="application/octet-stream"
             )
-            st.success(f"Model '{st.session_state.model_name}' is available for download!")
+            _log_success(f"Model '{st.session_state.model_name}' is available for download!")
 
 
 
@@ -6325,11 +6927,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
         if st.session_state.get("show_volcano"):
             _stored_vol_fig = st.session_state.get("volcano_fig")
             if _stored_vol_fig is not None:
-                st.plotly_chart(_stored_vol_fig, use_container_width=True, config={
-                    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True,
-                    'modeBarButtonsToAdd': ['downloadImage'],
-                    'toImageButtonOptions': {'format': 'png', 'scale': 2}
-                })
+                _square_plot(_stored_vol_fig, config=_std_config())
 
         # ---------------- RESULTS ----------------
         if "volcano_data" in st.session_state:
@@ -6903,13 +7501,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             _stored_fig = st.session_state.get("heatmap_fig")
             if _stored_fig is not None:
                 # Re-display the interactive plotly chart (persists across all reruns)
-                st.plotly_chart(_stored_fig, use_container_width=True, config={
-                    "scrollZoom": True,
-                    "displayModeBar": True,
-                    "displaylogo": False,
-                    "modeBarButtonsToAdd": ["downloadImage"],
-                    "toImageButtonOptions": {"format": "png", "scale": 3},
-                })
+                _square_plot(_stored_fig, config=_std_config(
+                    toImageButtonOptions={"format": "png", "scale": 3}
+                ))
                 # PNG download button — uses matplotlib bytes pre-generated by
                 # _build_static_png_original (stored in session_state), no kaleido needed.
                 _hm_png_bytes = st.session_state.get("heatmap_fig_png_bytes")
@@ -7021,7 +7615,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                     else:
                         _common_all = set.intersection(*map(set, _valid_over.values()))
                         if _common_all:
-                            st.success(f"**Common to ALL Classes ({len(_common_all)}):** {', '.join(sorted(_common_all))}")
+                            _log_success(f"**Common to ALL Classes ({len(_common_all)}):** {', '.join(sorted(_common_all))}")
                         else:
                             st.warning("No features are commonly overexpressed across ALL classes.")
                         st.markdown("**Pairwise Intersections**")
@@ -7105,7 +7699,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
             if _bp_paste_tokens:
                 if _bp_pasted_valid:
-                    st.success(f"✅ {len(_bp_pasted_valid)} feature(s) recognised and ready to add to selection.")
+                    _log_success(f"✅ {len(_bp_pasted_valid)} feature(s) recognised and ready to add to selection.")
                 if _bp_pasted_invalid:
                     st.warning(f"⚠️ {len(_bp_pasted_invalid)} not found in dataset: {', '.join(_bp_pasted_invalid[:10])}"
                                 + (" …" if len(_bp_pasted_invalid) > 10 else ""))
@@ -7513,11 +8107,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         )
                         fig.add_vline(x=0, line_dash='solid', line_color='#888', line_width=1)
 
-                        st.plotly_chart(fig, use_container_width=True, config={
-                            'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True,
-                            'modeBarButtonsToAdd': ['downloadImage'],
-                            'toImageButtonOptions': {'format': 'png', 'scale': 2}
-                        })
+                        _square_plot(fig, config=_std_config())
                         _capture_plotly(fig, "lime_feature_contrib")
                     except Exception as e:
                         st.error(f"LIME analysis failed: {e}")
@@ -7632,7 +8222,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             height=500, legend=dict(font=dict(size=13)),
                             hovermode="x unified",
                         )
-                        st.plotly_chart(fig_km, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_km, config=_std_config())
                         _capture_plotly(fig_km, "km_fig")
 
                         # P-values table
@@ -7741,7 +8331,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             height=max(350, len(_vars) * 32 + 100),
                             margin=dict(l=20, r=20, t=50, b=20),
                         )
-                        st.plotly_chart(fig_cox, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_cox, config=_std_config())
                         _capture_plotly(fig_cox, "cox_fig")
 
                     model_name = st.text_input("Enter model name:", value="cox_model", help="Custom name for saving your Cox model")
@@ -7826,7 +8416,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         results_df["Median Survival Time"] = median_survival
                         results_df["Hazard Ratio"] = hazard_ratios
                         # results_df["P-Value"] = p_values
-                        st.success('Survival prediction successful')
+                        _log_success('Survival prediction successful')
                         # Display results
                         st.write("#### Survival Predictions Summary")
                         st.dataframe(results_df)
@@ -7844,7 +8434,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         )
                         fig_med.update_layout(plot_bgcolor="white", paper_bgcolor="white",
                                               height=380, showlegend=False)
-                        st.plotly_chart(fig_med, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_med, config=_std_config())
                         _capture_plotly(fig_med, "median_survival_distribution")
 
                         fig_hr = px.histogram(
@@ -7856,7 +8446,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         )
                         fig_hr.update_layout(plot_bgcolor="white", paper_bgcolor="white",
                                              height=380, showlegend=False)
-                        st.plotly_chart(fig_hr, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_hr, config=_std_config())
                         _capture_plotly(fig_hr, "hazard_ratios_distribution")
                         # st.write(results_df.describe())
                 
@@ -8078,7 +8668,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             height=400
                         )
 
-                        st.plotly_chart(fig_conf, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                        _square_plot(fig_conf, config=_std_config())
                         _capture_plotly(fig_conf, "Features per Sample Confidence Scores Distribution")
 
                     # Affichage général
@@ -8145,7 +8735,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 height=400, plot_bgcolor="white", paper_bgcolor="white",
                                 margin=dict(l=10, r=10, t=50, b=10)
                             )
-                            st.plotly_chart(fig_cm, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True, 'modeBarButtonsToAdd': ['downloadImage'], 'toImageButtonOptions': {'format': 'png', 'scale': 2}})
+                            _square_plot(fig_cm, config=_std_config())
                             _capture_plotly(fig_cm, "confusion_matrix")
 
                             st.markdown("**Classification Report**")
@@ -8199,7 +8789,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         features = joblib.load(features_file)
                         label_encoder = joblib.load(label_encoder_file) if label_encoder_file else None
 
-                        st.success("✅ Model loaded successfully!")
+                        _log_success("✅ Model loaded successfully!")
 
                         # Affichage des features
                         st.markdown("**🔹 Features used in training**")
