@@ -3,7 +3,7 @@ Software Name: Profiler – Desktop Edition
 Author: Yanis Zirem
 Email : yanis.zirem@yahoo.com / yanis.zirem@univ-lille.fr
 Creation Date: 15/01/2025
-Last Updated: 16/09/2026
+Last Updated: 15/09/2026
 Version: 1.2.8
 Context:
 Desktop version of Profiler — no login, no internet, no account required. All data stays local.
@@ -29,6 +29,8 @@ _os_tf_silence.environ.setdefault("TF_ENABLE_ONEDNN_OPTS",  "0") # suppress oneD
 _os_tf_silence.environ.setdefault("CUDA_VISIBLE_DEVICES",   "-1") # no GPU → skip CUDA probe
 _os_tf_silence.environ.setdefault("TF_KERAS_DEFAULT_DTYPE", "float32")  # no mixed_float16 warning
 del _os_tf_silence  # keep namespace clean
+
+from profiler_perf import LOGICAL_CPUS, PHYSICAL_CPUS, OUTER_JOBS, PANDARALLEL_WORKERS, BLAS_THREADS, has_usable_gpu, configure_tensorflow
 
 # ── Standard library ─────────────────────────────────────────────────────────
 import os
