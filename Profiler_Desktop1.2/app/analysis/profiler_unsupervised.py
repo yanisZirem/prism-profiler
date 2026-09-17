@@ -23,12 +23,15 @@ Links:
 
 
 
+import profiler_perf  # noqa: F401 — budget CPU centralisé
 import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import umap.umap_ as umap
 from sklearn.manifold import TSNE
+
+_N_JOBS = profiler_perf.OUTER_JOBS  # budget partagé, laisse de la marge à l'UI Streamlit
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -207,7 +210,7 @@ def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None
     features_scaled = scaler.fit_transform(features.values.astype('float32'))
 
     tsne = TSNE(n_components=num_components, perplexity=perplexity, random_state=random_state,
-                n_jobs=-1, method="barnes_hut", n_iter=500 if n_samples > 2000 else 1000)
+                n_jobs=_N_JOBS, method="barnes_hut", n_iter=500 if n_samples > 2000 else 1000)
     tsne_results = tsne.fit_transform(features_scaled)
     del features_scaled; gc.collect()
 
@@ -267,7 +270,7 @@ def plot_umap(data, num_components=2, custom_colors=None, feature_intensity=None
 
     reducer = umap.UMAP(
         n_components=num_components, n_neighbors=n_neighbors,
-        random_state=random_state, n_jobs=-1,
+        random_state=random_state, n_jobs=_N_JOBS,
         low_memory=False, verbose=False
     )
     umap_results = reducer.fit_transform(data_scaled)

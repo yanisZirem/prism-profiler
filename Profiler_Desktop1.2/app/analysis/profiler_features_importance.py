@@ -25,22 +25,20 @@ Links:
 import io
 import gc
 import os
+import profiler_perf  # noqa: F401 — budget CPU centralisé, importé avant numpy/TF/joblib
 from itertools import combinations
 
-# ── Desktop: détection CPUs et configuration parallélisme ────────────────────
-_N_CPUS = os.cpu_count() or 2
-
-# BLAS/MKL/OpenBLAS — sans plafond serveur, utilise tous les cœurs
-for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
-    os.environ.setdefault(_env, str(_N_CPUS))
-
-# TensorFlow : utilise tous les CPUs logiques disponibles
-try:
-    import tensorflow as _tf
-    _tf.config.threading.set_intra_op_parallelism_threads(_N_CPUS)
-    _tf.config.threading.set_inter_op_parallelism_threads(_N_CPUS)
-except Exception:
-    pass
+# ── Desktop: budget CPU centralisé (voir profiler_perf.py) ───────────────────
+# Ce module fixait auparavant ses propres OMP/MKL/OPENBLAS *et* réclamait
+# tous les threads TensorFlow, indépendamment de profiler_preprocessing.py
+# et profiler_training.py qui faisaient la même chose de leur côté : sur un
+# PC normal, ces réglages concurrents empilés = sur-souscription (voir la
+# note détaillée en tête de profiler_training.py). On délègue maintenant à
+# profiler_perf, qui ne fixe ces variables qu'une seule fois pour tout le
+# process.
+_N_CPUS = profiler_perf.LOGICAL_CPUS
+_N_JOBS = profiler_perf.OUTER_JOBS
+profiler_perf.configure_tensorflow()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1320,7 +1318,7 @@ def detect_peaks(data, intensity_threshold, show_stats=True):
             return None
 
     peak_features = [
-        r for r in joblib.Parallel(n_jobs=-1, prefer='threads')(
+        r for r in joblib.Parallel(n_jobs=_N_JOBS, prefer='threads')(
             joblib.delayed(_check_peak)(c) for c in cols
         ) if r is not None
     ]

@@ -1,7 +1,10 @@
 
 import pandas as pd
+import profiler_perf
 from imblearn.over_sampling import SMOTE, ADASYN
 import streamlit as st
+
+_N_JOBS = profiler_perf.OUTER_JOBS  # budget CPU partagé, pas -1 en dur
 
 
 
@@ -20,11 +23,9 @@ def apply_sampling(df, technique='none', _progress_bar=None):
     st.write(class_counts_before)
 
     if technique == 'smote':
-        # ⚡ n_jobs=-1 → parallélise le calcul des voisins
-        sampler = SMOTE(k_neighbors=1, sampling_strategy='not majority', n_jobs=-1)
+        sampler = SMOTE(k_neighbors=1, sampling_strategy='not majority', n_jobs=_N_JOBS)
     elif technique == 'adasyn':
-        # ⚡ n_jobs=-1
-        sampler = ADASYN(n_neighbors=2, sampling_strategy='minority', n_jobs=-1)
+        sampler = ADASYN(n_neighbors=2, sampling_strategy='minority', n_jobs=_N_JOBS)
 
     if sampler:
         # ── NaN guard ────────────────────────────────────────────────────────
