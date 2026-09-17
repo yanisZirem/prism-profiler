@@ -21,6 +21,7 @@ Links:
 """
 
 import os
+import profiler_perf  # noqa: F401 — must be imported before numpy/pandas/numexpr set BLAS threads
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -30,23 +31,28 @@ import numexpr as ne
 import gc
 import threading
 
-# ── Desktop: détection automatique des CPUs disponibles ──────────────────────
-_N_CPUS = os.cpu_count() or 2          # tous les cœurs de la machine locale
-_N_WORKERS = max(1, _N_CPUS - 1)       # laisse 1 cœur libre pour l'UI
+# ── Desktop: budget CPU centralisé (voir profiler_perf.py) ───────────────────
+# Un seul point de vérité pour tout le process : évite que ce module,
+# features_importance.py, training.py, pandarallel, dask et TensorFlow ne
+# réclament CHACUN tous les cœurs en même temps (sur-souscription).
+_N_CPUS = profiler_perf.LOGICAL_CPUS
+_N_WORKERS = profiler_perf.PANDARALLEL_WORKERS
 
-# ── numexpr : utilise tous les threads disponibles ────────────────────────────
-ne.set_num_threads(_N_CPUS)
+# ── numexpr : suit le budget global (pas "tous les threads" en dur) ──────────
+ne.set_num_threads(profiler_perf.BLAS_THREADS)
 
-# ── Variables d'environnement BLAS/MKL/OpenBLAS — sans plafond serveur ───────
-for _env in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
-    os.environ[_env] = str(_N_CPUS)
+# (Les variables OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS sont déjà fixées une
+# seule fois par profiler_perf, importé avant ce module — on ne les
+# ré-écrase plus ici pour éviter des valeurs incohérentes entre modules.)
 
-# ── pandarallel : initialisation lazy, thread-safe, tous CPUs ─────────────────
+# ── pandarallel : initialisation lazy, thread-safe, budget partagé ───────────
 _pandarallel_lock = threading.Lock()
 _pandarallel_ready = False
 
 def _ensure_pandarallel():
-    """Initialise pandarallel une seule fois, avec tous les CPUs disponibles."""
+    """Initialise pandarallel une seule fois, avec le budget CPU partagé
+    (jamais 'tous les cœurs' : on laisse la marge que profiler_perf calcule
+    pour l'OS / l'UI Streamlit)."""
     global _pandarallel_ready
     if _pandarallel_ready:
         return
@@ -344,7 +350,7 @@ def preprocess_data_dask(ddf, normalization_type=None, _progress_bar=None):
             # Pas de support direct de QNorm avec Dask, fallback Pandas
             ddf = ddf.compute()
             ddf[intensity_columns] = quantile_normalization(ddf[intensity_columns])
-            ddf = dd.from_pandas(ddf, npartitions=10)
+            ddf = dd.from_pandas(ddf, npartitions=max(2, profiler_perf.OUTER_JOBS))
 
     # Remplacer inf/NaN
     ddf = ddf.replace([np.inf, -np.inf], np.nan).fillna(0)

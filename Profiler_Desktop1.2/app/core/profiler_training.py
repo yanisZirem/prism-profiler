@@ -26,11 +26,24 @@ Links:
 # === Standard Library ===
 import gc
 import os
+import profiler_perf  # noqa: F401 — budget CPU centralisé, à importer avant sklearn/numpy
 
-# ── Desktop: détection automatique des CPUs ───────────────────────────────────
-_N_CPUS   = os.cpu_count() or 2     # tous les cœurs physiques/logiques
-_N_JOBS   = -1                       # sklearn/joblib → utilise tous les CPUs
-_N_CV_JOBS = _N_CPUS                 # parallélisme des folds CV
+# ── Desktop: budget CPU centralisé (voir profiler_perf.py) ───────────────────
+# ⚠️ Piège de sur-souscription corrigé ici : chaque modèle (RandomForest,
+# ExtraTrees, LGBM, ...) parallélise déjà en interne avec n_jobs=_N_JOBS.
+# Si en PLUS on enveloppe cross_val_predict(..., n_jobs=_N_CPUS) autour de
+# ce même modèle, on obtient jusqu'à _N_CPUS × _N_CPUS processus/threads en
+# concurrence pour _N_CPUS cœurs réels — c'est exactement ce qui rend
+# l'entraînement plus lent (et l'UI qui freeze) sur un PC normal alors que
+# ça "passait" sur une VM avec beaucoup de cœurs de marge.
+# Règle : parallélisme à UN SEUL niveau à la fois.
+#   - Le modèle garde n_jobs=_N_JOBS (parallélise l'entraînement d'un fold).
+#   - La boucle de CV (cross_val_predict/cross_validate) repasse à 1 : les
+#     folds s'enchaînent, mais chacun utilise vraiment tous les cœurs
+#     disponibles au lieu de se les partager avec les autres folds.
+_N_CPUS   = profiler_perf.LOGICAL_CPUS
+_N_JOBS   = profiler_perf.OUTER_JOBS   # sklearn/joblib → budget partagé (plus de -1 en dur)
+_N_CV_JOBS = 1                          # anti-sur-souscription : les modèles parallélisent déjà
 
 # === Data manipulation ===
 import numpy as np
@@ -119,7 +132,7 @@ def train_models(
     X, y,
     n_splits=3,
     progress_bar=None,
-    n_jobs_cv=_N_CV_JOBS,   # desktop: tous les CPUs pour les folds CV
+    n_jobs_cv=_N_CV_JOBS,   # desktop: =1, les modèles parallélisent déjà (anti sur-souscription)
     calibrate=False
 ):
     # --- Encodage labels ---
@@ -143,9 +156,10 @@ def train_models(
     adapted_n_neighbors = min(5, min_samples_per_class)
     adapted_n_neighbors = max(1, adapted_n_neighbors)
 
-    # ── Desktop: n_jobs=-1 dans chaque modèle + parallélisme CV ─────────────
-    # Les modèles internes utilisent tous les cœurs disponibles.
-    # cross_val_predict parallélise en plus les folds (n_jobs_cv).
+    # ── Desktop: parallélisme à un seul niveau ──────────────────────────────
+    # Les modèles internes utilisent le budget CPU partagé (_N_JOBS).
+    # cross_val_predict tourne en n_jobs=1 (_N_CV_JOBS) pour ne pas empiler
+    # un deuxième niveau de parallélisme par-dessus (voir tête de fichier).
     models = {
         'RandomForest': RandomForestClassifier(n_estimators=200, max_depth=None, n_jobs=_N_JOBS),
         'AdaBoost': AdaBoostClassifier(n_estimators=100, algorithm="SAMME"),
@@ -660,12 +674,16 @@ def plot_learning_curve(model, X, y, n_splits=5):
 
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=1)
 
+    # n_jobs=1 : `model` peut déjà être l'un des modèles entraînés avec
+    # n_jobs=_N_JOBS (RandomForest/ExtraTrees/LGBM/...) — paralléliser aussi
+    # les points de la courbe d'apprentissage créerait la même sur-
+    # souscription que pour cross_val_predict (voir tête de fichier).
     train_sizes, train_scores, test_scores = learning_curve(
         pipeline,
         X, y,
         cv=cv,
         scoring="f1_weighted",   # très conseillé
-        n_jobs=-1,
+        n_jobs=1,
         train_sizes=np.linspace(0.1, 1.0, 8)
     )
 
@@ -840,9 +858,9 @@ import streamlit as st
 
 def train_regression_models(X, y, n_splits=5, progress_bar=None, n_jobs=None):
 
-    # Desktop: utilise tous les CPUs disponibles
+    # Desktop: budget CPU partagé (voir profiler_perf.py)
     if n_jobs is None:
-        n_jobs = _N_JOBS  # -1 → joblib détecte automatiquement
+        n_jobs = _N_JOBS
 
     # ==============================
     # Preprocessing
@@ -896,13 +914,16 @@ def train_regression_models(X, y, n_splits=5, progress_bar=None, n_jobs=None):
         ])
 
         # Cross-validation predictions
-        # ⚡ n_jobs=-1 → parallélise les folds
+        # n_jobs=1 ici : le modèle (RandomForest/LGBM) parallélise déjà en
+        # interne via n_jobs=_N_JOBS. Paralléliser les folds EN PLUS créerait
+        # la même sur-souscription que pour les modèles de classification
+        # (voir la note en tête de fichier).
         y_pred = cross_val_predict(
             pipeline,
             X,
             y,
             cv=cv,
-            n_jobs=-1
+            n_jobs=1
         )
 
         # Metrics

@@ -21,18 +21,13 @@ Links:
 
 
 
+import profiler_perf  # noqa: F401 — budget CPU centralisé, à importer avant tensorflow
 import tensorflow as tf
-# Mixed precision: 2x faster on GPU, less VRAM
-try:
-    tf.keras.mixed_precision.set_global_policy('mixed_float16')
-except Exception:
-    pass
-# Limit GPU memory growth (prevents OOM)
-try:
-    for gpu in tf.config.list_physical_devices('GPU'):
-        tf.config.experimental.set_memory_growth(gpu, True)
-except Exception:
-    pass
+# mixed_float16 only pays off on a GPU with tensor cores; forcing it on a
+# CPU-only laptop is a no-op at best and pure overhead at worst. On CPU,
+# configure_tensorflow() also caps TF's own thread pools instead of letting
+# them fight sklearn/joblib for every core (see profiler_perf.py).
+profiler_perf.configure_tensorflow()
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Dense, Conv1D, Flatten, Dropout, BatchNormalization, GlobalAveragePooling1D, LSTM, GRU
 from tensorflow.keras.optimizers import Adam
