@@ -7265,12 +7265,21 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 help="Choose which column to display as sample names on the heatmap X-axis (ID, Class, File or any metadata column)."
             )
 
-            show_feature_names = st.checkbox(
-                "Show feature names on heatmap",
-                value=True,
-                key="heatmap_show_feature_names",
-                help="Display feature labels on the Y-axis. Uncheck when there are many features to keep the heatmap readable."
-            )
+            _hm_names_col1, _hm_names_col2 = st.columns(2)
+            with _hm_names_col1:
+                show_sample_names = st.checkbox(
+                    "Show sample names on heatmap",
+                    value=True,
+                    key="heatmap_show_sample_names",
+                    help="Display sample labels on the X-axis. Uncheck when there are many samples to keep the heatmap readable."
+                )
+            with _hm_names_col2:
+                show_feature_names = st.checkbox(
+                    "Show feature names on heatmap",
+                    value=False,
+                    key="heatmap_show_feature_names",
+                    help="Display feature labels on the Y-axis. Uncheck when there are many features to keep the heatmap readable."
+                )
 
             # ── Meta annotation bars ──────────────────────────────────
             _hm_df_preview = {
@@ -7420,9 +7429,11 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             selected_features,
                             custom_colors,
                             sample_label_col=sample_label_col,
+                            show_sample_names=show_sample_names,
                             show_feature_names=show_feature_names,
                             capture_name="heatmap_fig",
                             meta_annotation_cols=meta_annotation_cols,
+                            diverging=False,
                         )
                 _hm_placeholder.empty()  # effacer l'affichage intermédiaire
                 st.markdown("**Overexpressed Features by Class**")
@@ -7483,6 +7494,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                 st.session_state["heatmap_avg_by_class"]    = average_by_class
                 st.session_state["heatmap_class_labels"]    = list(classes)
                 st.session_state["heatmap_show_feat_names"] = show_feature_names
+                st.session_state["heatmap_show_samp_names"] = show_sample_names
                 if perform_stat_test and 'significant_features' in locals():
                     st.session_state["heatmap_significant_features"] = significant_features
                     st.session_state["heatmap_data_source_df"]       = data_source_df
