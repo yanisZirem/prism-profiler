@@ -193,30 +193,142 @@ _GRID_TYPES = {"heatmap", "heatmapgl", "histogram2d", "histogram2dcontour", "con
 _CATEGORICAL_TYPES = {"bar", "box", "violin", "histogram"}
 
 
+def _axis_has_string_values(values) -> bool:
+    """True si ces valeurs d'axe sont catégorielles (chaînes) plutôt que
+    numériques continues."""
+    if values is None:
+        return False
+    try:
+        for v in values:
+            if isinstance(v, str):
+                return True
+    except TypeError:
+        return False
+    return False
+
+
+def _scatter_is_categorical(fig) -> bool:
+    """
+    True pour un scatter/bubble dont X et/ou Y est catégoriel — ex. un dot
+    plot "Pathway × Classe" (taille = gene ratio, couleur = score) — PAR
+    OPPOSITION à une vraie relation x/y continue (PCA, UMAP, volcano).
+    Ces graphes catégoriels ne doivent JAMAIS être forcés carrés ni mis à
+    échelle égale (scaleanchor) : avec par ex. 20 catégories en Y et 2 en X,
+    une échelle px/unité égale écrase l'axe le plus riche et fait fusionner
+    les marqueurs entre eux (bug constaté sur le Dot Plot d'enrichissement).
+    """
+    for tr in fig.data:
+        if _axis_has_string_values(getattr(tr, "x", None)) or \
+           _axis_has_string_values(getattr(tr, "y", None)):
+            return True
+    return False
+
+
 def _dominant_orientation(fig) -> str:
-    """'h' si le graphe est porté par des barres/boîtes horizontales
-    (beaucoup de catégories empilées sur l'axe Y), sinon 'v'."""
+    """
+    'h' si la dimension qui porte le plus de catégories est l'axe Y (barres
+    horizontales explicites, OU un scatter/bubble catégoriel avec plus de
+    catégories en Y qu'en X — ex. un dot plot pathway×classe), sinon 'v'.
+    """
     for tr in fig.data:
         if getattr(tr, "orientation", None) == "h":
             return "h"
-    return "v"
+    # Pas d'orientation explicite (scatter/bubble catégoriel) : on compare
+    # le nombre de catégories distinctes portées par chaque axe.
+    x_cats, y_cats = set(), set()
+    for tr in fig.data:
+        xv, yv = getattr(tr, "x", None), getattr(tr, "y", None)
+        if xv is not None:
+            try:
+                x_cats.update(v for v in xv if isinstance(v, str))
+            except TypeError:
+                pass
+        if yv is not None:
+            try:
+                y_cats.update(v for v in yv if isinstance(v, str))
+            except TypeError:
+                pass
+    return "h" if len(y_cats) > len(x_cats) else "v"
+
+
+def _max_categorical_count(fig) -> int:
+    """
+    Nombre de catégories DISTINCTES sur l'axe qui en porte le plus, calculé
+    en fusionnant toutes les traces. Nécessaire quand les traces sont
+    scindées (ex. le dot plot d'enrichissement a une trace par Classe) :
+    `_estimate_n_items` ne regarderait qu'une seule trace à la fois et
+    sous-compterait le nombre réel de lignes/catégories affichées.
+    """
+    x_cats, y_cats = set(), set()
+    for tr in fig.data:
+        for cats, attr in ((x_cats, "x"), (y_cats, "y")):
+            v = getattr(tr, attr, None)
+            if v is None:
+                continue
+            try:
+                cats.update(str(item) for item in v if item is not None)
+            except TypeError:
+                pass
+    return max(len(x_cats), len(y_cats))
 
 
 def _clamp(v: float, lo: int = MIN_PLOT_PX, hi: int = MAX_PLOT_PX) -> int:
     return int(min(hi, max(lo, v)))
 
 
+def _estimate_max_label_chars(fig) -> int:
+    """
+    Longueur (en caractères) du plus long label CATÉGORIEL textuel affiché
+    (ex. noms de voies d'enrichissement sur l'axe des barres horizontales).
+    Sert à réserver assez de place pour les noms longs : sans ça,
+    `automargin` grignote la marge sur la zone de tracé et les labels
+    finissent visuellement "plus grands" que les barres elles-mêmes.
+    """
+    n = 0
+    for tr in fig.data:
+        for attr in ("x", "y"):
+            v = getattr(tr, attr, None)
+            if v is None:
+                continue
+            try:
+                for item in v:
+                    if isinstance(item, str):
+                        n = max(n, len(item))
+            except TypeError:
+                pass
+    return n
+
+
+def _label_reserve_px(fig, cap: int = 560) -> int:
+    """Largeur (px) à réserver pour les labels catégoriels les plus longs,
+    à ~7 px/caractère (Arial 12px) + un peu de marge, bornée à `cap`."""
+    chars = _estimate_max_label_chars(fig)
+    if chars == 0:
+        return 0
+    return int(min(cap, 55 + 7.0 * chars))
+
+
 def _plot_dims(fig, n_items: int = None):
     """
     Dimensions (largeur, hauteur) professionnelles, choisies selon le TYPE
     de graphe plutôt qu'un carré uniforme imposé à tout :
-      • scatter/scattergl seul, ou heatmap/grille à un seul panneau → carré :
-        c'est la seule famille où largeur = hauteur a un sens visuel
-        (relation x/y à échelle égale, matrice carrée).
-      • barres/boîtes/violons/histogrammes → rectangle "paysage" confortable
-        (~4:3), dont la dimension qui porte les catégories (largeur si
-        barres verticales, hauteur si barres horizontales) grandit avec le
-        nombre d'éléments pour que rien ne se tasse ni ne se chevauche.
+      • scatter/scattergl à axes NUMÉRIQUES (PCA, UMAP, volcano), ou
+        heatmap/grille à un seul panneau → carré : c'est la seule famille
+        où largeur = hauteur a un sens visuel (relation x/y à échelle
+        égale, matrice carrée).
+      • barres/boîtes/violons/histogrammes, ET scatter/bubble CATÉGORIELS
+        (ex. un dot plot "Pathway × Classe" comme celui du module
+        d'enrichissement) → rectangle "paysage" confortable (~4:3), dont la
+        dimension qui porte le plus de catégories (largeur si peu de
+        catégories en Y, hauteur si beaucoup) grandit avec le nombre
+        d'éléments pour que rien ne se tasse ni ne se chevauche. Un
+        scatter catégoriel forcé carré+scaleanchor écraserait l'axe le
+        plus riche en catégories contre l'axe le plus pauvre, faisant
+        fusionner les marqueurs entre eux. La dimension "labels" (largeur
+        si les catégories vivent sur l'axe Y) réserve en plus la place que
+        prennent réellement les libellés (ex. noms de voies d'enrichissement
+        souvent longs) : sinon `automargin` mange toute la largeur pour le
+        texte et ne laisse presque plus de zone de tracé pour les barres.
       • tout le reste (figures déjà mises en page par l'appelant, ex.
         multi-panneaux) → dimensions respectées, juste bornées pour ne
         jamais être minuscule ni démesurée.
@@ -226,25 +338,40 @@ def _plot_dims(fig, n_items: int = None):
     types = {tr.type for tr in fig.data if getattr(tr, "type", None)}
     n = n_items if n_items is not None else _estimate_n_items(fig)
     w0, h0 = fig.layout.width, fig.layout.height
+    scatter_cat = types.issubset(_SCATTER_TYPES) and _scatter_is_categorical(fig)
 
-    if types and (types.issubset(_SCATTER_TYPES) or types.issubset(_GRID_TYPES)):
+    if types and ((types.issubset(_SCATTER_TYPES) and not scatter_cat)
+                  or types.issubset(_GRID_TYPES)):
         side = adaptive_square_px(n)
         side = max(side, w0 or 0, h0 or 0)
         side = _clamp(side)
         return side, side
 
-    if types & _CATEGORICAL_TYPES:
+    if (types & _CATEGORICAL_TYPES) or scatter_cat:
+        if scatter_cat:
+            # Traces scindées par classe (une trace par catégorie de
+            # couleur/forme) : recompter via les catégories distinctes
+            # fusionnées, sinon on sous-compte le nombre réel de lignes.
+            n = max(n, _max_categorical_count(fig))
         grow_dim = adaptive_square_px(n, base=640, per_item=26, min_px=MIN_PLOT_PX,
                                        max_px=MAX_PLOT_PX + 200, grow_after=8)
         other_dim = _clamp(grow_dim / 1.35, hi=MAX_PLOT_PX)
+        # Zone de tracé confortable qu'on veut garantir en plus des labels,
+        # pour que les barres restent visuellement le sujet principal.
+        PLOT_AREA_MIN = 460
+        label_px = _label_reserve_px(fig)
         if _dominant_orientation(fig) == "h":
             height, width = grow_dim, other_dim
+            if label_px:
+                width = max(width, label_px + PLOT_AREA_MIN)
         else:
             width, height = grow_dim, other_dim
+            if label_px:
+                height = max(height, label_px + PLOT_AREA_MIN)
         width = max(width, w0 or 0)
         height = max(height, h0 or 0)
-        return (_clamp(width, hi=MAX_PLOT_PX + 200),
-                _clamp(height, hi=MAX_PLOT_PX + 200))
+        return (_clamp(width, hi=MAX_PLOT_PX + 400),
+                _clamp(height, hi=MAX_PLOT_PX + 400))
 
     # Cas générique : on respecte l'existant, juste borné (jamais minuscule).
     return _clamp(w0 or MIN_PLOT_PX), _clamp(h0 or MIN_PLOT_PX)
@@ -303,7 +430,7 @@ def _apply_square_layout(fig, n_items: int = None, rotate_ticks_over: int = 16) 
     width, height = _plot_dims(fig, n_items)
     fig.update_layout(width=width, height=height, autosize=False)
     _types = {tr.type for tr in fig.data if getattr(tr, "type", None)}
-    if _types and _types.issubset(_SCATTER_TYPES):
+    if _types and _types.issubset(_SCATTER_TYPES) and not _scatter_is_categorical(fig):
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
     _n = n_items if n_items is not None else _estimate_n_items(fig)
     if _n > rotate_ticks_over and _dominant_orientation(fig) != "h":
