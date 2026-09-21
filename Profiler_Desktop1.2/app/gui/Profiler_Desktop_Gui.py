@@ -7269,7 +7269,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             with _hm_names_col1:
                 show_sample_names = st.checkbox(
                     "Show sample names on heatmap",
-                    value=True,
+                    value=False,
                     key="heatmap_show_sample_names",
                     help="Display sample labels on the X-axis. Uncheck when there are many samples to keep the heatmap readable."
                 )

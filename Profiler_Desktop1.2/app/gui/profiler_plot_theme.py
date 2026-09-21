@@ -256,15 +256,23 @@ def _force_ink_fonts(fig) -> None:
     en taille "publication" — même si le module appelant (ou un template
     Plotly Express par défaut) avait posé une police plus claire ou plus
     petite. Idempotent : peut être rappelée sur une figure déjà stylée.
+
+    Fournit TOUJOURS `title.text` explicitement (chaîne vide si la figure
+    n'a pas de titre), même quand seul `title.font` est modifié : poser
+    `title.font` sans jamais définir `title.text` laisse la clé absente du
+    payload envoyé au frontend, ce qui fait afficher littéralement le mot
+    "undefined" en gras sur certains rendus Plotly (bug constaté sur le
+    heatmap biomarqueurs, qui n'a jamais de titre principal).
     """
     try:
         cur_title = fig.layout.title.text if fig.layout.title else None
     except Exception:
         cur_title = None
     if cur_title and "<b>" not in cur_title:
-        fig.update_layout(title=dict(text=f"<b>{cur_title}</b>"))
+        cur_title = f"<b>{cur_title}</b>"
     fig.update_layout(
-        title_font=dict(family=FONT_FAMILY, size=18, color=INK),
+        title=dict(text=cur_title or "",
+                   font=dict(family=FONT_FAMILY, size=18, color=INK)),
         font=dict(family=FONT_FAMILY, size=13, color=INK),
         legend=dict(font=dict(family=FONT_FAMILY, size=12, color=INK)),
     )
@@ -446,15 +454,12 @@ def style(fig, title: str = None, xtitle: str = None, ytitle: str = None,
     mise en page. `height`/`width` explicites priment comme plancher et ne
     sont jamais rétrécis par cette passe.
     """
-    fig.update_layout(
-        template="profiler",
-        title=dict(
-            x=0.5,
-            xanchor="center",
-            font=dict(size=18, family=FONT_FAMILY, color=INK),
-        ),
-    )
+    fig.update_layout(template="profiler")
     _force_ink_fonts(fig)
+    # x/xanchor centrés — `_force_ink_fonts` a déjà posé un `text` explicite
+    # (chaîne vide si pas de titre), donc pas de risque de payload "undefined"
+    # ici : on ne fait que compléter le positionnement.
+    fig.update_layout(title=dict(x=0.5, xanchor="center"))
 
     if title is not None:
         fig.update_layout(
