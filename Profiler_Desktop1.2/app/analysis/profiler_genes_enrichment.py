@@ -114,9 +114,9 @@ def _capture_plotly(fig, key: str):
 
 # ── High-quality shared layout ────────────────────────────────────────────────
 _FONT_FAMILY = "Arial Black, Arial, sans-serif"
-_TICK_FONT   = dict(family=_FONT_FAMILY, size=13, color="#0f172a")
+_TICK_FONT   = dict(family=_FONT_FAMILY, size=15, color="#0f172a")
 _TITLE_FONT  = dict(family=_FONT_FAMILY, size=16, color="#0f172a")
-_AXIS_TITLE  = dict(family=_FONT_FAMILY, size=14, color="#0f172a")
+_AXIS_TITLE  = dict(family=_FONT_FAMILY, size=17, color="#0f172a")
 _LEGEND_FONT = dict(family=_FONT_FAMILY, size=13, color="#0f172a")
 
 
@@ -184,6 +184,25 @@ def load_gene_sets_offline() -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 # SHARED DB SELECTOR (identical widget set in ORA and GSEA)
 # ══════════════════════════════════════════════════════════════════════════════
+
+_ORGANISM_KEYWORDS = ["Mouse", "Rat", "Yeast", "Fly", "Worm", "Fish"]
+
+
+def _infer_organism(text) -> str:
+    """
+    Déduit l'organisme Enrichr à partir du nom de la library choisie (ex.
+    "WikiPathways_2019_Mouse" → "Mouse") au lieu d'un widget dédié — les
+    libraries Enrichr encodent déjà l'organisme dans leur nom. Retombe sur
+    "Human" si rien n'est détecté (comportement Enrichr par défaut).
+    """
+    if not text:
+        return "Human"
+    low = str(text).lower()
+    for org in _ORGANISM_KEYWORDS:
+        if org.lower() in low:
+            return org
+    return "Human"
+
 
 def _render_db_selector(tab_prefix: str):
     """
@@ -255,7 +274,7 @@ def _render_db_selector(tab_prefix: str):
         cats_loaded = st.session_state.get("_enrich_cats_loaded", False)
         cats_dict   = st.session_state.get("_enrich_categories", {})
 
-        c_cat, c_db, c_org = st.columns([2, 3, 1])
+        c_cat, c_db = st.columns([2, 3])
         with c_cat:
             cat_opts = (["— select category —"] + list(cats_dict.keys())
                         if cats_loaded else ["— load categories first —"])
@@ -275,12 +294,11 @@ def _render_db_selector(tab_prefix: str):
                     key=f"{tab_prefix}_lib_text",
                     placeholder="e.g. KEGG_2021_Human",
                 )
-        with c_org:
-            organism = st.selectbox(
-                "Organism",
-                ["Human","Mouse","Rat","Yeast","Fly","Worm","Fish"],
-                key=f"{tab_prefix}_organism",
-            )
+        # Pas de sélecteur d'organisme dédié : les libraries Enrichr portent
+        # déjà l'organisme dans leur nom (ex. "WikiPathways_2019_Mouse"), on
+        # le déduit directement de la library choisie — "Human" par défaut
+        # sinon (comportement Enrichr standard).
+        organism = _infer_organism(gene_set_value)
 
     return db_source, gene_set_value, gmt_file_path, organism
 
@@ -299,7 +317,7 @@ def _plot_bar(df, gene_set, color_map):
     )
     fig = _layout(fig, f"Top Enriched Pathways — {gene_set}", height=max(450, n*30+120))
     fig.update_xaxes(title_text="Combined Score")
-    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=14))
     return fig
 
 
@@ -313,7 +331,7 @@ def _plot_enrichment_heatmap(df):
     )
     fig = _layout(fig, "Pathway Enrichment Heatmap",
                   height=max(350, pivot.shape[0]*70+180))
-    fig.update_xaxes(tickangle=45, tickfont=dict(size=11), title_text="Pathway")
+    fig.update_xaxes(tickangle=45, tickfont=dict(size=13), title_text="Pathway")
     fig.update_yaxes(title_text="Class")
     fig.update_coloraxes(colorbar=dict(
         title=dict(text="Combined Score", font=_AXIS_TITLE),
@@ -344,7 +362,7 @@ def _plot_gene_count(gene_mapping, color_map):
                  hover_data={"Gene %": True, "Gene Count": True, "Total Genes in Pathway": True})
     fig = _layout(fig, "Gene Count per Enriched Pathway", height=max(450, n*30+120))
     fig.update_xaxes(title_text="Number of Genes")
-    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=14))
     return fig
 
 
@@ -397,7 +415,7 @@ def _plot_gene_pct(gene_mapping, color_map, combined_df=None):
         fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
         fig = _layout(fig, "% of Pathway Genes Detected per Class", height=max(450, n*30+120))
         fig.update_xaxes(title_text="Gene Coverage (%)", range=[0, 110])
-        fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+        fig.update_yaxes(title_text="Pathway", tickfont=dict(size=14))
         return fig
 
     # Fallback: use gene_mapping only (less accurate — total = union across classes)
@@ -420,7 +438,7 @@ def _plot_gene_pct(gene_mapping, color_map, combined_df=None):
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
     fig = _layout(fig, "% of Pathway Genes Detected per Class", height=max(450, n*30+120))
     fig.update_xaxes(title_text="Gene Coverage (%)", range=[0, 110])
-    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+    fig.update_yaxes(title_text="Pathway", tickfont=dict(size=14))
     return fig
 
 
@@ -504,11 +522,28 @@ def _plot_dot(combined, gene_mapping, color_map):
     fig = _layout(fig, "Dot Plot — Enrichment by Class",
                   height=max(500, n*28+150))
     fig.update_yaxes(categoryorder="array", categoryarray=term_order,
-                     tickfont=dict(size=12), title_text="Pathway")
+                     tickfont=dict(size=14), title_text="Pathway")
     fig.update_xaxes(categoryorder="array", categoryarray=classes,
                      title_text="Class", tickangle=30 if len(classes) > 4 else 0)
+    # Largeur totale = réserve pour les noms de voies (axe Y, via automargin)
+    # + zone de tracé confortable par classe + réserve pour la colorbar
+    # "Combined Score" et la légende Class, à droite. Un simple plancher de
+    # largeur ne suffisait pas : une fois les labels longs pris par
+    # automargin ET la colorbar/légende à droite, il ne restait presque
+    # plus rien pour les colonnes de classe elles-mêmes (marqueurs collés
+    # les uns aux autres, rapporté sur le Dot Plot). Il faut additionner
+    # ces trois réserves plutôt que de compter sur un plancher plat.
+    _longest_term  = max((len(t) for t in dot["Term"].unique()), default=10)
+    _label_reserve = min(520, 60 + 7.0 * _longest_term)
+    _plot_area     = len(classes) * 230 + 100
+    _right_reserve = 230  # colorbar "Combined Score" + légende Class
+    fig.update_layout(width=max(700, int(_label_reserve + _plot_area + _right_reserve)))
+    # La légende "size = gene ratio..." passe sous le titre de l'axe X
+    # (avec une marge basse dédiée) plutôt que dans la marge droite, où
+    # elle chevauchait la colorbar / les graduations.
+    fig.update_layout(margin=dict(b=118))
     fig.add_annotation(
-        xref="paper", yref="paper", x=1.13, y=0.02,
+        xref="paper", yref="paper", x=0.5, y=-0.17, xanchor="center", yanchor="top",
         text="● size = gene ratio · shape/border = class", showarrow=False,
         font=dict(family=_FONT_FAMILY, size=11, color="#374151"),
     )
@@ -533,8 +568,8 @@ def _plot_gene_pathway_heatmap(gene_mapping):
     )
     fig = _layout(fig, "Gene Involvement Across Pathways",
                   height=max(450, len(all_genes)*20+180))
-    fig.update_xaxes(tickangle=45, tickfont=dict(size=10), title_text="Pathway")
-    fig.update_yaxes(tickfont=dict(size=10), title_text="Gene")
+    fig.update_xaxes(tickangle=45, tickfont=dict(size=12), title_text="Pathway")
+    fig.update_yaxes(tickfont=dict(size=12), title_text="Gene")
     return fig
 
 
@@ -859,7 +894,7 @@ def _render_gsea_results(res_df, run_label):
         fig = _layout(fig, f"NES Bar Chart — {run_label}",
                       height=max(450, len(sig_s)*26+130))
         fig.update_xaxes(title_text="Normalized Enrichment Score (NES)")
-        fig.update_yaxes(title_text="Pathway", tickfont=dict(size=12))
+        fig.update_yaxes(title_text="Pathway", tickfont=dict(size=14))
         fig.add_vline(x=0, line_dash="dash", line_color="#374151", line_width=1.5)
         # colour legend annotation
         fig.add_annotation(
