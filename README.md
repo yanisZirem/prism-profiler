@@ -242,7 +242,7 @@ Includes: MaxQuant / DIA-NN outputs, Bruker & Waters RAW files, multi-omics tabu
 
 Profiler Desktop is proprietary software registered with the **Agence pour la Protection des Programmes (APP)**.
 
-**IDDN Certificate:** `IDDN.FR.001.300044.000.S6.C7.2025.0009.3123010`
+**IDDN Certificate:** `IDDN.FR.001.030004.000.S.C.2025.000.31230`
 
 All rights reserved. See [`License & Intellectual Property.txt`](License%20%26%20Intellectual%20Property.txt) for full terms.
 
