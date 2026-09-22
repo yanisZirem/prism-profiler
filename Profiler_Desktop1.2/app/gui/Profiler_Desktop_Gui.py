@@ -294,7 +294,7 @@ def _load_page_icon():
     return "data:image/svg+xml;base64," + base64.b64encode(_svg.encode()).decode()
 
 st.set_page_config(
-    page_title="Profiler Desktop v1.2.7",
+    page_title="Profiler Desktop v1.2.8",
     page_icon=_load_page_icon(),
     layout="wide",
     initial_sidebar_state="expanded",
@@ -302,7 +302,7 @@ st.set_page_config(
         'Get Help': 'https://github.com/yanisZirem/Profiler_v1_requests_datatests',
         'Report a bug': 'mailto:yanis.zirem@univ-lille.fr',
         'About': """
-**Profiler v1.2.7** Open Omics Analysis Platform *(Desktop Edition)*
+**Profiler v1.2.8** Open Omics Analysis Platform *(Desktop Edition)*
 
 Developed at **PRISM INSERM U1192**, Université de Lille.
 
@@ -1023,7 +1023,7 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--tex
   <p class="subtitle">Open multi-omics analysis platform — PRISM U1192 / INSERM</p>
   <div class="meta-bar">
     <span>📅 Generated: {now}</span>
-    <span>🔢 Profiler v1.2.7</span>
+    <span>🔢 Profiler v1.2.8</span>
 
   </div>
 </header>
@@ -2375,7 +2375,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                 <h1 style="margin:0;font-size:1.8rem;font-weight:900;color:#fff;">Profiler</h1>
                 <span style="background:rgba(49,140,231,0.3);color:#93c5fd;font-size:0.7rem;
-                font-weight:700;padding:2px 9px;border-radius:20px;border:1px solid rgba(49,140,231,0.5);">v1.2.7</span>
+                font-weight:700;padding:2px 9px;border-radius:20px;border:1px solid rgba(49,140,231,0.5);">v1.2.8</span>
             </div>
             <p style="color:#7ea8cc;font-size:0.78rem;margin:0 0 6px;">PRISM U1192 · INSERM · Université de Lille</p>
             <p style="color:#a8c8e8;font-size:0.88rem;margin:0 0 12px;max-width:580px;line-height:1.6;">
