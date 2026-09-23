@@ -95,10 +95,21 @@ import gc
 
 
 
-def apply_pca(X, n_components,random_state=1):
+def apply_pca(X, n_components, random_state=1, scale=True):
+    """
+    scale : if True (default), z-score standardize features before PCA — same
+        convention as plot_tsne / plot_umap below, so the three embeddings are
+        comparable and none of them is silently dominated by high-intensity
+        features. Set False only if the matrix was already standardized
+        upstream (e.g. Preprocess → Scaling = StandardScaler), to avoid
+        double-scaling.
+    """
     # Gérer les valeurs manquantes
     imputer = SimpleImputer(strategy='mean')
     X_imputed = imputer.fit_transform(X)
+
+    if scale:
+        X_imputed = StandardScaler().fit_transform(X_imputed)
 
     # Appliquer PCA
     pca = PCA(n_components=n_components, random_state=random_state)
@@ -196,7 +207,7 @@ def plot_pca(reduced_data, class_labels, custom_colors=None, feature_intensity=N
 
 
 def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None,
-              random_state=1, capture_name=None, color_by=None, data_orig=None):
+              random_state=1, capture_name=None, color_by=None, data_orig=None, scale=True):
     if 'Class' not in data.columns:
         st.error("Class column not found in data.")
         return None
@@ -206,8 +217,13 @@ def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None
     perplexity = max(2, min(int(np.log2(n_samples)), 100))
 
     features = data.drop('Class', axis=1)
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features.values.astype('float32'))
+    # scale=True by default (z-score), same convention as apply_pca / plot_umap.
+    # Set False if the matrix was already standardized upstream (Preprocess →
+    # Scaling) to avoid standardizing twice.
+    features_scaled = (
+        StandardScaler().fit_transform(features.values.astype('float32'))
+        if scale else features.values.astype('float32')
+    )
 
     tsne = TSNE(n_components=num_components, perplexity=perplexity, random_state=random_state,
                 n_jobs=_N_JOBS, method="barnes_hut", n_iter=500 if n_samples > 2000 else 1000)
@@ -255,7 +271,7 @@ def plot_tsne(data, num_components=2, custom_colors=None, feature_intensity=None
 
 
 def plot_umap(data, num_components=2, custom_colors=None, feature_intensity=None,
-              random_state=1, capture_name=None, color_by=None, data_orig=None):
+              random_state=1, capture_name=None, color_by=None, data_orig=None, scale=True):
     if 'Class' not in data.columns:
         st.error("Class column not found in data.")
         return None
@@ -265,8 +281,13 @@ def plot_umap(data, num_components=2, custom_colors=None, feature_intensity=None
     n_neighbors = max(2, min(int(np.log2(n_samples)), 100))
 
     data_features = data.drop('Class', axis=1)
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data_features.values.astype('float32'))
+    # scale=True by default (z-score), same convention as apply_pca / plot_tsne.
+    # Set False if the matrix was already standardized upstream (Preprocess →
+    # Scaling) to avoid standardizing twice.
+    data_scaled = (
+        StandardScaler().fit_transform(data_features.values.astype('float32'))
+        if scale else data_features.values.astype('float32')
+    )
 
     reducer = umap.UMAP(
         n_components=num_components, n_neighbors=n_neighbors,
