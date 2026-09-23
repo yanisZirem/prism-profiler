@@ -2692,6 +2692,18 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         relevant_cols, missing_df = calculate_missing_values(df)
                         # Safety: keep only numeric columns to avoid str > int errors
                         relevant_cols = [c for c in relevant_cols if pd.api.types.is_numeric_dtype(df[c])]
+                        # Couleurs par classe calculées une seule fois, tout en haut : plusieurs
+                        # graphes plus bas (courbe de détection cumulée, violons zero-inflation…)
+                        # en ont besoin même quand aucune valeur manquante n'est détectée — avant
+                        # ce correctif, color_map n'existait que si le bloc "pies" s'exécutait,
+                        # ce qui pouvait planter la courbe cumulée avec un NameError.
+                        import plotly.express as px
+                        _palette = px.colors.qualitative.Plotly
+                        _cls_colors = st.session_state.get('class_colors', {})
+                        color_map = {}
+                        if "Class" in df.columns:
+                            for _i, _cls in enumerate(sorted(df["Class"].unique())):
+                                color_map[_cls] = _cls_colors.get(_cls, _palette[_i % len(_palette)])
 
                         # ============================================================
                         # MISSING VALUES
@@ -2710,145 +2722,6 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
 
                             _log_success(f"Overall missingness: **{total_missing_pct:.2f}%**")
 
-                            # ── 1. Pie charts par classe ──────────────────────────────
-                            if "Class" in df.columns:
-                                classes = df["Class"].unique()
-
-
-                                import plotly.express as px
-                                palette = px.colors.qualitative.Plotly
-                                color_map = {cls: palette[i % len(palette)] for i, cls in enumerate(sorted(classes))}
-
-                                # Une subplot de pies : 1 pie par classe
-                                from plotly.subplots import make_subplots
-                                n_cols = min(3, len(classes))
-                                n_rows = -(-len(classes) // n_cols)  # ceiling division
-
-                                fig_pies = make_subplots(
-                                    rows=n_rows,
-                                    cols=n_cols,
-                                    specs=[[{"type": "pie"}] * n_cols for _ in range(n_rows)],
-                                    subplot_titles=[str(c) for c in sorted(classes)]
-                                )
-
-                                for i, cls in enumerate(sorted(classes)):
-                                    sub = df[df["Class"] == cls][relevant_cols].select_dtypes(include="number")
-                                    n_missing = sub.isnull().sum().sum()
-                                    n_total = sub.shape[0] * len(relevant_cols)
-                                    n_present = n_total - n_missing
-
-                                    row = i // n_cols + 1
-                                    col = i % n_cols + 1
-
-                                    fig_pies.add_trace(
-                                        go.Pie(
-                                            labels=["Present", "Missing"],
-                                            values=[n_present, n_missing],
-                                            marker_colors=[color_map[cls], "#d3d3d3"],
-                                            hole=0.4,
-                                            textinfo="percent",
-                                            showlegend=(i == 0),
-                                            name=str(cls)
-                                        ),
-                                        row=row, col=col
-                                    )
-
-                                fig_pies.update_layout(
-                                    title_text="<b>Missing Values (%) per Class</b>",
-                                    height=300 * n_rows,
-                                    font=dict(size=15, color="black", family="Arial"),
-                                    legend=dict(orientation="h", yanchor="bottom", y=-0.15,
-                                                font=dict(size=14, color="black")),
-                                    plot_bgcolor="white", paper_bgcolor="white",
-                                    title_font=dict(size=18, color="black", family="Arial"),
-                                )
-                                _square_plot(fig_pies, config=_std_config())
-                                _capture_plotly(fig_pies, "missing_values_per_class_pies")
-
-
-                            # ── Cumulative Missing Value Curve ─────────────────────────
-                            # Mirrors exactly the zero-detection cumulative curve logic:
-                            # per-class lines + class_colors palette + thresholds at 20 & 30 %
-                            thresholds = range(0, 101, 5)
-                            cum_records = []
-                            _cls_cmap = st.session_state.get('class_colors', {})
-
-                            if "Class" in df.columns:
-                                for cls in sorted(df["Class"].unique()):
-                                    sub = df[df["Class"] == cls][relevant_cols].select_dtypes(include="number")
-                                    missing_frac = sub.isna().sum() / max(len(sub), 1)
-                                    for thr in thresholds:
-                                        n_feat_kept = (missing_frac * 100 <= thr).sum()
-                                        cum_records.append({
-                                            "Missing threshold (% samples)": thr,
-                                            "Features retained (%)": n_feat_kept / max(len(relevant_cols), 1) * 100,
-                                            "Class": str(cls)
-                                        })
-                                cum_missing_df = pd.DataFrame(cum_records)
-                                fig_missing = px.line(
-                                    cum_missing_df,
-                                    x="Missing threshold (% samples)",
-                                    y="Features retained (%)",
-                                    color="Class",
-                                    color_discrete_map={str(k): v for k, v in _cls_cmap.items()},
-                                    markers=True,
-                                    title="Cumulative Missing Value Curve per Class"
-                                )
-                            else:
-                                sub = df[relevant_cols].select_dtypes(include="number")
-                                missing_frac = sub.isna().sum() / max(len(sub), 1)
-                                for thr in thresholds:
-                                    n_feat_kept = (missing_frac * 100 <= thr).sum()
-                                    cum_records.append({
-                                        "Missing threshold (% samples)": thr,
-                                        "Features retained (%)": n_feat_kept / max(len(relevant_cols), 1) * 100,
-                                    })
-                                cum_missing_df = pd.DataFrame(cum_records)
-                                fig_missing = px.line(
-                                    cum_missing_df,
-                                    x="Missing threshold (% samples)",
-                                    y="Features retained (%)",
-                                    markers=True,
-                                    title="Cumulative Missing Value Curve"
-                                )
-
-                            # Threshold reference lines (QC: 20 % and 30 %)
-                            for xref, lbl in [(20, "20% recommended"), (30, "30% lenient")]:
-                                fig_missing.add_vline(
-                                    x=xref,
-                                    line_dash="dash",
-                                    line_color="#f59e0b" if xref == 20 else "#ef4444",
-                                    annotation_text=lbl,
-                                    annotation_position="top right",
-                                    annotation_font=dict(size=12, color="#555"),
-                                )
-
-                            fig_missing.update_layout(
-                                plot_bgcolor="white", paper_bgcolor="white",
-                                height=460,
-                                font=dict(size=15, color="black", family="Arial"),
-                                title=dict(font=dict(size=18, color="black", family="Arial")),
-                                legend=dict(font=dict(size=14, color="black", family="Arial"),
-                                            bordercolor="#ccc", borderwidth=1),
-                                xaxis=dict(
-                                    title="Missing value threshold (% of samples in class)",
-                                    gridcolor="#eeeeee",
-                                    title_font=dict(size=15, color="black"),
-                                    tickfont=dict(size=14, color="black"),
-                                    linecolor="#333", linewidth=1.5, mirror=True,
-                                ),
-                                yaxis=dict(
-                                    title="Features retained (%)",
-                                    gridcolor="#eeeeee", range=[0, 105],
-                                    title_font=dict(size=15, color="black"),
-                                    tickfont=dict(size=14, color="black"),
-                                    linecolor="#333", linewidth=1.5, mirror=True,
-                                ),
-                            )
-
-                            _square_plot(fig_missing, config=_std_config())
-                            _capture_plotly(fig_missing, "cumulative_missing_curve")
-
                             # ── NEW: Missing heatmap + per-class bar + completeness ──
                             try:
                                 fig_miss_hm = plot_missing_heatmap(df)
@@ -2857,32 +2730,78 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             except Exception:
                                 pass
 
-                            try:
-                                fig_miss_cls = plot_missing_per_class(df)
-                                if fig_miss_cls:
-                                    _square_plot(fig_miss_cls, config=_std_config())
-                                    _capture_plotly(fig_miss_cls, "missing_per_class_bar")
-                            except Exception:
-                                pass
+                            with st.expander("🔍 Per-class breakdown (missing values)", expanded=False):
+                                # ── 1. Pie charts par classe ──────────────────────────────
+                                if "Class" in df.columns:
+                                    classes = df["Class"].unique()
 
-                            try:
-                                fig_compl = plot_feature_completeness_rank(df)
-                                if fig_compl:
-                                    _square_plot(fig_compl, config=_std_config())
-                                    _capture_plotly(fig_compl, "feature_completeness_rank")
-                            except Exception:
-                                pass
 
-                            st.markdown("**📋 Per-feature missing summary**")
-                            st.dataframe(missing_df, use_container_width=True)
+                                    import plotly.express as px
+                                    palette = px.colors.qualitative.Plotly
+                                    color_map = {cls: palette[i % len(palette)] for i, cls in enumerate(sorted(classes))}
 
-                        # # ============================================================
-                        # # ZERO-INFLATION
-                        # # ============================================================
-                        # st.markdown("---")
-                        # st.markdown("**Zero-Inflation Analysis**")
-                        # st.caption("NaN values are excluded from zero-inflation calculations.")
+                                    # Une subplot de pies : 1 pie par classe
+                                    from plotly.subplots import make_subplots
+                                    n_cols = min(3, len(classes))
+                                    n_rows = -(-len(classes) // n_cols)  # ceiling division
 
+                                    fig_pies = make_subplots(
+                                        rows=n_rows,
+                                        cols=n_cols,
+                                        specs=[[{"type": "pie"}] * n_cols for _ in range(n_rows)],
+                                        subplot_titles=[str(c) for c in sorted(classes)]
+                                    )
+
+                                    for i, cls in enumerate(sorted(classes)):
+                                        sub = df[df["Class"] == cls][relevant_cols].select_dtypes(include="number")
+                                        n_missing = sub.isnull().sum().sum()
+                                        n_total = sub.shape[0] * len(relevant_cols)
+                                        n_present = n_total - n_missing
+
+                                        row = i // n_cols + 1
+                                        col = i % n_cols + 1
+
+                                        fig_pies.add_trace(
+                                            go.Pie(
+                                                labels=["Present", "Missing"],
+                                                values=[n_present, n_missing],
+                                                marker_colors=[color_map[cls], "#d3d3d3"],
+                                                hole=0.4,
+                                                textinfo="percent",
+                                                showlegend=(i == 0),
+                                                name=str(cls)
+                                            ),
+                                            row=row, col=col
+                                        )
+
+                                    fig_pies.update_layout(
+                                        title_text="<b>Missing Values (%) per Class</b>",
+                                        height=300 * n_rows,
+                                        font=dict(size=15, color="black", family="Arial"),
+                                        legend=dict(orientation="h", yanchor="bottom", y=-0.15,
+                                                    font=dict(size=14, color="black")),
+                                        plot_bgcolor="white", paper_bgcolor="white",
+                                        title_font=dict(size=18, color="black", family="Arial"),
+                                    )
+                                    _square_plot(fig_pies, config=_std_config())
+                                    _capture_plotly(fig_pies, "missing_values_per_class_pies")
+
+
+                                try:
+                                    fig_miss_cls = plot_missing_per_class(df)
+                                    if fig_miss_cls:
+                                        _square_plot(fig_miss_cls, config=_std_config())
+                                        _capture_plotly(fig_miss_cls, "missing_per_class_bar")
+                                except Exception:
+                                    pass
+
+                                try:
+                                    fig_compl = plot_feature_completeness_rank(df)
+                                    if fig_compl:
+                                        _square_plot(fig_compl, config=_std_config())
+                                        _capture_plotly(fig_compl, "feature_completeness_rank")
+                                except Exception:
+                                    pass
                         non_nan_df = df[relevant_cols].select_dtypes(include='number')
 
                         zero_pct_features = (
@@ -2909,12 +2828,43 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         zero_sample_df = zero_pct_samples.reset_index()
                         zero_sample_df.columns = ["SampleIndex", "Zero (%)"]
 
+                        # ── Zero-inflation: features detected but mostly at zero ────
+                        # (calculé ICI, avant le résumé "At a glance" ci-dessous qui en a
+                        # besoin — le placer plus bas causait un UnboundLocalError.)
+                        zero_threshold = 50
+                        zero_inflated_features = zero_pct_features[zero_pct_features > zero_threshold]
 
-                        # st.caption(
-                        #     "Each point = % of features detected (non-zero, non-NaN) in at least X% of samples. "
-                        #     "Helps determine filtering thresholds for zero-inflated features."
-                        # )
+                        # ── Combined per-feature summary (missing % + zero % + detected %) ──
+                        _miss_summary = (
+                            missing_df.drop(index="All", errors="ignore")
+                            .reset_index().rename(columns={"index": "Feature", "Percentage (%)": "Missing (%)"})
+                            [["Feature", "Missing (%)"]]
+                        )
+                        _feat_summary = _miss_summary.merge(zero_feat_df, on="Feature", how="outer")
+                        _feat_summary["Missing (%)"] = _feat_summary["Missing (%)"].fillna(0).round(2)
+                        _feat_summary["Zero (%)"] = _feat_summary["Zero (%)"].fillna(0).round(2)
+                        _feat_summary["Detected (%)"] = (100 - _feat_summary["Missing (%)"] - _feat_summary["Zero (%)"]).clip(lower=0).round(2)
+                        _feat_summary = _feat_summary.sort_values("Detected (%)").reset_index(drop=True)
 
+                        st.markdown("---")
+                        st.markdown("**At a glance**")
+                        _zero_overall_pct = (non_nan_df == 0).sum().sum() / max(non_nan_df.notna().sum().sum(), 1) * 100
+                        _combined_pct = total_missing_pct + _zero_overall_pct * (100 - total_missing_pct) / 100
+                        _c1, _c2, _c3, _c4 = st.columns(4)
+                        _c1.metric("Missing (NaN)", f"{total_missing_pct:.1f}%")
+                        _c2.metric("Zeros (of detected)", f"{_zero_overall_pct:.1f}%")
+                        _c3.metric("Combined gaps", f"{_combined_pct:.1f}%",
+                                      help="Missing + zero values, as a share of the full data matrix.")
+                        _c4.metric("Zero-inflated features (>50%)", f"{len(zero_inflated_features)}")
+
+                        if total_missing_pct < 5 and len(zero_inflated_features) == 0:
+                            _log_success("✅ Data are well-covered — low missingness, no strong zero-inflation.")
+                        elif _combined_pct > 40:
+                            st.warning("⚠️ High sparsity overall — many features are absent (NaN or zero) "
+                                      "in a large share of samples. See the recommendations below before imputing.")
+
+                        st.markdown("**Where are the gaps?**")
+                        st.caption("This curve is what sets the filtering threshold below: the % of samples a feature must be detected in to be kept.")
                         thresholds = range(0, 101, 5)
                         cum_records = []
 
@@ -2991,47 +2941,36 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                         _square_plot(fig_cum, config=_std_config())
                         _capture_plotly(fig_cum, "cumulative_feature_detection_curve")
 
-                        # ── NEW: Zero-inflation violin per class ──────────────────
-                        try:
-                            fig_zi_viol = plot_zero_inflation_per_class(df)
-                            if fig_zi_viol:
-                                _square_plot(fig_zi_viol, config=_std_config())
-                                _capture_plotly(fig_zi_viol, "zero_inflation_violin_class")
-                        except Exception:
-                            pass
-
-                        # ── Détection features zero-inflated ─────────────────────────
-                        zero_threshold = 50
-                        zero_inflated_features = zero_pct_features[zero_pct_features > zero_threshold]
+                        with st.expander("🔍 Zero-inflation per sample / class", expanded=False):
+                            # ── NEW: Zero-inflation violin per class ──────────────────
+                            try:
+                                fig_zi_viol = plot_zero_inflation_per_class(df)
+                                if fig_zi_viol:
+                                    _square_plot(fig_zi_viol, config=_std_config())
+                                    _capture_plotly(fig_zi_viol, "zero_inflation_violin_class")
+                            except Exception:
+                                pass
 
                         if len(zero_inflated_features) > 0:
                             st.warning(
                                 f"⚠️ {len(zero_inflated_features)} features show >{zero_threshold}% zeros "
-                                "(zero-inflated, NaN excluded)."
-                            )
-                            st.dataframe(
-                                zero_inflated_features
-                                .reset_index()
-                                .rename(columns={"index": "Feature", 0: "Zero (%)"}),
-                                use_container_width=True
+                                "(zero-inflated, NaN excluded) — see them ranked in the table below."
                             )
                         else:
                             _log_success("✅ No strongly zero-inflated features detected.")
 
-                        st.markdown("**📋 Zero % per feature (NaN excluded)**")
-                        st.dataframe(zero_feat_df, use_container_width=True)
+                        st.markdown("**📋 Per-feature summary** — sorted by how well each feature is detected; use this to set your filtering threshold in Preprocessing.")
+                        st.dataframe(_feat_summary, use_container_width=True)
 
-                        # ============================================================
-                        # MISSINGNESS MECHANISM SCREENING (MCAR / MAR / MNAR-like)
-                        # ============================================================
                         st.markdown("---")
-                        st.markdown("**Missingness Mechanism Screening (MCAR / MAR / MNAR-like)**")
+                        st.markdown("**Why are they missing?** Mechanism screening")
 
                         _mech_verdict_df, _mech_summary, _mech_fig = (None, None, None)
                         if not missing_df.empty:
-                            # Per-SESSION cache (st.session_state), NOT st.cache_data: kept consistent with
-                            # the web version even though the desktop app is single-user, so both codebases
-                            # share the exact same caching logic.
+                            # Per-SESSION cache (st.session_state), NOT st.cache_data: st.cache_data is a
+                            # process-wide cache shared across every concurrent user on the web app, which
+                            # risks cross-user collisions/overlap. st.session_state is isolated per browser
+                            # session, so each user only ever reuses their own previous computation.
                             import hashlib
                             try:
                                 _fp_bytes = pd.util.hash_pandas_object(df[relevant_cols], index=False).values.tobytes()
@@ -3054,6 +2993,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         df, relevant_cols, progress_callback=_update_mech_progress
                                     )
                                     _mech_cache[_mech_cache_key] = (_mech_verdict_df, _mech_summary, _mech_fig)
+                                    # bound the per-session cache so it can't grow unbounded across a long session
                                     if len(_mech_cache) > 3:
                                         del _mech_cache[next(iter(_mech_cache))]
                                 except Exception as _e:
@@ -3093,10 +3033,9 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             st.info("Not enough data to screen the missingness mechanism.")
 
                         # ============================================================
-                        # IMPUTATION & FILTERING RECOMMENDATIONS (mechanism-aware)
-                        # ============================================================
+
                         st.markdown("---")
-                        st.markdown("**💡 Imputation & Filtering Recommendations**")
+                        st.markdown("**What should I do?** Recommendations")
 
                         _dominant_mech = _mech_summary["dominant"] if _mech_summary else None
                         # suggested per-class detection threshold, bounded to a sane 50–90% range
@@ -3111,7 +3050,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             )
                         elif _dominant_mech and _dominant_mech.startswith("MNAR"):
                             st.info(
-                                "🔬 **MNAR-dominant pattern detected (left-censored, low-abundance signals)**\n\n"
+                                "**MNAR-dominant pattern detected (left-censored, low-abundance signals)**\n\n"
                                 "- Missing values are concentrated in low-intensity features → consistent with "
                                 "*missing below detection limit*, not random dropout\n\n"
                                 "**Recommended strategy:**\n"
@@ -3125,7 +3064,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             )
                         elif _dominant_mech and _dominant_mech.startswith("MAR"):
                             st.info(
-                                "🔬 **MAR-dominant pattern detected (class-dependent missingness)**\n\n"
+                                "**MAR-dominant pattern detected (class-dependent missingness)**\n\n"
                                 "- Missingness is statistically associated with sample **Class**, not with "
                                 "abundance level\n\n"
                                 "**Recommended strategy:**\n"
