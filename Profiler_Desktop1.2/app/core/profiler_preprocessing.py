@@ -66,12 +66,89 @@ def _ensure_pandarallel():
                 pass  # fallback silencieux si pandarallel indispo
 
 
-def preprocess_data(all_data, normalization_type=None, _progress_bar=None):
-    st.info("Applying Normalization...")
+# ── Trois leviers distincts, applicables en séquence ──────────────────────────
+# 1) Normalization    : corrige le biais échantillon-à-échantillon (quantité chargée,
+#                        signal total, taille de librairie).
+# 2) Transformation    : reshape la distribution de chaque feature (log / VST) pour
+#                        stabiliser la variance et se rapprocher de la normalité.
+# 3) Scaling           : standardisation par feature (z-score / robuste / min-max),
+#                        utile en amont de PCA/UMAP/t-SNE et de l'entraînement de
+#                        modèles biomarqueurs, PAS des tests stat univariés
+#                        (t-test/ANOVA/volcano), qui doivent rester sur les
+#                        intensités normalisées/transformées, non centrées-réduites.
+_TRANSFORM_TYPES = {'Log1p', 'Log10', 'Log2', 'VST'}
+
+
+def _apply_normalization(intensity_data, normalization_type):
+    if normalization_type == 'RMS':
+        rms_vals = np.sqrt(np.sum(np.square(intensity_data), axis=1)).reshape(-1, 1)
+        return intensity_data / np.where(rms_vals == 0, np.nan, rms_vals)
+    elif normalization_type == 'BasePeak':
+        max_vals = np.max(intensity_data, axis=1).reshape(-1, 1)
+        return intensity_data / np.where(max_vals == 0, np.nan, max_vals)
+    elif normalization_type == 'QNorm':
+        return quantile_normalization(intensity_data)
+    elif normalization_type == 'Median of Ratios (Deseq2-like)':
+        return median_of_ratios_norm(intensity_data)
+    elif normalization_type == 'TMM (Deseq2-like)':
+        return tmm_norm(intensity_data)
+    elif normalization_type == 'CPM':
+        return cpm_norm(intensity_data, log=False)
+    elif normalization_type == 'logCPM':
+        return cpm_norm(intensity_data, log=True)
+    elif normalization_type == 'Median':
+        return median_norm(intensity_data)
+    elif normalization_type == 'Mean':
+        return mean_norm(intensity_data)
+    elif normalization_type == 'Total Intensity':
+        return total_intensity_norm(intensity_data)
+    return intensity_data
+
+
+def _apply_transformation(intensity_data, transformation_type):
+    if transformation_type == 'Log1p':
+        return np.log1p(intensity_data)
+    elif transformation_type == 'Log10':
+        return np.log10(intensity_data + 1)
+    elif transformation_type == 'Log2':
+        return np.log2(intensity_data + 1)
+    elif transformation_type == 'VST':
+        return vst_norm(intensity_data)
+    return intensity_data
+
+
+def _apply_scaling(intensity_data, scaling_type):
+    from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
+    scaler_cls = {
+        'StandardScaler (z-score)': StandardScaler,
+        'RobustScaler': RobustScaler,
+        'MinMaxScaler': MinMaxScaler,
+    }.get(scaling_type)
+    if scaler_cls is None:
+        return intensity_data
+    return scaler_cls().fit_transform(intensity_data)
+
+
+def preprocess_data(all_data, normalization_type=None, transformation_type=None,
+                     scaling_type=None, _progress_bar=None):
+    """
+    Applies, in order: Normalization → Transformation → Scaling.
+
+    Backward-compatible: if `normalization_type` is passed one of the old
+    log-transform values (Log2/Log10/Log1p/VST) and `transformation_type` is
+    not given, it is treated as a transformation — so existing call sites
+    that still use a single combined selectbox keep working unchanged.
+    """
+    st.info("Applying Normalization / Transformation...")
 
     if all_data.empty:
         st.error("DataFrame is empty.")
         return pd.DataFrame()
+
+    # backward compatibility shim for old single-selectbox callers
+    if normalization_type in _TRANSFORM_TYPES and transformation_type is None:
+        transformation_type = normalization_type
+        normalization_type = None
 
     if _progress_bar:
         _progress_bar.progress(0.1)
@@ -96,58 +173,16 @@ def preprocess_data(all_data, normalization_type=None, _progress_bar=None):
     if _progress_bar:
         _progress_bar.progress(0.3)
 
-
-    if normalization_type:
-        try:
-            if normalization_type == 'Log1p':
-                intensity_data = np.log1p(intensity_data)
-
-            elif normalization_type == 'Log10':
-                intensity_data = np.log10(intensity_data + 1)
-
-            elif normalization_type == 'Log2':
-                intensity_data = np.log2(intensity_data + 1)
-
-
-            elif normalization_type == 'RMS':
-                rms_vals = np.sqrt(np.sum(np.square(intensity_data), axis=1)).reshape(-1, 1)
-                intensity_data = intensity_data / np.where(rms_vals == 0, np.nan, rms_vals)
-
-            elif normalization_type == 'BasePeak':
-                max_vals = np.max(intensity_data, axis=1).reshape(-1, 1)
-                intensity_data = intensity_data / np.where(max_vals == 0, np.nan, max_vals)
-
-            elif normalization_type == 'QNorm':
-                intensity_data = quantile_normalization(intensity_data)
-
-            elif normalization_type == 'Median of Ratios (Deseq2-like)':
-                intensity_data = median_of_ratios_norm(intensity_data)
-
-            elif normalization_type == 'TMM (Deseq2-like)':
-                intensity_data = tmm_norm(intensity_data)
-
-            elif normalization_type == 'CPM':
-                intensity_data = cpm_norm(intensity_data, log=False)
-
-            elif normalization_type == 'logCPM':
-                intensity_data = cpm_norm(intensity_data, log=True)
-
-            elif normalization_type == 'VST':
-                intensity_data = vst_norm(intensity_data)
-
-            elif normalization_type == 'Median':
-                intensity_data = median_norm(intensity_data)
-
-            elif normalization_type == 'Mean':
-                intensity_data = mean_norm(intensity_data)
-
-            elif normalization_type == 'Total Intensity':
-                intensity_data = total_intensity_norm(intensity_data)
-
-        except Exception as e:
-            st.error(f"Normalization error: {e}")
-            return pd.DataFrame()
-
+    try:
+        if normalization_type and normalization_type != 'None':
+            intensity_data = _apply_normalization(intensity_data, normalization_type)
+        if transformation_type and transformation_type != 'None':
+            intensity_data = _apply_transformation(intensity_data, transformation_type)
+        if scaling_type and scaling_type != 'None':
+            intensity_data = _apply_scaling(intensity_data, scaling_type)
+    except Exception as e:
+        st.error(f"Normalization/Transformation error: {e}")
+        return pd.DataFrame()
 
     if _progress_bar:
         _progress_bar.progress(0.9)
