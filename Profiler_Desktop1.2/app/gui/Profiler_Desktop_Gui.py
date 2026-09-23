@@ -3139,9 +3139,7 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             )
                         elif total_missing_pct < 20:
                             st.info(
-                                "🔬 **LC-MS/MS after identification (LFQ-like data)**\n\n"
-                                "- Missing values mainly reflect **low-abundance signals**\n"
-                                "- Zeros should be interpreted as *missing below detection limit*\n\n"
+                                "**Moderate missingness, no single dominant mechanism**\n\n"
                                 "**Recommended strategy:**\n"
                                 "- 🔹 **Shifted Gaussian** or **QRILC** (default & biologically realistic for "
                                 "intensity-type data)\n"
@@ -3201,19 +3199,30 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             x=0,
                             line_dash="dash",
                             line_color="gray",
-                            annotation_text="Symmetric"
+                            annotation_text="Symmetric",
+                            annotation_position="top left",
+                            annotation_y=1.06,
+                            annotation_yref="paper",
+                            annotation_font=dict(size=12, color="gray"),
+                            annotation_bgcolor="rgba(255,255,255,0.75)",
                         )
 
                         fig_density.add_vline(
                             x=1,
                             line_dash="dot",
                             line_color="red",
-                            annotation_text="High skew"
+                            annotation_text="High skew",
+                            annotation_position="top right",
+                            annotation_y=0.92,
+                            annotation_yref="paper",
+                            annotation_font=dict(size=12, color="red"),
+                            annotation_bgcolor="rgba(255,255,255,0.75)",
                         )
 
                         fig_density.update_layout(
                             bargap=0.05,
-                            height=400
+                            height=420,
+                            margin=dict(t=70)
                         )
 
                         _square_plot(fig_density, config=_std_config())
@@ -3255,53 +3264,76 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                             f"Zero ratio: {zero_ratio*100:.1f}% (threshold: >30% considered high sparsity)"
                         )
 
-                        st.markdown("**💡Normalization guidance (non-prescriptive)**")
+                        st.markdown("**💡Normalization & transformation guidance (non-prescriptive)**")
+                        st.caption(
+                            "Two different levers, both available in **Preprocess**: "
+                            "**Normalization** corrects sample-to-sample bias (loading amount, total signal, "
+                            "library size) — e.g. Total Intensity, RMS, BasePeak, TMM, Median of Ratios, CPM. "
+                            "**Transformation** (Log2 / Log10 / Log1p / VST) reshapes each feature's own "
+                            "distribution to be closer to normal and variance-stabilized. They are complementary, "
+                            "not mutually exclusive — most omics pipelines apply a normalization *then* a log "
+                            "transform before any statistics."
+                        )
                         if zero_ratio > 0.3:
                             st.warning(
-                                f"**High sparsity ({zero_ratio*100:.1f}% zeros > 30% threshold) → "
-                                "Median of Ratios / TMM / VST**\n\n"
-                                "These methods are designed for count-like, zero-heavy matrices (RNA-seq-style "
-                                "normalization) and are far less sensitive to the many zeros than a simple "
-                                "mean/total-intensity scaling would be."
+                                f"**High sparsity ({zero_ratio*100:.1f}% zeros > 30% threshold)**\n\n"
+                                "- 🔹 **Normalize** with Median of Ratios / TMM / CPM — designed for count-like, "
+                                "zero-heavy matrices, far less distorted by the many zeros than a simple "
+                                "mean/total-intensity scaling.\n"
+                                "- 🔹 **Then transform** with Log2 or VST before PCA/UMAP/t-SNE and before "
+                                "biomarker modeling — high sparsity data is almost always heteroscedastic, and "
+                                "un-transformed intensities will make the top few features dominate distances, "
+                                "loadings and volcano-plot fold-changes."
                             )
                         elif cv_mean > 1:
                             st.warning(
-                                f"**Strong mean–variance dependency (mean CV = {cv_mean:.2f} > 1) → "
-                                "VST or log-based normalization**\n\n"
-                                "High CV means variance grows with intensity — a variance-stabilizing "
-                                "transform (VST) or Log2/Log10 evens this out so downstream stats aren't "
-                                "dominated by the highest-intensity features."
+                                f"**Strong mean–variance dependency (mean CV = {cv_mean:.2f} > 1)**\n\n"
+                                "- 🔹 **Transform** with VST or Log2 — this is the step that matters most here: "
+                                "high CV means variance grows with intensity, so without a variance-stabilizing "
+                                "transform your PCA/UMAP will be driven almost entirely by the brightest "
+                                "features, and a volcano plot's fold-changes will be inflated for high-abundance "
+                                "biomarkers.\n"
+                                "- 🔹 **Normalize** with Total Intensity or Median of Ratios beforehand if samples "
+                                "also differ in overall loading amount."
                             )
                         elif skew_mean > 1:
                             st.info(
-                                f"**Right-skewed distributions (mean |skew| = {skew_mean:.2f} > 1) → "
-                                "Log2 / Log10 / VST**\n\n"
-                                "Log-scale transforms compress the long right tail typical of intensity data, "
-                                "bringing features closer to approximate normality — also a prerequisite for "
-                                "QRILC imputation if you use it."
+                                f"**Right-skewed distributions (mean |skew| = {skew_mean:.2f} > 1)**\n\n"
+                                "- 🔹 **Transform** with Log2 (or Log10) — compresses the long right tail typical "
+                                "of intensity data, bringing features closer to approximate normality. This is "
+                                "also a prerequisite for **QRILC** imputation and for parametric statistics "
+                                "(t-test/ANOVA) used behind the volcano plot and heatmap.\n"
+                                "- 🔹 A light normalization (Total Intensity / Median) can be applied first if "
+                                "sample loading varies."
                             )
                         elif skew_mean < 0.5:
                             _log_success(
-                                f"**Near-normal distributions (mean |skew| = {skew_mean:.2f} < 0.5) → "
-                                "Total intensity / RMS / BasePeak suitable**\n\n"
-                                "Data are already reasonably symmetric — a simple scaling normalization is "
-                                "usually enough; a log transform is optional rather than required."
+                                f"**Near-normal distributions (mean |skew| = {skew_mean:.2f} < 0.5)**\n\n"
+                                "- 🔹 **Normalize** only — Total Intensity / RMS / BasePeak is usually enough; a "
+                                "log transform is optional rather than required.\n"
+                                "- 🔹 For **PCA / UMAP / t-SNE / biomarker training**, still apply feature-wise "
+                                "**standardization (z-score)** afterward — these methods compare feature "
+                                "magnitudes directly, and un-scaled features on different intensity ranges will "
+                                "dominate the components/embedding regardless of how normal each one looks."
                             )
                         else:
                             st.info(
-                                f"**Mixed signals (mean |skew| = {skew_mean:.2f}, mean CV = {cv_mean:.2f}) → "
-                                "Median / Mean normalization recommended**\n\n"
-                                "No single diagnostic dominates — a robust central-tendency normalization is a "
-                                "safe default; revisit after inspecting the per-feature distributions."
+                                f"**Mixed signals (mean |skew| = {skew_mean:.2f}, mean CV = {cv_mean:.2f})**\n\n"
+                                "- 🔹 **Normalize** with Median or Mean as a safe, robust default.\n"
+                                "- 🔹 Revisit **Log2** after inspecting per-feature distributions — if a few "
+                                "features dominate the heatmap/volcano plot later, that's the signal to add it."
                             )
 
                         st.caption(
-                            "ℹ️ Recommendations are data-driven and intended to guide, not enforce, normalization "
-                            "choices in multi-omics settings. Note that in the **Preprocessing** pipeline, "
-                            "Imputation runs before Normalization — if the **Missing & Zeros** tab flagged an "
+                            "ℹ️ Recommendations are data-driven and intended to guide, not enforce, choices in "
+                            "multi-omics settings. Pipeline order in **Preprocess**: Imputation → Normalization → "
+                            "Transformation → (optional) Standardization. If **Missing & Zeros** flagged an "
                             "**MNAR-like** pattern and your intensities are still on a raw (non-log) scale, "
                             "**QRILC** imputation will be less accurate; consider re-running preprocessing on a "
-                            "Log2/Log10-normalized export if you need the strictest MNAR handling."
+                            "Log2/Log10-transformed export if you need the strictest MNAR handling. Downstream, "
+                            "**PCA / UMAP / t-SNE and biomarker training (volcano, heatmap)** are all "
+                            "scale-sensitive: a Log2/VST transform plus z-score standardization on the final "
+                            "feature matrix is the safest default before those steps."
                         )
 
 
@@ -4041,11 +4073,40 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 )
 
 
-                            # ------------------ Normalization ------------------
+                            # ------------------ Normalization / Transformation / Scaling ------------------
+                            # Three distinct, sequential levers instead of one mutually-exclusive
+                            # selectbox: Normalization (sample-to-sample bias) → Transformation
+                            # (per-feature distribution reshaping) → Scaling (z-score/robust/min-max,
+                            # mainly useful upstream of PCA/UMAP/t-SNE and biomarker model training).
+                            st.markdown("**Normalization** — corrects sample-to-sample bias")
                             normalization_type = st.selectbox(
                                 "Normalization Type",
-                                ['None', 'Log2', 'RMS', 'BasePeak', 'QNorm', 'Log1p', 'Log10', 'Median of Ratios (Deseq2-like)', 'TMM', 'CPM', 'logCPM', 'VST', 'Total Intensity', 'Median', 'Mean', 'MinMax'],
-                                key="normalization_type"
+                                ['None', 'RMS', 'BasePeak', 'QNorm', 'Median of Ratios (Deseq2-like)',
+                                 'TMM (Deseq2-like)', 'CPM', 'logCPM', 'Total Intensity', 'Median', 'Mean'],
+                                key="normalization_type",
+                                help="Applied first. Corrects for differences in total loading/signal "
+                                     "between samples — does not reshape each feature's own distribution."
+                            )
+                            st.markdown("**Transformation** — reshapes each feature's distribution")
+                            transformation_type = st.selectbox(
+                                "Transformation Type",
+                                ['None', 'Log2', 'Log10', 'Log1p', 'VST'],
+                                key="transformation_type",
+                                help="Applied after normalization. Log2/Log10/VST compress the right tail "
+                                     "typical of intensity data and stabilize variance — recommended before "
+                                     "PCA/UMAP/t-SNE, biomarker modeling, volcano plots and heatmaps, and "
+                                     "required for QRILC imputation to be well-calibrated."
+                            )
+                            st.markdown("**Scaling** — optional, per-feature standardization")
+                            scaling_type = st.selectbox(
+                                "Scaling Type",
+                                ['None', 'StandardScaler (z-score)', 'RobustScaler', 'MinMaxScaler'],
+                                key="scaling_type",
+                                help="Applied last. Puts every feature on a comparable scale — use it if you "
+                                     "will export this matrix straight into PCA/UMAP/t-SNE or model training. "
+                                     "Leave as 'None' if you still need univariate statistics (t-test/ANOVA, "
+                                     "volcano plot) on the exported matrix, since those should run on "
+                                     "normalized/transformed intensities, not on centered-reduced values."
                             )
 
                             # debug / performance options
@@ -4324,16 +4385,26 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                         except Exception as _e:
                                             st.warning(f"Peak picking skipped: {_e}")        
 
-                                # ------------------ Normalization ------------------
+                                # ------------------ Normalization / Transformation / Scaling ------------------
                                 try:
-                                    if normalization_type != 'None':
-                                        data = preprocess_data(data, normalization_type, progress)
+                                    if normalization_type != 'None' or transformation_type != 'None' or scaling_type != 'None':
+                                        data = preprocess_data(
+                                            data,
+                                            normalization_type=normalization_type,
+                                            transformation_type=transformation_type,
+                                            scaling_type=scaling_type,
+                                            _progress_bar=progress,
+                                        )
                                 except Exception as e:
-                                    st.error(f"Normalization error: {e}")
+                                    st.error(f"Normalization/Transformation error: {e}")
                                 else:
                                     progress.progress(85)
-                                    if normalization_type != 'None':
-                                        _log_success(f"{normalization_type} normalization applied")
+                                    _applied_steps = [
+                                        s for s in (normalization_type, transformation_type, scaling_type)
+                                        if s and s != 'None'
+                                    ]
+                                    if _applied_steps:
+                                        _log_success(f"Applied: {' → '.join(_applied_steps)}")
 
                                 # ------------------ Combat Batch Correction ------------------
                                 try:
@@ -4417,6 +4488,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                 st.write(f"- Imputation: {imputation_method} {'(per class)' if impute_by_class else ''} → {removed_by_exclusive_missing} exclusive missing features removed")
                                 st.write(f"- Binning: {'Yes' if apply_binning_option else 'No'}")
                                 st.write(f"- Normalization: {normalization_type}")
+                                st.write(f"- Transformation: {transformation_type}")
+                                st.write(f"- Scaling: {scaling_type}")
                                 st.write(f"- Batch correction: {'Yes (column: ' + st.session_state.get('combat_batch_col', 'Class') + ')' if apply_combat else 'No'}")
                                 # count features excluding metadata
                                 feature_count = len([c for c in data.columns if c not in cols_exclude])
@@ -4432,6 +4505,8 @@ It converts <code>.imzML</code> files → CSV for direct import into Profiler.<b
                                     "imputation": f"{imputation_method} {'(per class)' if impute_by_class else ''} → {removed_by_exclusive_missing} exclusive missing features removed",
                                     "binning": "Yes" if apply_binning_option else "No",
                                     "normalization": normalization_type,
+                                    "transformation": transformation_type,
+                                    "scaling": scaling_type,
                                     "batch_correction": f"Yes (batch column: {st.session_state.get('combat_batch_col', 'Class')})" if apply_combat else "No",
                                     "total_features": len([c for c in data.columns if c not in cols_exclude])
                                 }
