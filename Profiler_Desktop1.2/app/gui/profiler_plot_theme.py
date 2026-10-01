@@ -415,6 +415,56 @@ def _force_ink_fonts(fig) -> None:
     )
 
 
+WIDE_META = "profiler_wide"      # fig.update_layout(meta="profiler_wide") → opt-out du carré
+_MAX_SPAN_RATIO = 50.0           # au-delà, une échelle x/y égale n'a aucun sens
+
+
+def _is_wide_figure(fig) -> bool:
+    """True si l'appelant demande explicitement un graphe pleine largeur
+    (spectres, profils m/z…) via layout.meta == 'profiler_wide'."""
+    try:
+        return fig.layout.meta == WIDE_META
+    except Exception:
+        return False
+
+
+def _numeric_span(values):
+    """Étendue (max-min) d'un tableau de valeurs numériques, None sinon."""
+    if values is None:
+        return None
+    try:
+        arr = np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    arr = arr[np.isfinite(arr)]
+    if arr.size < 2:
+        return None
+    return float(arr.max() - arr.min())
+
+
+def _axes_have_comparable_spans(fig) -> bool:
+    """
+    Garde-fou pour `scaleanchor="x"` : une échelle égale px/unité n'a de
+    sens que si X et Y ont des ordres de grandeur comparables (PCA, UMAP).
+    Pour un spectre (x = m/z sur ~1000 unités, y = intensité ~0.008) elle
+    écrase la courbe en une ligne plate ou verticale.
+    """
+    xs, ys = [], []
+    for tr in fig.data:
+        sx, sy = _numeric_span(getattr(tr, "x", None)), _numeric_span(getattr(tr, "y", None))
+        if sx is not None:
+            xs.append(sx)
+        if sy is not None:
+            ys.append(sy)
+    if not xs or not ys:
+        return True
+    sx, sy = max(xs), max(ys)
+    if sx <= 0 or sy <= 0:
+        return False
+    ratio = sx / sy
+    return (1.0 / _MAX_SPAN_RATIO) <= ratio <= _MAX_SPAN_RATIO
+
+
 def _apply_square_layout(fig, n_items: int = None, rotate_ticks_over: int = 16) -> bool:
     """
     Applique des dimensions professionnelles (voir `_plot_dims` : carré pour
@@ -427,10 +477,16 @@ def _apply_square_layout(fig, n_items: int = None, rotate_ticks_over: int = 16) 
     """
     if not _is_simple_2d(fig):
         return False
+    if _is_wide_figure(fig):
+        # Spectre / profil pleine largeur : jamais carré, jamais scaleanchor.
+        fig.update_layout(width=None, height=fig.layout.height or 520, autosize=True)
+        fig.update_yaxes(scaleanchor=None, scaleratio=None)
+        return False
     width, height = _plot_dims(fig, n_items)
     fig.update_layout(width=width, height=height, autosize=False)
     _types = {tr.type for tr in fig.data if getattr(tr, "type", None)}
-    if _types and _types.issubset(_SCATTER_TYPES) and not _scatter_is_categorical(fig):
+    if (_types and _types.issubset(_SCATTER_TYPES) and not _scatter_is_categorical(fig)
+            and _axes_have_comparable_spans(fig)):
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
     _n = n_items if n_items is not None else _estimate_n_items(fig)
     if _n > rotate_ticks_over and _dominant_orientation(fig) != "h":
